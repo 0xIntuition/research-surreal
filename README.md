@@ -73,13 +73,13 @@ Blockchain → Rindexer → Redis Streams → Redis-SurrealDB Sync → SurrealDB
 
 1. Clone the repository:
 ```bash
-git clone <repository-url>
+git clone https://github.com/0xIntuition/research-surreal.git 
 cd research-surreal
 ```
 
 2. Start all services:
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 4. Access the services:
