@@ -15,13 +15,20 @@ This project provides a complete data pipeline solution that:
 ## Architecture
 
 ```
-Blockchain → Rindexer → Redis Streams → Redis-SurrealDB Sync → SurrealDB
-                                                                    ↓
-                                          Jupiter Dashboard ← SurrealDB
-                                                ↑
-                                     Prometheus ← Metrics
-                                                ↓
-                                           Grafana
+┌───────────┐    ┌──────────┐    ┌──────────────┐    ┌───────────────────┐    ┌───────────┐
+│ Blockchain│───▶│ Rindexer │───▶│Redis Streams │───▶│Redis-SurrealDB    │───▶│ SurrealDB │
+└───────────┘    └──────────┘    └──────────────┘    │      Sync         │    └─────┬─────┘
+                                                     └──────────┬────────┘          │
+                                                                │                   │
+                                                                ▼                   ▼
+                                                       ┌─────────────┐    ┌──────────────────┐
+                                                       │ Prometheus  │    │Jupiter Dashboard │
+                                                       │  (Metrics)  │    └──────────────────┘
+                                                       └─────┬───────┘
+                                                             ▼
+                                                       ┌──────────┐
+                                                       │ Grafana  │
+                                                       └──────────┘
 ```
 
 ## Components
