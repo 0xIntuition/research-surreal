@@ -1,0 +1,58 @@
+name: intuition
+description: Indexer for MultiVault contract on Intuition Testnet
+repository: https://github.com/user/i7n-rindexer-surreal
+project_type: no-code
+
+networks:
+  - name: intuition-testnet
+    chain_id: 13579
+    rpc: https://testnet.rpc.intuition.systems/http
+
+storage:
+  postgres:
+    enabled: false
+
+graphql:
+  port: 3005
+  disable_advanced_filters: true
+  filter_only_on_indexed_columns: true
+
+contracts:
+  - name: MultiVault
+    details:
+      - network: intuition-testnet
+        address: "0x5a0A023F08dF301DCCE96166F4185Ec77DF6a87a"
+        start_block: 2009988
+    abi: ./abi/Multivault-v-2-0.json
+    include_events:
+      - name: AtomCreated
+        timestamps: true
+      - name: TripleCreated
+        timestamps: true
+      - name: Deposited
+        timestamps: true
+      - name: Redeemed
+    streams:
+      redis:
+        connection_uri: ${REDIS_URL}
+        streams:
+          - stream_name: "intuition_testnet_atom_created"
+            networks:
+              - intuition-testnet
+            events:
+              - event_name: "AtomCreated"
+          - stream_name: "intuition_testnet_triple_created"
+            networks:
+              - intuition-testnet
+            events:
+              - event_name: "TripleCreated"
+          - stream_name: "intuition_testnet_deposited"
+            networks:
+              - intuition-testnet
+            events:
+              - event_name: "Deposited"
+          - stream_name: "intuition_testnet_redeemed"
+            networks:
+              - intuition-testnet
+            events:
+              - event_name: "Redeemed"

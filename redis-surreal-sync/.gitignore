@@ -1,0 +1,33 @@
+# Rust build artifacts
+/target/
+Cargo.lock
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Environment files
+.env
+.env.local
+.env.production
+
+# Secrets directory (except .gitkeep)
+secrets/*
+!secrets/.gitkeep
+
+# Docker
+docker-compose.override.yml
+
+# Test artifacts
+coverage/

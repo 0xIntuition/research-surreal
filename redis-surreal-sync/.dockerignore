@@ -1,0 +1,56 @@
+# Docker build context optimization
+# Exclude files that don't need to be sent to Docker daemon
+
+# Build artifacts
+target/
+# Keep Cargo.lock for reproducible builds
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Version control
+.git/
+.gitignore
+
+# Documentation
+*.md
+docs/
+
+# Logs
+*.log
+logs/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Temporary files
+*.tmp
+*.temp
+
+# Environment files (security)
+.env
+.env.*
+
+# Docker files (avoid recursive copying)
+Dockerfile*
+docker-compose*.yml
+
+# Test files and coverage
+tests/
+coverage/
+*.coverage
+
+# CI/CD files
+.github/
+.gitlab-ci.yml
+.travis.yml

@@ -1,0 +1,159 @@
+name: rindexer-surreal
+
+services:
+
+  # Local Redis for development
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+      - ./redis.conf:/redis.conf:ro
+    command: ["redis-server", "/redis.conf"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - rindexer-network
+
+  redisinsight:
+    image: redis/redisinsight:latest
+    ports:
+      - '8084:5540'
+    volumes:
+      - redisinsight:/data
+    restart: unless-stopped
+    networks:
+      - rindexer-network
+
+  # Override rindexer service for local development
+  rindexer:
+    environment:
+      REDIS_URL: redis://redis:6379
+    depends_on:
+      # postgres:
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - rindexer-network
+    # Remove production labels for local development
+    labels: []
+    ports:
+      - "3005:3005"
+
+  # Override SurrealDB for local development
+  surrealdb:
+    ports:
+      - "8000:8000"
+    networks:
+      - rindexer-network
+    # Remove production labels for local development
+    labels: []
+
+  # Override redis-surreal-sync for local development
+  redis-surreal-sync:
+    environment:
+      RUST_LOG: "redis_surreal_sync=info,tokio=warn"
+      RUST_BACKTRACE: "1"
+      REDIS_URL: redis://redis:6379
+      SURREAL_URL: ws://surrealdb:8000/rpc
+      SURREAL_USER: "root"
+      SURREAL_PASS: "root"
+      SURREAL_NS: "rindexer"
+      SURREAL_DB: "i7n_surreal"
+      CONSUMER_GROUP: "surreal-sync"
+      CONSUMER_NAME: "main-consumer"
+      TOKIO_WORKER_THREADS: "2"
+      BATCH_SIZE: "10"
+      PROCESSING_INTERVAL_MS: "500"
+      RECONNECT_DELAY_MS: "2000"
+      MAX_RETRIES: "5"
+      # HTTP server configuration
+      HTTP_PORT: "8080"
+    ports:
+      - "8080:8080"  # Health check endpoint
+    depends_on:
+      # postgres:
+      #   condition: service_healthy
+      redis:
+        condition: service_healthy
+      surrealdb:
+        condition: service_healthy
+    networks:
+      - rindexer-network
+
+  surrealist:
+    image: surrealdb/surrealist:latest
+    container_name: surrealist
+    ports:
+      - "3006:8080"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    networks:
+      - rindexer-network
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: prometheus
+    ports:
+      - "9191:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    networks:
+      - rindexer-network
+    restart: unless-stopped
+
+  # Grafana for metrics visualization
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    ports:
+      - "3009:3000"
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
+    networks:
+      - rindexer-network
+    depends_on:
+      - prometheus
+    restart: unless-stopped
+
+
+  jupiter:
+    ports:
+      - "3033:3001"
+
+networks:
+  rindexer-network:
+    driver: bridge
+  dokploy-network:
+    external: false
+    name: rindexer-network
+
+volumes:
+  # postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+  redisinsight:

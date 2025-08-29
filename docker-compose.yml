@@ -1,0 +1,215 @@
+name: rindexer-surreal
+
+services:
+  rindexer:
+    image: simonasintuition/rindexer:latest
+    environment:
+      RPC_URL: ${RPC_URL}
+      REDIS_URL: ${REDIS_URL}
+    volumes:
+      - ./rindexer.yaml:/app/rindexer.yaml:ro
+      - ./abi:/app/abi:ro
+    ports:
+      - "3005"
+    restart: unless-stopped
+    working_dir: /app
+    command: ["start", "indexer"]
+    networks:
+      - dokploy-network
+
+  surrealdb:
+    image: surrealdb/surrealdb:latest
+    command: ["start", "--bind", "0.0.0.0:8000", "--user", "root", "--pass", "root", "--import-file", "/schema.surql", "rocksdb:/data/surreal.db"]
+    volumes:
+      - surrealdb_data:/data
+      - ./surrealdb-schema.surql:/schema.surql:ro
+    environment:
+      # Authentication and Security
+      SURREAL_USER: "root"
+      SURREAL_PASS: "root"
+      
+      # Logging and Monitoring
+      SURREAL_LOG: "info"
+      SURREAL_LOG_FILE_ENABLED: "false"
+      
+      # Performance Optimization
+      SURREAL_TRANSACTION_CACHE_SIZE: "20000"
+      SURREAL_DATASTORE_CACHE_SIZE: "2000"
+      SURREAL_COUNT_BATCH_SIZE: "50000"
+      SURREAL_EXPORT_BATCH_SIZE: "5000"
+      
+      # WebSocket Configuration
+      SURREAL_WEBSOCKET_MAX_CONCURRENT_REQUESTS: "16"
+      SURREAL_WEBSOCKET_MAX_FRAME_SIZE: "33554432"
+      SURREAL_WEBSOCKET_MAX_MESSAGE_SIZE: "268435456"
+      SURREAL_WEBSOCKET_RESPONSE_CHANNEL_SIZE: "200"
+      
+      # RocksDB Optimization for Production
+      SURREAL_ROCKSDB_BLOCK_CACHE_SIZE: "134217728"
+      SURREAL_ROCKSDB_WRITE_BUFFER_SIZE: "67108864"
+      SURREAL_ROCKSDB_MAX_WRITE_BUFFER_NUMBER: "4"
+      SURREAL_ROCKSDB_ENABLE_PIPELINED_WRITES: "true"
+      SURREAL_ROCKSDB_ENABLE_BLOB_FILES: "true"
+      SURREAL_ROCKSDB_COMPACTION_STYLE: "level"
+      SURREAL_SYNC_DATA: "false"
+      
+      # HTTP Configuration
+      SURREAL_HTTP_MAX_API_BODY_SIZE: "2097152"
+
+      # SURREAL_CAPS_ALLOW_EXPERIMENTAL: "graphql"
+
+    ports:
+      - "8000"
+    user: root
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "/surreal", "isready", "--conn", "http://localhost:8000"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.surrealdb-app.rule=Host(`${SURREAL_DOMAIN}`)"
+      - "traefik.http.routers.surrealdb-app.entrypoints=websecure"
+      - "traefik.http.routers.surrealdb-app.tls.certResolver=letsencrypt"
+      
+      # WebSocket headers middleware for SurrealDB
+      - "traefik.http.middlewares.surrealdb-ws.headers.customrequestheaders.Connection=Upgrade"
+      - "traefik.http.middlewares.surrealdb-ws.headers.customrequestheaders.Upgrade=websocket"
+      
+      # CORS middleware for WebSocket connections
+      - "traefik.http.middlewares.surrealdb-cors.headers.accesscontrolalloworiginlist=*"
+      - "traefik.http.middlewares.surrealdb-cors.headers.accesscontrolallowmethods=GET,POST,PUT,DELETE,OPTIONS"
+      - "traefik.http.middlewares.surrealdb-cors.headers.accesscontrolallowheaders=*"
+      - "traefik.http.middlewares.surrealdb-cors.headers.accesscontrolmaxage=100"
+      - "traefik.http.middlewares.surrealdb-cors.headers.addvaryheader=true"
+      
+      # Apply middlewares to router
+      - "traefik.http.routers.surrealdb-app.middlewares=surrealdb-ws,surrealdb-cors"
+      - "traefik.http.services.surrealdb-app.loadbalancer.server.port=8000"
+
+  redis-surreal-sync:
+    build:
+      context: ./redis-surreal-sync
+      dockerfile: Dockerfile
+    environment:
+      RUST_LOG: "redis_surreal_sync=info,tokio=warn"
+      RUST_BACKTRACE: "1"
+      REDIS_URL: ${REDIS_URL}
+      SURREAL_URL: ${SURREAL_URL}
+      SURREAL_USER: "root"
+      SURREAL_PASS: "root"
+      SURREAL_NS: "rindexer"
+      SURREAL_DB: "i7n_surreal"
+      TOKIO_WORKER_THREADS: "4"
+      BATCH_SIZE: "20"
+      PROCESSING_INTERVAL_MS: "100"
+      RECONNECT_DELAY_MS: "5000"
+      MAX_RETRIES: "3"
+      HTTP_PORT: "8080"
+      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed"
+    ports:
+      - "8080"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+  prometheus:
+    image: prom/prometheus:latest
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+      - '--web.console.libraries=/etc/prometheus/console_libraries'
+      - '--web.console.templates=/etc/prometheus/consoles'
+      - '--storage.tsdb.retention.time=200h'
+      - '--web.enable-lifecycle'
+      - '--web.enable-admin-api'
+    volumes:
+      - prometheus_data:/prometheus
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+    ports:
+      - "9090"
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.prometheus-app.rule=Host(`${PROMETHEUS_DOMAIN}`)"
+      - "traefik.http.routers.prometheus-app.entrypoints=websecure"
+      - "traefik.http.routers.prometheus-app.tls.certResolver=letsencrypt"
+      - "traefik.http.services.prometheus-app.loadbalancer.server.port=9090"
+
+  grafana:
+    image: grafana/grafana:latest
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_USERS_ALLOW_SIGN_UP: false
+      GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports:
+      - "3000"
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    depends_on:
+      - prometheus
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.grafana-app.rule=Host(`${GRAFANA_DOMAIN}`)"
+      - "traefik.http.routers.grafana-app.entrypoints=websecure"
+      - "traefik.http.routers.grafana-app.tls.certResolver=letsencrypt"
+      - "traefik.http.services.grafana-app.loadbalancer.server.port=3000"
+
+  jupiter:
+    build:
+      context: ./jupiter
+      dockerfile: Dockerfile
+    environment:
+      SURREAL_URL: ${SURREAL_URL}
+      SURREAL_USER: "root"
+      SURREAL_PASS: "root"
+      SURREAL_NS: "rindexer"
+      SURREAL_DB: "i7n_surreal"
+      NODE_ENV: "production"
+    ports:
+      - "3001"
+    depends_on:
+      surrealdb:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.jupiter-app.rule=Host(`${JUPITER_DOMAIN}`)"
+      - "traefik.http.routers.jupiter-app.entrypoints=websecure"
+      - "traefik.http.routers.jupiter-app.tls.certResolver=letsencrypt"
+      - "traefik.http.services.jupiter-app.loadbalancer.server.port=3001"
+
+volumes:
+  surrealdb_data:
+    driver: local
+  prometheus_data:
+    driver: local
+  grafana_data:
+    driver: local
+
+networks:
+  dokploy-network:
+    external: true
