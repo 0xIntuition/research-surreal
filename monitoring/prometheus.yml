@@ -20,7 +20,7 @@ scrape_configs:
   # Redis Surreal Sync application metrics
   - job_name: 'redis-surreal-sync'
     static_configs:
-      - targets: ['redis-surreal-sync:8080']
+      - targets: ['redis-surreal-sync:18210']
     scrape_interval: 5s
     metrics_path: /metrics
     scrape_timeout: 5s
@@ -28,7 +28,7 @@ scrape_configs:
   # Redis Postgres Sync application metrics
   - job_name: 'redis-postgres-sync'
     static_configs:
-      - targets: ['redis-postgres-sync:8081']
+      - targets: ['redis-postgres-sync:18211']
     scrape_interval: 5s
     metrics_path: /metrics
     scrape_timeout: 5s

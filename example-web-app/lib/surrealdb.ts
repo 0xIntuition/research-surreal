@@ -9,7 +9,7 @@ export async function getSurrealDB(): Promise<Surreal> {
 
   db = new Surreal();
   
-  const surrealUrl = process.env.SURREAL_URL || 'ws://localhost:8000/rpc';
+  const surrealUrl = process.env.SURREAL_URL || 'ws://localhost:18102/rpc';
   
   try {
     // Connect to the database

@@ -90,11 +90,31 @@ docker compose up -d
 ```
 
 4. Access the services:
-- Jupiter Dashboard: `http://localhost:3033/`
-- Grafana: `http://localhost:3009/`
-- Surrealist: `http://localhost:3006/`
+- Example web app: `http://localhost:18300/`
+- Grafana: `http://localhost:18501/`
+- Surrealist (SurrealDB IDE): `http://localhost:18301/`
+- SurrealDB API: `http://localhost:18102/`
+- Prometheus: `http://localhost:18500/`
+- RedisInsight: `http://localhost:18400/`
+- Rindexer: `http://localhost:18200/`
 
+## Port Allocation Strategy
 
+This project uses a structured port numbering scheme in the **18000-18999 range** to avoid conflicts with common development tools and other local services. The ports are organized by service type:
+
+| Port Range | Service Type | Services |
+|------------|--------------|----------|
+| **18100-18199** | Databases | PostgreSQL (18100), Redis (18101), SurrealDB (18102) |
+| **18200-18299** | Backend APIs | Rindexer (18200), Redis-Surreal Sync (18210), Redis-Postgres Sync (18211) |
+| **18300-18399** | Frontend/UI | Jupiter Dashboard (18300), Surrealist (18301) |
+| **18400-18499** | Admin Tools | RedisInsight (18400) |
+| **18500-18599** | Monitoring | Prometheus (18500), Grafana (18501) |
+
+This scheme:
+- Avoids conflicts with commonly used ports (3000, 5432, 6379, 8000, 8080, 9090)
+- Groups related services logically for easy memorization
+- Provides room for future expansion (100 ports per category)
+- Makes it easy to identify service types by port number
 
 ## Monitoring
 
