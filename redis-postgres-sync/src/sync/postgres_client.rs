@@ -1,5 +1,6 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
-use tracing::{debug, error, info};
+use tokio::time::{sleep, Duration};
+use tracing::{debug, error, info, warn};
 
 use crate::core::types::{RindexerEvent, TransactionInformation};
 use crate::error::{Result, SyncError};
@@ -23,16 +24,36 @@ impl PostgresClient {
 
         info!("Connected to PostgreSQL database");
 
-        // Run migrations
-        sqlx::migrate!("./migrations")
-            .run(&pool)
-            .await
-            .map_err(|e| {
-                error!("Failed to run migrations: {}", e);
-                SyncError::Connection(format!("Failed to run migrations: {}", e))
-            })?;
+        // Run migrations with retry logic to handle race conditions on fresh database startup
+        const MAX_RETRIES: u32 = 5;
+        const INITIAL_DELAY_MS: u64 = 1000;
 
-        info!("Database migrations completed successfully");
+        let mut last_error = None;
+        for attempt in 1..=MAX_RETRIES {
+            match sqlx::migrate!("./migrations").run(&pool).await {
+                Ok(_) => {
+                    info!("Database migrations completed successfully");
+                    break;
+                }
+                Err(e) => {
+                    last_error = Some(e);
+                    if attempt < MAX_RETRIES {
+                        let delay_ms = INITIAL_DELAY_MS * 2_u64.pow(attempt - 1);
+                        warn!(
+                            "Migration attempt {}/{} failed, retrying in {}ms: {}",
+                            attempt, MAX_RETRIES, delay_ms, last_error.as_ref().unwrap()
+                        );
+                        sleep(Duration::from_millis(delay_ms)).await;
+                    } else {
+                        error!("Failed to run migrations after {} attempts: {}", MAX_RETRIES, last_error.as_ref().unwrap());
+                        return Err(SyncError::Connection(format!(
+                            "Failed to run migrations after {} attempts: {}",
+                            MAX_RETRIES, last_error.unwrap()
+                        )));
+                    }
+                }
+            }
+        }
 
         Ok(Self { pool })
     }

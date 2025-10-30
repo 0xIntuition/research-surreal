@@ -104,6 +104,8 @@ services:
       SURREAL_PASS: "root"
       SURREAL_NS: "rindexer"
       SURREAL_DB: "i7n_surreal"
+      CONSUMER_GROUP: surreal-${CONSUMER_GROUP_SUFFIX:-sync}
+      CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
       TOKIO_WORKER_THREADS: "4"
       BATCH_SIZE: "20"
       PROCESSING_INTERVAL_MS: "100"
@@ -139,11 +141,11 @@ services:
     ports:
       - "18100:18100"
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres -d storage"]
-      interval: 2s
+      test: ["CMD-SHELL", "pg_isready -U postgres -d storage -p 18100 && psql -U postgres -d storage -p 18100 -c 'SELECT 1' > /dev/null 2>&1"]
+      interval: 3s
       timeout: 10s
       retries: 30
-      start_period: 30s
+      start_period: 60s
     networks:
       - dokploy-network
 
@@ -156,8 +158,8 @@ services:
       RUST_BACKTRACE: "1"
       REDIS_URL: ${REDIS_URL}
       DATABASE_URL: ${DATABASE_URL}
-      CONSUMER_GROUP: "postgres-sync"
-      CONSUMER_NAME: "main-consumer"
+      CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
+      CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
       TOKIO_WORKER_THREADS: "4"
       BATCH_SIZE: "20"
       BATCH_TIMEOUT_MS: "5000"
