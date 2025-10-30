@@ -65,8 +65,8 @@ services:
       SURREAL_PASS: "root"
       SURREAL_NS: "rindexer"
       SURREAL_DB: "i7n_surreal"
-      CONSUMER_GROUP: "surreal-sync"
-      CONSUMER_NAME: "main-consumer"
+      CONSUMER_GROUP: surreal-${CONSUMER_GROUP_SUFFIX:-sync}
+      CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
       TOKIO_WORKER_THREADS: "2"
       BATCH_SIZE: "10"
       PROCESSING_INTERVAL_MS: "500"
@@ -93,8 +93,8 @@ services:
       RUST_BACKTRACE: "1"
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
-      CONSUMER_GROUP: "postgres-sync"
-      CONSUMER_NAME: "main-consumer"
+      CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
+      CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
       TOKIO_WORKER_THREADS: "2"
       BATCH_SIZE: "10"
       BATCH_TIMEOUT_MS: "500"
