@@ -126,6 +126,61 @@ services:
       start_period: 15s
       retries: 3
 
+  postgres:
+    container_name: postgres
+    image: timescale/timescaledb-ha:pg17.5-ts2.20.1
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: storage
+      PGPORT: 5444
+    volumes:
+      - database-data:/var/lib/postgresql/data/
+    ports:
+      - "5444:5444"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d storage"]
+      interval: 2s
+      timeout: 10s
+      retries: 30
+      start_period: 30s
+    networks:
+      - dokploy-network
+
+  redis-postgres-sync:
+    build:
+      context: ./redis-postgres-sync
+      dockerfile: Dockerfile
+    environment:
+      RUST_LOG: "redis_postgres_sync=info,tokio=warn"
+      RUST_BACKTRACE: "1"
+      REDIS_URL: ${REDIS_URL}
+      DATABASE_URL: ${DATABASE_URL}
+      CONSUMER_GROUP: "postgres-sync"
+      CONSUMER_NAME: "main-consumer"
+      TOKIO_WORKER_THREADS: "4"
+      BATCH_SIZE: "20"
+      BATCH_TIMEOUT_MS: "5000"
+      PROCESSING_INTERVAL_MS: "100"
+      RECONNECT_DELAY_MS: "5000"
+      MAX_RETRIES: "3"
+      HTTP_PORT: "8081"
+      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
+    ports:
+      - "8081"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
   prometheus:
     image: prom/prometheus:latest
     command:
@@ -204,6 +259,8 @@ services:
 
 volumes:
   surrealdb_data:
+    driver: local
+  database-data:
     driver: local
   prometheus_data:
     driver: local

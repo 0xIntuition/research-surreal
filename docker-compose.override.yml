@@ -86,6 +86,33 @@ services:
     networks:
       - rindexer-network
 
+  # Override redis-postgres-sync for local development
+  redis-postgres-sync:
+    environment:
+      RUST_LOG: "redis_postgres_sync=info,tokio=warn"
+      RUST_BACKTRACE: "1"
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5444/storage
+      CONSUMER_GROUP: "postgres-sync"
+      CONSUMER_NAME: "main-consumer"
+      TOKIO_WORKER_THREADS: "2"
+      BATCH_SIZE: "10"
+      BATCH_TIMEOUT_MS: "500"
+      PROCESSING_INTERVAL_MS: "500"
+      RECONNECT_DELAY_MS: "2000"
+      MAX_RETRIES: "5"
+      HTTP_PORT: "8081"
+      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
+    ports:
+      - "8081:8081"  # Health check endpoint
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - rindexer-network
+
   surrealist:
     image: surrealdb/surrealist:latest
     container_name: surrealist
