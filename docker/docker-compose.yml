@@ -7,8 +7,8 @@ services:
       RPC_URL: ${RPC_URL}
       REDIS_URL: ${REDIS_URL}
     volumes:
-      - ./rindexer.yaml:/app/rindexer.yaml:ro
-      - ./abi:/app/abi:ro
+      - ../rindexer/rindexer.yaml:/app/rindexer.yaml:ro
+      - ../rindexer/abi:/app/abi:ro
     ports:
       - "3005"
     restart: unless-stopped
@@ -22,7 +22,7 @@ services:
     command: ["start", "--bind", "0.0.0.0:8000", "--user", "root", "--pass", "root", "--import-file", "/schema.surql", "rocksdb:/data/surreal.db"]
     volumes:
       - surrealdb_data:/data
-      - ./surrealdb-schema.surql:/schema.surql:ro
+      - ../redis-surreal-sync/migrations/surrealdb-schema.surql:/schema.surql:ro
     environment:
       # Authentication and Security
       SURREAL_USER: "root"
@@ -93,7 +93,7 @@ services:
 
   redis-surreal-sync:
     build:
-      context: ./redis-surreal-sync
+      context: ../redis-surreal-sync
       dockerfile: Dockerfile
     environment:
       RUST_LOG: "redis_surreal_sync=info,tokio=warn"
@@ -149,7 +149,7 @@ services:
 
   redis-postgres-sync:
     build:
-      context: ./redis-postgres-sync
+      context: ../redis-postgres-sync
       dockerfile: Dockerfile
     environment:
       RUST_LOG: "redis_postgres_sync=info,tokio=warn"
@@ -193,7 +193,7 @@ services:
       - '--web.enable-admin-api'
     volumes:
       - prometheus_data:/prometheus
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090"
     restart: unless-stopped
@@ -215,8 +215,8 @@ services:
       GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000"
     restart: unless-stopped
@@ -231,9 +231,9 @@ services:
       - "traefik.http.routers.grafana-app.tls.certResolver=letsencrypt"
       - "traefik.http.services.grafana-app.loadbalancer.server.port=3000"
 
-  jupiter:
+  example-web-app:
     build:
-      context: ./jupiter
+      context: ../example-web-app
       dockerfile: Dockerfile
     environment:
       SURREAL_URL: ${SURREAL_URL}
@@ -252,10 +252,10 @@ services:
       - dokploy-network
     labels:
       - "traefik.enable=true"
-      - "traefik.http.routers.jupiter-app.rule=Host(`${JUPITER_DOMAIN}`)"
-      - "traefik.http.routers.jupiter-app.entrypoints=websecure"
-      - "traefik.http.routers.jupiter-app.tls.certResolver=letsencrypt"
-      - "traefik.http.services.jupiter-app.loadbalancer.server.port=3001"
+      - "traefik.http.routers.example-web-app-app.rule=Host(`${EXAMPLE_WEB_APP_DOMAIN}`)"
+      - "traefik.http.routers.example-web-app-app.entrypoints=websecure"
+      - "traefik.http.routers.example-web-app-app.tls.certResolver=letsencrypt"
+      - "traefik.http.services.example-web-app-app.loadbalancer.server.port=3001"
 
 volumes:
   surrealdb_data:

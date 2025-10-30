@@ -9,7 +9,7 @@ services:
       - "6379:6379"
     volumes:
       - redis_data:/data
-      - ./redis.conf:/redis.conf:ro
+      - ../redis/redis.conf:/redis.conf:ro
     command: ["redis-server", "/redis.conf"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -131,7 +131,7 @@ services:
     ports:
       - "9191:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -153,8 +153,8 @@ services:
       - "3009:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -167,7 +167,7 @@ services:
     restart: unless-stopped
 
 
-  jupiter:
+  example-web-app:
     ports:
       - "3033:3001"
 
