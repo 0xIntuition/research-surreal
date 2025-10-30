@@ -6,6 +6,7 @@ pub mod atom_created;
 pub mod deposited;
 pub mod triple_created;
 pub mod redeemed;
+pub mod share_price_changed;
 pub mod generic;
 
 pub use surreal_client::SurrealClient;

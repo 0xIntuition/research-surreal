@@ -9,6 +9,7 @@ use super::atom_created::{AtomCreatedEvent, handle_atom_created};
 use super::deposited::{DepositedEvent, handle_deposited};
 use super::triple_created::{TripleCreatedEvent, handle_triple_created};
 use super::redeemed::{RedeemedEvent, handle_redeemed};
+use super::share_price_changed::{SharePriceChangedEvent, handle_share_price_changed};
 use super::generic::handle_generic_event;
 
 /// Process an event and store it directly in SurrealDB
@@ -60,6 +61,16 @@ pub async fn process_event(
                     e
                 })?;
             handle_redeemed(db, event, tx_info).await?
+        },
+        "SharePriceChanged" => {
+            debug!("Processing SharePriceChanged event with raw data: {}", serde_json::to_string_pretty(&event_data).unwrap_or_else(|_| "Failed to serialize event_data for logging".to_string()));
+            let event: SharePriceChangedEvent = serde_json::from_value(event_data.clone())
+                .map_err(|e| {
+                    error!("Failed to deserialize SharePriceChanged event: {}", e);
+                    error!("Raw event data: {}", serde_json::to_string_pretty(&event_data).unwrap_or_else(|_| "Failed to serialize for logging".to_string()));
+                    e
+                })?;
+            handle_share_price_changed(db, event, tx_info).await?
         },
         _ => {
             debug!("Processing generic event '{}' with raw data: {}", event_name, serde_json::to_string_pretty(&event_data).unwrap_or_else(|_| "Failed to serialize event_data for logging".to_string()));

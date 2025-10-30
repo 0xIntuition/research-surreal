@@ -1,8 +1,20 @@
 [
   {
-    "type": "constructor",
+    "type": "receive",
+    "stateMutability": "payable"
+  },
+  {
+    "type": "function",
+    "name": "ATOM_SALT",
     "inputs": [],
-    "stateMutability": "nonpayable"
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -13,19 +25,6 @@
         "name": "",
         "type": "address",
         "internalType": "address"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "CONTROLLER_ROLE",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "bytes32",
-        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -71,42 +70,26 @@
   },
   {
     "type": "function",
-    "name": "ONE_SHARE",
+    "name": "MIGRATOR_ROLE",
     "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
   },
   {
     "type": "function",
-    "name": "_maxRedeem",
-    "inputs": [
-      {
-        "name": "sender",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
-        "name": "termId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      },
-      {
-        "name": "curveId",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
+    "name": "TRIPLE_SALT",
+    "inputs": [],
     "outputs": [
       {
         "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -161,7 +144,7 @@
       {
         "name": "approvalType",
         "type": "uint8",
-        "internalType": "enum IMultiVault.ApprovalTypes"
+        "internalType": "enum ApprovalTypes"
       }
     ],
     "outputs": [],
@@ -222,6 +205,112 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "batchSetAtomData",
+    "inputs": [
+      {
+        "name": "creators",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "atomDataArray",
+        "type": "bytes[]",
+        "internalType": "bytes[]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "batchSetTripleData",
+    "inputs": [
+      {
+        "name": "creators",
+        "type": "address[]",
+        "internalType": "address[]"
+      },
+      {
+        "name": "tripleAtomIds",
+        "type": "bytes32[3][]",
+        "internalType": "bytes32[3][]"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "batchSetUserBalances",
+    "inputs": [
+      {
+        "name": "params",
+        "type": "tuple",
+        "internalType": "struct MultiVaultMigrationMode.BatchSetUserBalancesParams",
+        "components": [
+          {
+            "name": "termIds",
+            "type": "bytes32[][]",
+            "internalType": "bytes32[][]"
+          },
+          {
+            "name": "bondingCurveId",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "users",
+            "type": "address[]",
+            "internalType": "address[]"
+          },
+          {
+            "name": "userBalances",
+            "type": "uint256[][]",
+            "internalType": "uint256[][]"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "batchSetVaultTotals",
+    "inputs": [
+      {
+        "name": "termIds",
+        "type": "bytes32[]",
+        "internalType": "bytes32[]"
+      },
+      {
+        "name": "bondingCurveId",
+        "type": "uint256",
+        "internalType": "uint256"
+      },
+      {
+        "name": "vaultTotals",
+        "type": "tuple[]",
+        "internalType": "struct MultiVaultMigrationMode.VaultTotals[]",
+        "components": [
+          {
+            "name": "totalAssets",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "totalShares",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -360,7 +449,7 @@
         "internalType": "bytes32"
       },
       {
-        "name": "bondingCurveId",
+        "name": "curveId",
         "type": "uint256",
         "internalType": "uint256"
       },
@@ -655,14 +744,9 @@
         "internalType": "uint256"
       },
       {
-        "name": "decimalPrecision",
+        "name": "feeThreshold",
         "type": "uint256",
         "internalType": "uint256"
-      },
-      {
-        "name": "protocolFeeDistributionEnabled",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -714,19 +798,6 @@
   {
     "type": "function",
     "name": "getAtomCost",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "getAtomCreationCost",
     "inputs": [],
     "outputs": [
       {
@@ -796,19 +867,6 @@
   },
   {
     "type": "function",
-    "name": "getDefaultCurveId",
-    "inputs": [],
-    "outputs": [
-      {
-        "name": "",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
     "name": "getGeneralConfig",
     "inputs": [],
     "outputs": [
@@ -853,16 +911,30 @@
             "internalType": "uint256"
           },
           {
-            "name": "decimalPrecision",
+            "name": "feeThreshold",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "protocolFeeDistributionEnabled",
-            "type": "bool",
-            "internalType": "bool"
           }
         ]
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getInverseTripleId",
+    "inputs": [
+      {
+        "name": "tripleId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bytes32",
+        "internalType": "bytes32"
       }
     ],
     "stateMutability": "view"
@@ -979,11 +1051,6 @@
             "internalType": "uint256"
           },
           {
-            "name": "totalAtomDepositsOnTripleCreation",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
             "name": "atomDepositFractionForTriple",
             "type": "uint256",
             "internalType": "uint256"
@@ -1021,6 +1088,49 @@
         "name": "",
         "type": "bytes32",
         "internalType": "bytes32"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getUserLastActiveEpoch",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "getUserUtilization",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "epoch",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "int256",
+        "internalType": "int256"
       }
     ],
     "stateMutability": "view"
@@ -1110,6 +1220,25 @@
   },
   {
     "type": "function",
+    "name": "getVaultType",
+    "inputs": [
+      {
+        "name": "termId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "uint8",
+        "internalType": "enum VaultType"
+      }
+    ],
+    "stateMutability": "view"
+  },
+  {
+    "type": "function",
     "name": "getWalletConfig",
     "inputs": [],
     "outputs": [
@@ -1118,11 +1247,6 @@
         "type": "tuple",
         "internalType": "struct WalletConfig",
         "components": [
-          {
-            "name": "permit2",
-            "type": "address",
-            "internalType": "contract IPermit2"
-          },
           {
             "name": "entryPoint",
             "type": "address",
@@ -1235,14 +1359,9 @@
             "internalType": "uint256"
           },
           {
-            "name": "decimalPrecision",
+            "name": "feeThreshold",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "protocolFeeDistributionEnabled",
-            "type": "bool",
-            "internalType": "bool"
           }
         ]
       },
@@ -1274,11 +1393,6 @@
             "internalType": "uint256"
           },
           {
-            "name": "totalAtomDepositsOnTripleCreation",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
             "name": "atomDepositFractionForTriple",
             "type": "uint256",
             "internalType": "uint256"
@@ -1290,11 +1404,6 @@
         "type": "tuple",
         "internalType": "struct WalletConfig",
         "components": [
-          {
-            "name": "permit2",
-            "type": "address",
-            "internalType": "contract IPermit2"
-          },
           {
             "name": "entryPoint",
             "type": "address",
@@ -1438,17 +1547,27 @@
   },
   {
     "type": "function",
-    "name": "lastActiveEpoch",
+    "name": "maxRedeem",
     "inputs": [
       {
-        "name": "user",
+        "name": "sender",
         "type": "address",
         "internalType": "address"
+      },
+      {
+        "name": "termId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "curveId",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "epoch",
+        "name": "",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1507,11 +1626,6 @@
         "name": "termId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "curveId",
-        "type": "uint256",
-        "internalType": "uint256"
       },
       {
         "name": "assets",
@@ -1587,19 +1701,19 @@
         "internalType": "uint256"
       },
       {
-        "name": "assets",
+        "name": "shares",
         "type": "uint256",
         "internalType": "uint256"
       }
     ],
     "outputs": [
       {
-        "name": "shares",
+        "name": "assetsAfterFees",
         "type": "uint256",
         "internalType": "uint256"
       },
       {
-        "name": "assetsAfterFees",
+        "name": "sharesUsed",
         "type": "uint256",
         "internalType": "uint256"
       }
@@ -1614,11 +1728,6 @@
         "name": "termId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "curveId",
-        "type": "uint256",
-        "internalType": "uint256"
       },
       {
         "name": "assets",
@@ -1660,25 +1769,6 @@
         "name": "",
         "type": "uint256",
         "internalType": "uint256"
-      }
-    ],
-    "stateMutability": "view"
-  },
-  {
-    "type": "function",
-    "name": "protocolFeeDistributionEnabledAtEpoch",
-    "inputs": [
-      {
-        "name": "epoch",
-        "type": "uint256",
-        "internalType": "uint256"
-      }
-    ],
-    "outputs": [
-      {
-        "name": "isProtocolFeeDistributionEnabled",
-        "type": "bool",
-        "internalType": "bool"
       }
     ],
     "stateMutability": "view"
@@ -1892,16 +1982,24 @@
             "internalType": "uint256"
           },
           {
-            "name": "decimalPrecision",
+            "name": "feeThreshold",
             "type": "uint256",
             "internalType": "uint256"
-          },
-          {
-            "name": "protocolFeeDistributionEnabled",
-            "type": "bool",
-            "internalType": "bool"
           }
         ]
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "setTermCount",
+    "inputs": [
+      {
+        "name": "_termCount",
+        "type": "uint256",
+        "internalType": "uint256"
       }
     ],
     "outputs": [],
@@ -1918,11 +2016,6 @@
         "components": [
           {
             "name": "tripleCreationProtocolFee",
-            "type": "uint256",
-            "internalType": "uint256"
-          },
-          {
-            "name": "totalAtomDepositsOnTripleCreation",
             "type": "uint256",
             "internalType": "uint256"
           },
@@ -1977,11 +2070,6 @@
         "internalType": "struct WalletConfig",
         "components": [
           {
-            "name": "permit2",
-            "type": "address",
-            "internalType": "contract IPermit2"
-          },
-          {
             "name": "entryPoint",
             "type": "address",
             "internalType": "address"
@@ -2025,6 +2113,19 @@
       }
     ],
     "stateMutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "sweepAccumulatedProtocolFees",
+    "inputs": [
+      {
+        "name": "epoch",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [],
+    "stateMutability": "nonpayable"
   },
   {
     "type": "function",
@@ -2098,11 +2199,6 @@
         "internalType": "uint256"
       },
       {
-        "name": "totalAtomDepositsOnTripleCreation",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
         "name": "atomDepositFractionForTriple",
         "type": "uint256",
         "internalType": "uint256"
@@ -2116,6 +2212,30 @@
     "inputs": [],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "userEpochHistory",
+    "inputs": [
+      {
+        "name": "user",
+        "type": "address",
+        "internalType": "address"
+      },
+      {
+        "name": "",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "epoch",
+        "type": "uint256",
+        "internalType": "uint256"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -2145,11 +2265,6 @@
     "name": "walletConfig",
     "inputs": [],
     "outputs": [
-      {
-        "name": "permit2",
-        "type": "address",
-        "internalType": "contract IPermit2"
-      },
       {
         "name": "entryPoint",
         "type": "address",
@@ -2193,7 +2308,26 @@
         "name": "approvalType",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum IMultiVault.ApprovalTypes"
+        "internalType": "enum ApprovalTypes"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
+    "name": "AtomConfigUpdated",
+    "inputs": [
+      {
+        "name": "atomCreationProtocolFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "atomWalletDepositFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -2225,31 +2359,6 @@
         "type": "address",
         "indexed": false,
         "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "AtomDepositFractionDeposited",
-    "inputs": [
-      {
-        "name": "termId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "sender",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -2306,13 +2415,19 @@
   },
   {
     "type": "event",
-    "name": "ConfigSynced",
+    "name": "BondingCurveConfigUpdated",
     "inputs": [
       {
-        "name": "caller",
+        "name": "registry",
         "type": "address",
         "indexed": true,
         "internalType": "address"
+      },
+      {
+        "name": "defaultCurveId",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
       }
     ],
     "anonymous": false
@@ -2373,66 +2488,59 @@
         "name": "vaultType",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum IMultiVault.VaultType"
+        "internalType": "enum VaultType"
       }
     ],
     "anonymous": false
   },
   {
     "type": "event",
-    "name": "EntryFeeCollected",
+    "name": "GeneralConfigUpdated",
     "inputs": [
       {
-        "name": "termId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "curveId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "sender",
+        "name": "admin",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "amount",
+        "name": "protocolMultisig",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
+        "name": "feeDenominator",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "ExitFeeCollected",
-    "inputs": [
-      {
-        "name": "termId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
       },
       {
-        "name": "curveId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "sender",
+        "name": "trustBonding",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "amount",
+        "name": "minDeposit",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "minShare",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "atomDataMaxLength",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "feeThreshold",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -2539,6 +2647,12 @@
         "internalType": "uint256"
       },
       {
+        "name": "sender",
+        "type": "address",
+        "indexed": true,
+        "internalType": "address"
+      },
+      {
         "name": "amount",
         "type": "uint256",
         "indexed": false,
@@ -2628,7 +2742,7 @@
         "name": "vaultType",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum IMultiVault.VaultType"
+        "internalType": "enum VaultType"
       }
     ],
     "anonymous": false
@@ -2746,57 +2860,7 @@
         "name": "vaultType",
         "type": "uint8",
         "indexed": false,
-        "internalType": "enum IMultiVault.VaultType"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "SharesPullApproval",
-    "inputs": [
-      {
-        "name": "accountFrom",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "accountTo",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "status",
-        "type": "bool",
-        "indexed": false,
-        "internalType": "bool"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "TokensRecovered",
-    "inputs": [
-      {
-        "name": "token",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "recipient",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "amount",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
+        "internalType": "enum VaultType"
       }
     ],
     "anonymous": false
@@ -2853,6 +2917,25 @@
   },
   {
     "type": "event",
+    "name": "TripleConfigUpdated",
+    "inputs": [
+      {
+        "name": "tripleCreationProtocolFee",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      },
+      {
+        "name": "atomDepositFractionForTriple",
+        "type": "uint256",
+        "indexed": false,
+        "internalType": "uint256"
+      }
+    ],
+    "anonymous": false
+  },
+  {
+    "type": "event",
     "name": "TripleCreated",
     "inputs": [
       {
@@ -2903,34 +2986,22 @@
   },
   {
     "type": "event",
-    "name": "WalletMigrated",
+    "name": "VaultFeesUpdated",
     "inputs": [
       {
-        "name": "termId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "curveId",
+        "name": "entryFee",
         "type": "uint256",
-        "indexed": true,
+        "indexed": false,
         "internalType": "uint256"
       },
       {
-        "name": "oldWallet",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      },
-      {
-        "name": "newWallet",
-        "type": "address",
+        "name": "exitFee",
+        "type": "uint256",
         "indexed": false,
-        "internalType": "address"
+        "internalType": "uint256"
       },
       {
-        "name": "sharesMigrated",
+        "name": "protocolFee",
         "type": "uint256",
         "indexed": false,
         "internalType": "uint256"
@@ -2940,62 +3011,31 @@
   },
   {
     "type": "event",
-    "name": "WrappedERC20Registered",
+    "name": "WalletConfigUpdated",
     "inputs": [
       {
-        "name": "termId",
-        "type": "bytes32",
-        "indexed": true,
-        "internalType": "bytes32"
-      },
-      {
-        "name": "curveId",
-        "type": "uint256",
-        "indexed": true,
-        "internalType": "uint256"
-      },
-      {
-        "name": "wrappedERC20",
-        "type": "address",
-        "indexed": true,
-        "internalType": "address"
-      }
-    ],
-    "anonymous": false
-  },
-  {
-    "type": "event",
-    "name": "WrapperTransfer",
-    "inputs": [
-      {
-        "name": "from",
+        "name": "entryPoint",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "to",
+        "name": "atomWarden",
         "type": "address",
         "indexed": true,
         "internalType": "address"
       },
       {
-        "name": "termId",
-        "type": "bytes32",
+        "name": "atomWalletBeacon",
+        "type": "address",
         "indexed": true,
-        "internalType": "bytes32"
+        "internalType": "address"
       },
       {
-        "name": "curveId",
-        "type": "uint256",
+        "name": "atomWalletFactory",
+        "type": "address",
         "indexed": false,
-        "internalType": "uint256"
-      },
-      {
-        "name": "shares",
-        "type": "uint256",
-        "indexed": false,
-        "internalType": "uint256"
+        "internalType": "address"
       }
     ],
     "anonymous": false
@@ -3016,17 +3056,6 @@
       },
       {
         "name": "neededRole",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
-  },
-  {
-    "type": "error",
-    "name": "AtomDoesNotExist",
-    "inputs": [
-      {
-        "name": "termId",
         "type": "bytes32",
         "internalType": "bytes32"
       }
@@ -3070,7 +3099,50 @@
   },
   {
     "type": "error",
+    "name": "MultiVaultCore_AtomDoesNotExist",
+    "inputs": [
+      {
+        "name": "termId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MultiVaultCore_InvalidAdmin",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MultiVaultCore_TermDoesNotExist",
+    "inputs": [
+      {
+        "name": "termId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
+    "name": "MultiVaultCore_TripleDoesNotExist",
+    "inputs": [
+      {
+        "name": "termId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
+  },
+  {
+    "type": "error",
     "name": "MultiVault_ActionExceedsMaxAssets",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MultiVault_ActionExceedsMaxShares",
     "inputs": []
   },
   {
@@ -3122,22 +3194,12 @@
   },
   {
     "type": "error",
-    "name": "MultiVault_CannotDirectlyInitializeCounterTripleVault",
+    "name": "MultiVault_CannotDirectlyInitializeCounterTriple",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "MultiVault_CannotRecoverTrust",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MultiVault_ContractPaused",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MultiVault_DeployAccountFailed",
+    "name": "MultiVault_DefaultCurveMustBeInitializedViaCreatePaths",
     "inputs": []
   },
   {
@@ -3152,7 +3214,12 @@
   },
   {
     "type": "error",
-    "name": "MultiVault_DepositTooSmallToCoverGhostShares",
+    "name": "MultiVault_DepositTooSmallToCoverMinShares",
+    "inputs": []
+  },
+  {
+    "type": "error",
+    "name": "MultiVault_EpochNotTracked",
     "inputs": []
   },
   {
@@ -3193,27 +3260,17 @@
   },
   {
     "type": "error",
-    "name": "MultiVault_InvalidCurveId",
+    "name": "MultiVault_InvalidBondingCurveId",
     "inputs": []
   },
   {
     "type": "error",
-    "name": "MultiVault_InvalidReceiver",
+    "name": "MultiVault_InvalidEpoch",
     "inputs": []
   },
   {
     "type": "error",
     "name": "MultiVault_NoAtomDataProvided",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MultiVault_NoSharesToMigrate",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MultiVault_NoTriplesProvided",
     "inputs": []
   },
   {
@@ -3239,21 +3296,17 @@
   {
     "type": "error",
     "name": "MultiVault_TermDoesNotExist",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MultiVault_TermNotAtom",
-    "inputs": []
+    "inputs": [
+      {
+        "name": "termId",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      }
+    ]
   },
   {
     "type": "error",
     "name": "MultiVault_TermNotTriple",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MultiVault_TransfersNotEnabled",
     "inputs": []
   },
   {
@@ -3284,17 +3337,7 @@
   },
   {
     "type": "error",
-    "name": "MultiVault_WalletsAreTheSame",
-    "inputs": []
-  },
-  {
-    "type": "error",
     "name": "MultiVault_ZeroAddress",
-    "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "MultiVault_ZeroValue",
     "inputs": []
   },
   {
@@ -3306,16 +3349,5 @@
     "type": "error",
     "name": "ReentrancyGuardReentrantCall",
     "inputs": []
-  },
-  {
-    "type": "error",
-    "name": "TripleDoesNotExist",
-    "inputs": [
-      {
-        "name": "termId",
-        "type": "bytes32",
-        "internalType": "bytes32"
-      }
-    ]
   }
 ]

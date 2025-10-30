@@ -110,7 +110,7 @@ services:
       RECONNECT_DELAY_MS: "5000"
       MAX_RETRIES: "3"
       HTTP_PORT: "8080"
-      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed"
+      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
       - "8080"
     depends_on:
