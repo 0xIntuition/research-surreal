@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS triple_created_events (
     predicate_id TEXT NOT NULL,
     subject_id TEXT NOT NULL,
     term_id TEXT NOT NULL,
+    counter_term_id TEXT NOT NULL,
     address TEXT NOT NULL,
     block_hash TEXT NOT NULL,
     block_number BIGINT NOT NULL,
@@ -133,6 +134,7 @@ CREATE INDEX IF NOT EXISTS idx_deposited_block_number ON deposited_events(block_
 CREATE INDEX IF NOT EXISTS idx_deposited_timestamp ON deposited_events(block_timestamp);
 
 CREATE INDEX IF NOT EXISTS idx_triple_created_term_id ON triple_created_events(term_id);
+CREATE INDEX IF NOT EXISTS idx_triple_created_counter_term_id ON triple_created_events(counter_term_id);
 CREATE INDEX IF NOT EXISTS idx_triple_created_subject ON triple_created_events(subject_id);
 CREATE INDEX IF NOT EXISTS idx_triple_created_predicate ON triple_created_events(predicate_id);
 CREATE INDEX IF NOT EXISTS idx_triple_created_object ON triple_created_events(object_id);

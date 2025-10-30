@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
-use super::utils::parse_hex_to_u64;
+use super::utils::{parse_hex_to_u64, calculate_counter_term_id};
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
 
@@ -27,18 +27,22 @@ pub async fn handle_triple_created(
 ) -> Result<()> {
     let log_index = parse_hex_to_u64(&tx_info.log_index)?;
 
+    // Calculate counter_term_id using alloy keccak256
+    let counter_term_id = calculate_counter_term_id(&event.term_id)?;
+
     sqlx::query(
         r#"
         INSERT INTO triple_created_events (
-            transaction_hash, log_index, creator, object_id, predicate_id, subject_id, term_id,
+            transaction_hash, log_index, creator, object_id, predicate_id, subject_id, term_id, counter_term_id,
             address, block_hash, block_number, network, transaction_index, block_timestamp
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
         ON CONFLICT (transaction_hash, log_index) DO UPDATE SET
             creator = EXCLUDED.creator,
             object_id = EXCLUDED.object_id,
             predicate_id = EXCLUDED.predicate_id,
             subject_id = EXCLUDED.subject_id,
             term_id = EXCLUDED.term_id,
+            counter_term_id = EXCLUDED.counter_term_id,
             address = EXCLUDED.address,
             block_hash = EXCLUDED.block_hash,
             block_number = EXCLUDED.block_number,
@@ -54,6 +58,7 @@ pub async fn handle_triple_created(
     .bind(&event.predicate_id)
     .bind(&event.subject_id)
     .bind(&event.term_id)
+    .bind(&counter_term_id)
     .bind(&tx_info.address)
     .bind(&tx_info.block_hash)
     .bind(tx_info.block_number as i64)
@@ -67,6 +72,6 @@ pub async fn handle_triple_created(
         SyncError::from(e)
     })?;
 
-    debug!("Created TripleCreated record");
+    debug!("Created TripleCreated record with counter_term_id: {}", counter_term_id);
     Ok(())
 }

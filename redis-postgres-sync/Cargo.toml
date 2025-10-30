@@ -55,3 +55,6 @@ warp = "0.3"
 # System information
 num_cpus = "1.0"
 hex = "0.4.3"
+
+# Ethereum utilities
+alloy-primitives = "0.8"
