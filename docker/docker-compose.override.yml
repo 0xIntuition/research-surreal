@@ -6,10 +6,10 @@ services:
   redis:
     image: redis:7-alpine
     ports:
-      - "6379:6379"
+      - "18101:6379"
     volumes:
       - redis_data:/data
-      - ./redis.conf:/redis.conf:ro
+      - ../redis/redis.conf:/redis.conf:ro
     command: ["redis-server", "/redis.conf"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -22,7 +22,7 @@ services:
   redisinsight:
     image: redis/redisinsight:latest
     ports:
-      - '8084:5540'
+      - '18400:5540'
     volumes:
       - redisinsight:/data
     restart: unless-stopped
@@ -43,12 +43,12 @@ services:
     # Remove production labels for local development
     labels: []
     ports:
-      - "3005:3005"
+      - "18200:3005"
 
   # Override SurrealDB for local development
   surrealdb:
     ports:
-      - "8000:8000"
+      - "18102:8000"
     networks:
       - rindexer-network
     # Remove production labels for local development
@@ -73,9 +73,9 @@ services:
       RECONNECT_DELAY_MS: "2000"
       MAX_RETRIES: "5"
       # HTTP server configuration
-      HTTP_PORT: "8080"
+      HTTP_PORT: "18210"
     ports:
-      - "8080:8080"  # Health check endpoint
+      - "18210:18210"  # Health check endpoint
     depends_on:
       # postgres:
       #   condition: service_healthy
@@ -86,11 +86,38 @@ services:
     networks:
       - rindexer-network
 
+  # Override redis-postgres-sync for local development
+  redis-postgres-sync:
+    environment:
+      RUST_LOG: "redis_postgres_sync=info,tokio=warn"
+      RUST_BACKTRACE: "1"
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
+      CONSUMER_GROUP: "postgres-sync"
+      CONSUMER_NAME: "main-consumer"
+      TOKIO_WORKER_THREADS: "2"
+      BATCH_SIZE: "10"
+      BATCH_TIMEOUT_MS: "500"
+      PROCESSING_INTERVAL_MS: "500"
+      RECONNECT_DELAY_MS: "2000"
+      MAX_RETRIES: "5"
+      HTTP_PORT: "18211"
+      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
+    ports:
+      - "18211:18211"  # Health check endpoint
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+    networks:
+      - rindexer-network
+
   surrealist:
     image: surrealdb/surrealist:latest
     container_name: surrealist
     ports:
-      - "3006:8080"
+      - "18301:8080"
     depends_on:
       surrealdb:
         condition: service_healthy
@@ -102,9 +129,9 @@ services:
     image: prom/prometheus:latest
     container_name: prometheus
     ports:
-      - "9191:9090"
+      - "18500:9090"
     volumes:
-      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -123,11 +150,11 @@ services:
     image: grafana/grafana:latest
     container_name: grafana
     ports:
-      - "3009:3000"
+      - "18501:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ./monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ./monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -140,9 +167,9 @@ services:
     restart: unless-stopped
 
 
-  jupiter:
+  example-web-app:
     ports:
-      - "3033:3001"
+      - "18300:3001"
 
 networks:
   rindexer-network:

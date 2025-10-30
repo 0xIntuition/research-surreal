@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Jupiter - SurrealDB Live Query Demo",
+  title: "Example Web App - SurrealDB Live Query Demo",
   description: "Real-time event monitoring with SurrealDB",
 };
 
