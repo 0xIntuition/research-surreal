@@ -10,33 +10,33 @@ use std::time::Instant;
 lazy_static! {
     static ref REGISTRY: Registry = Registry::new();
     static ref EVENTS_PROCESSED_COUNTER: Counter = Counter::new(
-        "redis_surreal_sync_events_processed_total",
+        "redis_postgres_sync_events_processed_total",
         "Total number of events processed"
     ).unwrap();
     static ref EVENTS_FAILED_COUNTER: Counter = Counter::new(
-        "redis_surreal_sync_events_failed_total",
+        "redis_postgres_sync_events_failed_total",
         "Total number of events that failed to process"
     ).unwrap();
     static ref BATCHES_PROCESSED_COUNTER: Counter = Counter::new(
-        "redis_surreal_sync_batches_processed_total",
+        "redis_postgres_sync_batches_processed_total",
         "Total number of batches processed"
     ).unwrap();
     static ref PROCESSING_DURATION_HISTOGRAM: Histogram = Histogram::with_opts(
         prometheus::HistogramOpts::new(
-            "redis_surreal_sync_processing_duration_seconds",
+            "redis_postgres_sync_processing_duration_seconds",
             "Time spent processing events in seconds"
         ).buckets(vec![0.001, 0.01, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0])
     ).unwrap();
     static ref EVENTS_PER_SECOND_GAUGE: Gauge = Gauge::new(
-        "redis_surreal_sync_events_per_second",
+        "redis_postgres_sync_events_per_second",
         "Current events processing rate per second"
     ).unwrap();
     static ref PEAK_EVENTS_PER_SECOND_GAUGE: Gauge = Gauge::new(
-        "redis_surreal_sync_peak_events_per_second",
+        "redis_postgres_sync_peak_events_per_second",
         "Peak events processing rate per second"
     ).unwrap();
     static ref REDIS_HEALTHY_GAUGE: Gauge = Gauge::new(
-        "redis_surreal_sync_redis_healthy",
+        "redis_postgres_sync_redis_healthy",
         "Redis connection health status (1=healthy, 0=unhealthy)"
     ).unwrap();
     static ref POSTGRES_HEALTHY_GAUGE: Gauge = Gauge::new(
@@ -44,7 +44,7 @@ lazy_static! {
         "PostgreSQL connection health status (1=healthy, 0=unhealthy)"
     ).unwrap();
     static ref UPTIME_GAUGE: Gauge = Gauge::new(
-        "redis_surreal_sync_uptime_seconds",
+        "redis_postgres_sync_uptime_seconds",
         "Application uptime in seconds"
     ).unwrap();
 }
@@ -223,10 +223,10 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
         
         // Check that it contains expected metrics
-        assert!(output.contains("redis_surreal_sync_events_processed_total"));
-        assert!(output.contains("redis_surreal_sync_events_failed_total"));
-        assert!(output.contains("redis_surreal_sync_batches_processed_total"));
-        assert!(output.contains("redis_surreal_sync_processing_duration_seconds"));
+        assert!(output.contains("redis_postgres_sync_events_processed_total"));
+        assert!(output.contains("redis_postgres_sync_events_failed_total"));
+        assert!(output.contains("redis_postgres_sync_batches_processed_total"));
+        assert!(output.contains("redis_postgres_sync_processing_duration_seconds"));
         
         // Print for manual verification
         println!("Prometheus metrics output:");
