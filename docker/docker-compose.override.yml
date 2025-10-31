@@ -9,7 +9,7 @@ services:
       - "18101:6379"
     volumes:
       - redis_data:/data
-      - ../redis/redis.conf:/redis.conf:ro
+      - ../infrastructure/redis/redis.conf:/redis.conf:ro
     command: ["redis-server", "/redis.conf"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -19,15 +19,41 @@ services:
     networks:
       - rindexer-network
 
-  redisinsight:
-    image: redis/redisinsight:latest
+  redis-commander:
+    image: ghcr.io/joeferner/redis-commander:latest
     ports:
-      - '18400:5540'
-    volumes:
-      - redisinsight:/data
+      - '18400:8081'
+    environment:
+      REDIS_HOSTS: local:redis:6379
     restart: unless-stopped
     networks:
       - rindexer-network
+    depends_on:
+      redis:
+        condition: service_healthy
+
+  # Redis Exporter for Prometheus metrics
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    ports:
+      - "18401:9121"
+    environment:
+      REDIS_ADDR: redis:6379
+      # Enable stream metrics collection
+      REDIS_EXPORTER_CHECK_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
+      # Enable consumer group metrics
+      REDIS_EXPORTER_CHECK_STREAM_GROUPS: "postgres-sync,surreal-sync"
+      # Skip per-consumer metrics to reduce cardinality
+      REDIS_EXPORTER_SKIP_CHECK_STREAM_CONSUMERS: "false"
+      REDIS_EXPORTER_DEBUG: "false"
+      REDIS_EXPORTER_LOG_FORMAT: "txt"
+    networks:
+      - rindexer-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
 
   # Override rindexer service for local development
   rindexer:
@@ -134,7 +160,7 @@ services:
     ports:
       - "18500:9090"
     volumes:
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -156,8 +182,8 @@ services:
       - "18501:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -174,6 +200,18 @@ services:
     ports:
       - "18300:3001"
 
+  drizzle-studio:
+    container_name: drizzle-studio
+    build: ../infrastructure/drizzle/
+    ports:
+      - "4983:4983"
+    networks:
+      - rindexer-network
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:18100/storage
+    depends_on:
+      - postgres
+
 networks:
   rindexer-network:
     driver: bridge
@@ -186,4 +224,3 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
-  redisinsight:

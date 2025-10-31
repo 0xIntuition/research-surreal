@@ -58,6 +58,13 @@ pub struct StreamMessage {
     pub redis_message_id: String, // The actual Redis message ID for acknowledgment
 }
 
+/// Result of a batch consumption operation
+#[derive(Debug, Clone)]
+pub struct BatchConsumptionResult {
+    pub messages: Vec<StreamMessage>,
+    pub claimed_count: usize, // Number of messages that were claimed from idle state
+}
+
 /// Pipeline metrics for monitoring and observability
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PipelineMetrics {

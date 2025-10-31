@@ -132,14 +132,18 @@ This project provides a complete data pipeline solution that:
 ### 7. Admin & IDE Tools
 - **Surrealist**: SurrealDB database IDE on port 18301
 - **RedisInsight**: Redis admin UI on port 18400
+- **Drizzle Studio**: PostgreSQL database IDE available at https://local.drizzle.studio/
 
 ### 8. Monitoring Stack
 - **Prometheus**: Metrics collection (15s scrape interval) on port 18500
+  - Configuration: `infrastructure/monitoring/prometheus.yml`
 - **Grafana**: Dashboard visualization with pre-configured panels on port 18501
   - Redis-SurrealDB sync dashboard
   - Redis-PostgreSQL sync dashboard
   - Automatic data source provisioning
+  - Configuration: `infrastructure/monitoring/grafana/`
 - **Alertmanager**: Alert management (minimal configuration)
+  - Configuration: `infrastructure/monitoring/alertmanager.yml`
 
 ## Quick Start
 
@@ -169,6 +173,7 @@ docker compose up -d
 | **Grafana** | http://localhost:18501/ | Monitoring dashboards |
 | **Surrealist** | http://localhost:18301/ | SurrealDB IDE |
 | **RedisInsight** | http://localhost:18400/ | Redis admin interface |
+| **Drizzle Studio** | https://local.drizzle.studio/ | PostgreSQL database IDE |
 | **Prometheus** | http://localhost:18500/ | Metrics storage |
 | **Rindexer** | http://localhost:18200/ | GraphQL API for indexed events |
 | **SurrealDB API** | http://localhost:18102/ | Direct database access |
@@ -278,6 +283,15 @@ This scheme:
 - Non-root container execution for security
 
 ## Development
+
+### Project Structure
+
+```
+infrastructure/
+├── drizzle/          # PostgreSQL database IDE configuration
+├── monitoring/       # Prometheus, Grafana, and Alertmanager configs
+└── redis/            # Redis configuration files
+```
 
 ### Environment Variables
 

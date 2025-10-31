@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use prometheus::{Counter, Gauge, Histogram, Registry, Encoder, TextEncoder};
+use prometheus::{Counter, Gauge, Histogram, Registry, Encoder, TextEncoder, GaugeVec, CounterVec, IntGaugeVec, Opts};
 use lazy_static::lazy_static;
 use std::time::Instant;
 
@@ -47,6 +47,50 @@ lazy_static! {
         "redis_postgres_sync_uptime_seconds",
         "Application uptime in seconds"
     ).unwrap();
+
+    // Redis Streams metrics
+    static ref STREAM_LAG_GAUGE: IntGaugeVec = IntGaugeVec::new(
+        Opts::new(
+            "redis_postgres_sync_stream_lag",
+            "Estimated lag between last read message and stream end per stream"
+        ),
+        &["stream_name"]
+    ).unwrap();
+    static ref STREAM_PENDING_MESSAGES_GAUGE: IntGaugeVec = IntGaugeVec::new(
+        Opts::new(
+            "redis_postgres_sync_stream_pending_messages",
+            "Number of pending messages (consumed but not ACKed) per stream"
+        ),
+        &["stream_name"]
+    ).unwrap();
+    static ref STREAM_MESSAGES_CLAIMED_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_stream_messages_claimed_total",
+            "Total number of idle messages claimed from other consumers"
+        ),
+        &["stream_name"]
+    ).unwrap();
+    static ref STREAM_BATCH_SIZE_GAUGE: GaugeVec = GaugeVec::new(
+        Opts::new(
+            "redis_postgres_sync_stream_batch_size",
+            "Current batch size being processed per stream"
+        ),
+        &["stream_name"]
+    ).unwrap();
+    static ref STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE: GaugeVec = GaugeVec::new(
+        Opts::new(
+            "redis_postgres_sync_stream_last_message_timestamp",
+            "Unix timestamp of last processed message per stream"
+        ),
+        &["stream_name"]
+    ).unwrap();
+    static ref STREAM_MESSAGES_CONSUMED_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_stream_messages_consumed_total",
+            "Total messages consumed from each stream"
+        ),
+        &["stream_name"]
+    ).unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -79,7 +123,15 @@ impl Metrics {
         REGISTRY.register(Box::new(REDIS_HEALTHY_GAUGE.clone())).ok();
         REGISTRY.register(Box::new(POSTGRES_HEALTHY_GAUGE.clone())).ok();
         REGISTRY.register(Box::new(UPTIME_GAUGE.clone())).ok();
-        
+
+        // Register Redis Streams metrics
+        REGISTRY.register(Box::new(STREAM_LAG_GAUGE.clone())).ok();
+        REGISTRY.register(Box::new(STREAM_PENDING_MESSAGES_GAUGE.clone())).ok();
+        REGISTRY.register(Box::new(STREAM_MESSAGES_CLAIMED_COUNTER.clone())).ok();
+        REGISTRY.register(Box::new(STREAM_BATCH_SIZE_GAUGE.clone())).ok();
+        REGISTRY.register(Box::new(STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.clone())).ok();
+        REGISTRY.register(Box::new(STREAM_MESSAGES_CONSUMED_COUNTER.clone())).ok();
+
         Self {
             events_processed: Arc::new(AtomicU64::new(0)),
             events_failed: Arc::new(AtomicU64::new(0)),
@@ -158,7 +210,33 @@ impl Metrics {
     pub async fn update_last_event_time(&self) {
         *self.last_event_time.write().await = Some(Utc::now());
     }
-    
+
+    // Redis Streams metrics methods
+    pub fn record_stream_lag(&self, stream_name: &str, lag: i64) {
+        STREAM_LAG_GAUGE.with_label_values(&[stream_name]).set(lag);
+    }
+
+    pub fn record_stream_pending_messages(&self, stream_name: &str, count: i64) {
+        STREAM_PENDING_MESSAGES_GAUGE.with_label_values(&[stream_name]).set(count);
+    }
+
+    pub fn record_stream_messages_claimed(&self, stream_name: &str, count: u64) {
+        STREAM_MESSAGES_CLAIMED_COUNTER.with_label_values(&[stream_name]).inc_by(count as f64);
+    }
+
+    pub fn record_stream_batch_size(&self, stream_name: &str, size: usize) {
+        STREAM_BATCH_SIZE_GAUGE.with_label_values(&[stream_name]).set(size as f64);
+    }
+
+    pub fn record_stream_last_message_timestamp(&self, stream_name: &str) {
+        let timestamp = Utc::now().timestamp() as f64;
+        STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.with_label_values(&[stream_name]).set(timestamp);
+    }
+
+    pub fn record_stream_messages_consumed(&self, stream_name: &str, count: usize) {
+        STREAM_MESSAGES_CONSUMED_COUNTER.with_label_values(&[stream_name]).inc_by(count as f64);
+    }
+
     pub async fn get_snapshot(&self) -> MetricsSnapshot {
         let uptime = (Utc::now() - self.start_time).num_seconds() as u64;
         UPTIME_GAUGE.set(uptime as f64);

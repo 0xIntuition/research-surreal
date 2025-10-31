@@ -2,7 +2,7 @@ use redis::{aio::MultiplexedConnection, Client};
 use std::collections::HashMap;
 use tracing::{debug, error, info};
 
-use crate::core::types::{RindexerEvent, StreamMessage};
+use crate::core::types::{RindexerEvent, StreamMessage, BatchConsumptionResult};
 use crate::error::{Result, SyncError};
 
 pub struct RedisStreamConsumer {
@@ -69,12 +69,15 @@ impl RedisStreamConsumer {
         Ok(())
     }
 
-    pub async fn consume_batch(&self, batch_size: usize) -> Result<Vec<StreamMessage>> {
+    pub async fn consume_batch(&self, batch_size: usize) -> Result<BatchConsumptionResult> {
         debug!("consume_batch called with batch_size: {}", batch_size);
-        
+
         if self.stream_names.is_empty() {
             debug!("No stream names configured, returning empty result");
-            return Ok(Vec::new());
+            return Ok(BatchConsumptionResult {
+                messages: Vec::new(),
+                claimed_count: 0,
+            });
         }
 
         debug!("Stream names: {:?}", self.stream_names);
@@ -84,8 +87,12 @@ impl RedisStreamConsumer {
         for stream_name in &self.stream_names {
             let claimed_messages = self.claim_idle_messages_for_stream(stream_name, batch_size).await?;
             if !claimed_messages.is_empty() {
-                debug!("Claimed {} idle messages from stream {}", claimed_messages.len(), stream_name);
-                return Ok(claimed_messages);
+                let count = claimed_messages.len();
+                debug!("Claimed {} idle messages from stream {}", count, stream_name);
+                return Ok(BatchConsumptionResult {
+                    messages: claimed_messages,
+                    claimed_count: count,
+                });
             }
         }
 
@@ -113,7 +120,11 @@ impl RedisStreamConsumer {
         let result: redis::Value = cmd.query_async(&mut self.connection.clone()).await
             .map_err(SyncError::Redis)?;
 
-        self.parse_redis_response(result)
+        let messages = self.parse_redis_response(result)?;
+        Ok(BatchConsumptionResult {
+            messages,
+            claimed_count: 0,
+        })
     }
 
     async fn read_pending_messages(&self, batch_size: usize) -> Result<Vec<StreamMessage>> {
@@ -230,12 +241,100 @@ impl RedisStreamConsumer {
             .query_async(&mut self.connection.clone())
             .await
             .map_err(SyncError::Redis)?;
-        
+
         if ack_count == 0 {
             debug!("Message {} was already acknowledged in stream {}", message_id, stream_name);
         }
-        
+
         Ok(())
+    }
+
+    /// Get stream metrics for monitoring - returns (lag, pending_count) for a stream
+    ///
+    /// Uses XINFO GROUPS to get accurate metrics:
+    /// - lag: Number of entries in the stream not yet delivered to the consumer group
+    /// - pending: Number of messages delivered but awaiting ACK
+    pub async fn get_stream_metrics(&self, stream_name: &str) -> Result<(i64, i64)> {
+        use tracing::warn;
+
+        // Get consumer group info using XINFO GROUPS
+        let groups_result: redis::Value = redis::cmd("XINFO")
+            .arg("GROUPS")
+            .arg(stream_name)
+            .query_async(&mut self.connection.clone())
+            .await
+            .map_err(|e| {
+                warn!("Failed to get stream info for {}: {}", stream_name, e);
+                e
+            })
+            .map_err(SyncError::Redis)?;
+
+        // Parse the XINFO GROUPS response to find our consumer group
+        let (lag, pending_count) = match groups_result {
+            redis::Value::Array(groups) => {
+                // XINFO GROUPS returns array of groups, each group is an array of field-value pairs
+                for group_data in groups {
+                    if let redis::Value::Array(fields) = group_data {
+                        let mut group_name = String::new();
+                        let mut lag_value: i64 = 0;
+                        let mut pending_value: i64 = 0;
+
+                        // Parse field-value pairs
+                        for chunk in fields.chunks(2) {
+                            if chunk.len() == 2 {
+                                let key = match &chunk[0] {
+                                    redis::Value::BulkString(k) => String::from_utf8_lossy(k).to_string(),
+                                    redis::Value::SimpleString(k) => k.clone(),
+                                    _ => continue,
+                                };
+
+                                match key.as_str() {
+                                    "name" => {
+                                        group_name = match &chunk[1] {
+                                            redis::Value::BulkString(v) => String::from_utf8_lossy(v).to_string(),
+                                            redis::Value::SimpleString(v) => v.clone(),
+                                            _ => String::new(),
+                                        };
+                                    }
+                                    "lag" => {
+                                        lag_value = match &chunk[1] {
+                                            redis::Value::Int(v) => *v,
+                                            _ => 0,
+                                        };
+                                    }
+                                    "pending" => {
+                                        pending_value = match &chunk[1] {
+                                            redis::Value::Int(v) => *v,
+                                            _ => 0,
+                                        };
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+
+                        // Check if this is our consumer group
+                        if group_name == self.consumer_group {
+                            return Ok((lag_value, pending_value));
+                        }
+                    }
+                }
+
+                // Consumer group not found
+                warn!("Consumer group '{}' not found for stream '{}'", self.consumer_group, stream_name);
+                (0, 0)
+            }
+            _ => {
+                warn!("Unexpected response format from XINFO GROUPS for stream '{}'", stream_name);
+                (0, 0)
+            }
+        };
+
+        Ok((lag, pending_count))
+    }
+
+    pub fn get_stream_names(&self) -> &[String] {
+        &self.stream_names
     }
 
     fn parse_redis_response(&self, value: redis::Value) -> Result<Vec<StreamMessage>> {
