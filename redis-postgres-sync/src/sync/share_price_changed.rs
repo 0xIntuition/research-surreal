@@ -32,7 +32,7 @@ pub async fn handle_share_price_changed(
 
     // Format IDs with 0x prefix
     let term_id = ensure_hex_prefix(&event.term_id);
-    let curve_id = ensure_hex_prefix(&event.curve_id);
+    let curve_id = &event.curve_id; // Keep curve_id as-is (without 0x prefix)
 
     sqlx::query(
         r#"

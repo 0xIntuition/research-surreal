@@ -172,7 +172,7 @@ impl PostgresClient {
                             .ok_or(SyncError::Processing("Missing curveId".to_string())) {
                             // Format IDs to match database format
                             let term_id_formatted = ensure_hex_prefix(term_id);
-                            let curve_id_formatted = ensure_hex_prefix(curve_id);
+                            let curve_id_formatted = curve_id.to_string(); // Keep curve_id as-is (without 0x prefix)
                             let receiver_formatted = to_eip55_address(receiver)?;
 
                             self.cascade_processor.process_position_change(
@@ -202,7 +202,7 @@ impl PostgresClient {
                             .ok_or(SyncError::Processing("Missing curveId".to_string())) {
                             // Format IDs to match database format
                             let term_id_formatted = ensure_hex_prefix(term_id);
-                            let curve_id_formatted = ensure_hex_prefix(curve_id);
+                            let curve_id_formatted = curve_id.to_string(); // Keep curve_id as-is (without 0x prefix)
                             let receiver_formatted = to_eip55_address(receiver)?;
 
                             self.cascade_processor.process_position_change(
@@ -229,7 +229,7 @@ impl PostgresClient {
                         .ok_or(SyncError::Processing("Missing curveId".to_string())) {
                         // Format IDs to match database format
                         let term_id_formatted = ensure_hex_prefix(term_id);
-                        let curve_id_formatted = ensure_hex_prefix(curve_id);
+                        let curve_id_formatted = curve_id.to_string(); // Keep curve_id as-is (without 0x prefix)
 
                         self.cascade_processor.process_price_change(
                             &mut tx, &term_id_formatted, &curve_id_formatted

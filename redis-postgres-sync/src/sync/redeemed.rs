@@ -33,7 +33,7 @@ pub async fn handle_redeemed(
 
     // Format IDs with 0x prefix and addresses in EIP-55 format
     let term_id = ensure_hex_prefix(&event.term_id);
-    let curve_id = ensure_hex_prefix(&event.curve_id);
+    let curve_id = &event.curve_id; // Keep curve_id as-is (without 0x prefix)
     let receiver = to_eip55_address(&event.receiver)?;
     let sender = to_eip55_address(&event.sender)?;
 
