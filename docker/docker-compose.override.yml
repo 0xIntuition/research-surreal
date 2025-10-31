@@ -32,6 +32,29 @@ services:
       redis:
         condition: service_healthy
 
+  # Redis Exporter for Prometheus metrics
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    container_name: redis-exporter
+    ports:
+      - "18401:9121"
+    environment:
+      REDIS_ADDR: redis:6379
+      # Enable stream metrics collection
+      REDIS_EXPORTER_CHECK_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
+      # Enable consumer group metrics
+      REDIS_EXPORTER_CHECK_STREAM_GROUPS: "postgres-sync,surreal-sync"
+      # Skip per-consumer metrics to reduce cardinality
+      REDIS_EXPORTER_SKIP_CHECK_STREAM_CONSUMERS: "false"
+      REDIS_EXPORTER_DEBUG: "false"
+      REDIS_EXPORTER_LOG_FORMAT: "txt"
+    networks:
+      - rindexer-network
+    depends_on:
+      redis:
+        condition: service_healthy
+    restart: unless-stopped
+
   # Override rindexer service for local development
   rindexer:
     environment:

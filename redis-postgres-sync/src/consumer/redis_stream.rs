@@ -2,7 +2,7 @@ use redis::{aio::MultiplexedConnection, Client};
 use std::collections::HashMap;
 use tracing::{debug, error, info};
 
-use crate::core::types::{RindexerEvent, StreamMessage};
+use crate::core::types::{RindexerEvent, StreamMessage, BatchConsumptionResult};
 use crate::error::{Result, SyncError};
 
 pub struct RedisStreamConsumer {
@@ -69,12 +69,15 @@ impl RedisStreamConsumer {
         Ok(())
     }
 
-    pub async fn consume_batch(&self, batch_size: usize) -> Result<Vec<StreamMessage>> {
+    pub async fn consume_batch(&self, batch_size: usize) -> Result<BatchConsumptionResult> {
         debug!("consume_batch called with batch_size: {}", batch_size);
-        
+
         if self.stream_names.is_empty() {
             debug!("No stream names configured, returning empty result");
-            return Ok(Vec::new());
+            return Ok(BatchConsumptionResult {
+                messages: Vec::new(),
+                claimed_count: 0,
+            });
         }
 
         debug!("Stream names: {:?}", self.stream_names);
@@ -84,8 +87,12 @@ impl RedisStreamConsumer {
         for stream_name in &self.stream_names {
             let claimed_messages = self.claim_idle_messages_for_stream(stream_name, batch_size).await?;
             if !claimed_messages.is_empty() {
-                debug!("Claimed {} idle messages from stream {}", claimed_messages.len(), stream_name);
-                return Ok(claimed_messages);
+                let count = claimed_messages.len();
+                debug!("Claimed {} idle messages from stream {}", count, stream_name);
+                return Ok(BatchConsumptionResult {
+                    messages: claimed_messages,
+                    claimed_count: count,
+                });
             }
         }
 
@@ -113,7 +120,11 @@ impl RedisStreamConsumer {
         let result: redis::Value = cmd.query_async(&mut self.connection.clone()).await
             .map_err(SyncError::Redis)?;
 
-        self.parse_redis_response(result)
+        let messages = self.parse_redis_response(result)?;
+        Ok(BatchConsumptionResult {
+            messages,
+            claimed_count: 0,
+        })
     }
 
     async fn read_pending_messages(&self, batch_size: usize) -> Result<Vec<StreamMessage>> {
@@ -230,12 +241,52 @@ impl RedisStreamConsumer {
             .query_async(&mut self.connection.clone())
             .await
             .map_err(SyncError::Redis)?;
-        
+
         if ack_count == 0 {
             debug!("Message {} was already acknowledged in stream {}", message_id, stream_name);
         }
-        
+
         Ok(())
+    }
+
+    /// Get stream metrics for monitoring - returns (lag, pending_count) for a stream
+    pub async fn get_stream_metrics(&self, stream_name: &str) -> Result<(i64, i64)> {
+        // Get stream length using XLEN
+        let stream_length: i64 = redis::cmd("XLEN")
+            .arg(stream_name)
+            .query_async(&mut self.connection.clone())
+            .await
+            .unwrap_or(0);
+
+        // Get pending messages count using XPENDING
+        let pending_result: redis::Value = redis::cmd("XPENDING")
+            .arg(stream_name)
+            .arg(&self.consumer_group)
+            .query_async(&mut self.connection.clone())
+            .await
+            .unwrap_or(redis::Value::Nil);
+
+        let pending_count = match pending_result {
+            redis::Value::Array(ref arr) if !arr.is_empty() => {
+                // XPENDING returns [count, smallest_id, largest_id, consumers]
+                if let redis::Value::Int(count) = arr[0] {
+                    count
+                } else {
+                    0
+                }
+            }
+            _ => 0,
+        };
+
+        // Estimate lag as difference between stream length and consumer group's last delivered ID
+        // Note: This is a simplified estimate. Real lag calculation requires tracking last_delivered_id
+        let lag = stream_length.saturating_sub(pending_count);
+
+        Ok((lag, pending_count))
+    }
+
+    pub fn get_stream_names(&self) -> &[String] {
+        &self.stream_names
     }
 
     fn parse_redis_response(&self, value: redis::Value) -> Result<Vec<StreamMessage>> {

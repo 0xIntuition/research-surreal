@@ -40,3 +40,11 @@ scrape_configs:
     scrape_interval: 30s
     metrics_path: /health
     scrape_timeout: 10s
+
+  # Redis Exporter - Redis server and Streams metrics
+  - job_name: 'redis'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    scrape_interval: 15s
+    metrics_path: /metrics
+    scrape_timeout: 10s

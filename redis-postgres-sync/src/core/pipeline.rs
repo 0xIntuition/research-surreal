@@ -1,3 +1,4 @@
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use tokio::time::{interval, Duration};
@@ -184,20 +185,46 @@ impl EventProcessingPipeline {
 
         // Consume messages from Redis
         debug!("About to call consume_batch with batch_size: {}", config.batch_size);
-        let messages = redis_consumer.consume_batch(config.batch_size).await?;
-        debug!("consume_batch returned {} messages", messages.len());
-        if messages.is_empty() {
+        let batch_result = redis_consumer.consume_batch(config.batch_size).await?;
+        debug!("consume_batch returned {} messages ({} claimed)", batch_result.messages.len(), batch_result.claimed_count);
+        if batch_result.messages.is_empty() {
             debug!("No messages received, returning early");
             return Ok(());
         }
 
-        debug!("Processing batch of {} messages", messages.len());
+        debug!("Processing batch of {} messages", batch_result.messages.len());
+
+        // Track per-stream metrics
+        let mut stream_message_counts: HashMap<String, usize> = HashMap::new();
+        let mut stream_claimed_counts: HashMap<String, usize> = HashMap::new();
+
+        for msg in &batch_result.messages {
+            *stream_message_counts.entry(msg.source_stream.clone()).or_insert(0) += 1;
+        }
+
+        // Track claimed messages per stream if any were claimed
+        if batch_result.claimed_count > 0 {
+            for msg in &batch_result.messages {
+                *stream_claimed_counts.entry(msg.source_stream.clone()).or_insert(0) += 1;
+            }
+        }
+
+        for (stream_name, count) in &stream_message_counts {
+            metrics.record_stream_batch_size(stream_name, *count);
+            metrics.record_stream_messages_consumed(stream_name, *count);
+            metrics.record_stream_last_message_timestamp(stream_name);
+        }
+
+        // Record claimed messages metric
+        for (stream_name, count) in &stream_claimed_counts {
+            metrics.record_stream_messages_claimed(stream_name, *count as u64);
+        }
 
         // Process each message
         let mut successful = 0u64;
         let mut failed = 0u64;
 
-        for message in messages {
+        for message in batch_result.messages {
             let result = metrics.time_async_operation(|| {
                 postgres_client.sync_event(&message.event)
             }).await;
@@ -242,6 +269,7 @@ impl EventProcessingPipeline {
 
     fn spawn_monitoring_task(&self) -> tokio::task::JoinHandle<()> {
         let metrics = self.metrics.clone();
+        let redis_consumer = self.redis_consumer.clone();
         let cancellation_token = self.cancellation_token.clone();
 
         tokio::spawn(async move {
@@ -250,10 +278,24 @@ impl EventProcessingPipeline {
             let mut last_check_time = std::time::Instant::now();
             let mut last_event_count = 0u64;
 
+            // Initialize claimed messages metric for all streams so it appears in Prometheus
+            for stream_name in redis_consumer.get_stream_names() {
+                metrics.record_stream_messages_claimed(stream_name, 0);
+            }
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
                         let snapshot = metrics.get_snapshot().await;
+
+                        // Query stream metrics for each stream
+                        for stream_name in redis_consumer.get_stream_names() {
+                            if let Ok((lag, pending_count)) = redis_consumer.get_stream_metrics(stream_name).await {
+                                metrics.record_stream_lag(stream_name, lag);
+                                metrics.record_stream_pending_messages(stream_name, pending_count);
+                                debug!("Stream {} metrics - lag: {}, pending: {}", stream_name, lag, pending_count);
+                            }
+                        }
 
                         // Calculate instantaneous rate (events since last check)
                         let now = std::time::Instant::now();
