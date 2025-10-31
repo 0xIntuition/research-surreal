@@ -95,7 +95,7 @@ services:
       DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
       CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
-      TOKIO_WORKER_THREADS: "2"
+      TOKIO_WORKER_THREADS: "5"
       BATCH_SIZE: "10"
       BATCH_TIMEOUT_MS: "500"
       PROCESSING_INTERVAL_MS: "500"
