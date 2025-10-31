@@ -9,7 +9,7 @@ services:
       - "18101:6379"
     volumes:
       - redis_data:/data
-      - ../redis/redis.conf:/redis.conf:ro
+      - ../infrastructure/redis/redis.conf:/redis.conf:ro
     command: ["redis-server", "/redis.conf"]
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
@@ -134,7 +134,7 @@ services:
     ports:
       - "18500:9090"
     volumes:
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
       - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -156,8 +156,8 @@ services:
       - "18501:3000"
     volumes:
       - grafana_data:/var/lib/grafana
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       GF_SECURITY_ADMIN_USER: admin
       GF_SECURITY_ADMIN_PASSWORD: admin
@@ -173,6 +173,18 @@ services:
   example-web-app:
     ports:
       - "18300:3001"
+
+  drizzle-studio:
+    container_name: drizzle-studio
+    build: ../infrastructure/drizzle/
+    ports:
+      - "4983:4983"
+    networks:
+      - rindexer-network
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@host.docker.internal:18100/storage
+    depends_on:
+      - postgres
 
 networks:
   rindexer-network:

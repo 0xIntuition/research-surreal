@@ -2,7 +2,9 @@ name: rindexer-surreal
 
 services:
   rindexer:
-    image: simonasintuition/rindexer:latest
+    build:
+      context: ../rindexer
+      dockerfile: Dockerfile
     environment:
       RPC_URL: ${RPC_URL}
       REDIS_URL: ${REDIS_URL}
@@ -197,7 +199,7 @@ services:
       - '--web.enable-admin-api'
     volumes:
       - prometheus_data:/prometheus
-      - ../monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     ports:
       - "9090"
     restart: unless-stopped
@@ -219,8 +221,8 @@ services:
       GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
     volumes:
       - grafana_data:/var/lib/grafana
-      - ../monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
-      - ../monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - ../infrastructure/monitoring/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     ports:
       - "3000"
     restart: unless-stopped
