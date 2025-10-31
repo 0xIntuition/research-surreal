@@ -51,7 +51,8 @@ impl VaultUpdater {
                     WHEN total_shares IS NULL OR current_share_price IS NULL THEN NULL
                     WHEN total_shares = 0 OR current_share_price = 0 THEN 0
                     -- Check if multiplication would overflow by comparing with max numeric
-                    WHEN total_shares > (10^78 - 1) / current_share_price THEN NULL
+                    -- Use NULLIF to prevent division by zero in the overflow check
+                    WHEN total_shares > (10^78 - 1) / NULLIF(current_share_price, 0) THEN NULL
                     ELSE (total_shares * current_share_price) / 1000000000000000000
                 END,
                 updated_at = NOW()
@@ -94,7 +95,8 @@ impl VaultUpdater {
                     WHEN total_shares IS NULL OR current_share_price IS NULL THEN NULL
                     WHEN total_shares = 0 OR current_share_price = 0 THEN 0
                     -- Check if multiplication would overflow by comparing with max numeric
-                    WHEN total_shares > (10^78 - 1) / current_share_price THEN NULL
+                    -- Use NULLIF to prevent division by zero in the overflow check
+                    WHEN total_shares > (10^78 - 1) / NULLIF(current_share_price, 0) THEN NULL
                     ELSE (total_shares * current_share_price) / 1000000000000000000
                 END,
                 updated_at = NOW()

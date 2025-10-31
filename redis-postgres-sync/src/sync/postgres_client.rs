@@ -91,6 +91,11 @@ impl PostgresClient {
         let tx_info = self.extract_transaction_info(event)?;
         debug!("Extracted transaction info: {}", serde_json::to_string_pretty(&tx_info).unwrap_or_else(|_| "Failed to serialize tx_info for logging".to_string()));
 
+        // TODO: Refactor to use a single transaction for both event insert and cascade updates
+        // Currently these use separate transactions which could lead to inconsistent state if
+        // cascade fails after event is committed. This requires refactoring all event handlers
+        // to accept a Transaction<Postgres> instead of &PgPool. Tracked for future PR.
+
         // Process the event using the appropriate handler which will create the DB entry
         // This will trigger the database triggers that update base tables (atom, triple, position, vault)
         event_handlers::process_event(
@@ -110,8 +115,10 @@ impl PostgresClient {
 
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher_mutex) = &self.redis_publisher {
-            let mut publisher = publisher_mutex.lock().await;
+            // Collect all data needed for publishing BEFORE acquiring the lock
             let term_updater = TermUpdater::new();
+            let mut term_data = Vec::new();
+
             for term_id in term_ids {
                 // Get counter_term_id for triples
                 let counter_term_id = {
@@ -120,7 +127,12 @@ impl PostgresClient {
                     tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
                     result
                 };
+                term_data.push((term_id, counter_term_id));
+            }
 
+            // Now acquire the lock and publish all messages quickly
+            let mut publisher = publisher_mutex.lock().await;
+            for (term_id, counter_term_id) in term_data {
                 if let Err(e) = publisher.publish_term_update(&term_id, counter_term_id.as_deref()).await {
                     warn!("Failed to publish term update to Redis: {}", e);
                     // Don't fail the whole operation if Redis publish fails

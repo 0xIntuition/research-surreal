@@ -4,8 +4,37 @@
 use crate::{consumer::TermUpdateMessage, error::{Result, SyncError}};
 use sqlx::PgPool;
 use tracing::{debug, info};
+use std::collections::hash_map::DefaultHasher;
+use std::hash::{Hash, Hasher};
 
 const TRIPLE_BATCH_SIZE: i64 = 100;
+
+/// Acquire an advisory lock for a triple pair using PostgreSQL's advisory lock mechanism
+/// The lock is automatically released when the transaction commits or rolls back
+async fn acquire_triple_lock(
+    tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
+    term_id: &str,
+    counter_term_id: &str,
+) -> Result<()> {
+    // Create a stable hash for the triple pair
+    // Combine both term IDs into a single string and hash to get a single i64
+    let combined = format!("{}:{}", term_id, counter_term_id);
+    let mut hasher = DefaultHasher::new();
+    combined.hash(&mut hasher);
+
+    // Convert to i64 for pg_advisory_xact_lock(bigint)
+    let lock_id = hasher.finish() as i64;
+
+    // Use pg_advisory_xact_lock which is transaction-scoped and automatically released
+    sqlx::query("SELECT pg_advisory_xact_lock($1)")
+        .bind(lock_id)
+        .execute(&mut **tx)
+        .await
+        .map_err(SyncError::Sqlx)?;
+
+    debug!("Acquired advisory lock for triple pair: {} / {} (lock_id: {})", term_id, counter_term_id, lock_id);
+    Ok(())
+}
 
 pub async fn update_analytics_tables(
     pool: &PgPool,
@@ -17,20 +46,31 @@ pub async fn update_analytics_tables(
 
     loop {
         // Find a batch of triples that reference this term (as the triple itself, counter, subject, predicate, or object)
+        // Using UNION instead of OR for better query planning and index usage
         let affected_triples: Vec<(String, String, String, String, String)> = sqlx::query_as(
             r#"
-            SELECT
+            SELECT DISTINCT
                 term_id::text,
                 counter_term_id::text,
                 subject_id::text,
                 predicate_id::text,
                 object_id::text
-            FROM triple
-            WHERE term_id = $1
-               OR counter_term_id = $1
-               OR subject_id = $1
-               OR predicate_id = $1
-               OR object_id = $1
+            FROM (
+                SELECT term_id, counter_term_id, subject_id, predicate_id, object_id
+                FROM triple WHERE term_id = $1
+                UNION
+                SELECT term_id, counter_term_id, subject_id, predicate_id, object_id
+                FROM triple WHERE counter_term_id = $1
+                UNION
+                SELECT term_id, counter_term_id, subject_id, predicate_id, object_id
+                FROM triple WHERE subject_id = $1
+                UNION
+                SELECT term_id, counter_term_id, subject_id, predicate_id, object_id
+                FROM triple WHERE predicate_id = $1
+                UNION
+                SELECT term_id, counter_term_id, subject_id, predicate_id, object_id
+                FROM triple WHERE object_id = $1
+            ) all_triples
             ORDER BY term_id, counter_term_id
             LIMIT $2
             OFFSET $3
@@ -80,19 +120,31 @@ pub async fn update_analytics_tables(
         );
 
         // Batch update triple_vault and triple_term for all unique term pairs
-        for (term_id, counter_term_id) in triple_pairs {
-            update_triple_vault(&mut tx, &term_id, &counter_term_id).await?;
-            update_triple_term(&mut tx, &term_id, &counter_term_id).await?;
+        // Convert to vectors for batch processing
+        let triple_pairs_vec: Vec<(String, String)> = triple_pairs.into_iter().collect();
+        let predicate_object_vec: Vec<(String, String)> = predicate_object_pairs.into_iter().collect();
+        let subject_predicate_vec: Vec<(String, String)> = subject_predicate_pairs.into_iter().collect();
+
+        // Acquire all advisory locks first to prevent deadlocks
+        for (term_id, counter_term_id) in &triple_pairs_vec {
+            // Using pg_advisory_xact_lock which is automatically released at transaction end
+            acquire_triple_lock(&mut tx, term_id, counter_term_id).await?;
+        }
+
+        // Batch update all triple pairs in fewer queries
+        if !triple_pairs_vec.is_empty() {
+            update_triple_vault_batch(&mut tx, &triple_pairs_vec).await?;
+            update_triple_term_batch(&mut tx, &triple_pairs_vec).await?;
         }
 
         // Batch update predicate_object for all unique predicate-object pairs
-        for (predicate_id, object_id) in predicate_object_pairs {
-            update_predicate_object(&mut tx, &predicate_id, &object_id).await?;
+        if !predicate_object_vec.is_empty() {
+            update_predicate_object_batch(&mut tx, &predicate_object_vec).await?;
         }
 
         // Batch update subject_predicate for all unique subject-predicate pairs
-        for (subject_id, predicate_id) in subject_predicate_pairs {
-            update_subject_predicate(&mut tx, &subject_id, &predicate_id).await?;
+        if !subject_predicate_vec.is_empty() {
+            update_subject_predicate_batch(&mut tx, &subject_predicate_vec).await?;
         }
 
         // Commit the transaction for this batch
@@ -120,19 +172,25 @@ pub async fn update_analytics_tables(
     Ok(())
 }
 
-async fn update_triple_vault(
+/// Batch update triple_vault for multiple term pairs using a single query
+async fn update_triple_vault_batch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    term_id: &str,
-    counter_term_id: &str,
+    pairs: &[(String, String)],
 ) -> Result<()> {
-    // Aggregate pro vault + counter vault data for each curve_id
-    // First get all unique curve_ids for both terms, then join vaults for each
+    if pairs.is_empty() {
+        return Ok(());
+    }
+
+    // Build arrays for bulk update using unnest
+    let term_ids: Vec<&str> = pairs.iter().map(|(t, _)| t.as_str()).collect();
+    let counter_term_ids: Vec<&str> = pairs.iter().map(|(_, c)| c.as_str()).collect();
+
     let result = sqlx::query(
         r#"
         INSERT INTO triple_vault (term_id, counter_term_id, curve_id, total_shares, total_assets, position_count, market_cap, updated_at)
         SELECT
-            $1::text as term_id,
-            $2::text as counter_term_id,
+            pairs.term_id,
+            pairs.counter_term_id,
             curves.curve_id,
             COALESCE(v1.total_shares, 0) + COALESCE(v2.total_shares, 0) as total_shares,
             COALESCE(v1.total_assets, 0) + COALESCE(v2.total_assets, 0) as total_assets,
@@ -140,12 +198,15 @@ async fn update_triple_vault(
             COALESCE(v1.market_cap, 0) + COALESCE(v2.market_cap, 0) as market_cap,
             NOW() as updated_at
         FROM (
+            SELECT unnest($1::text[]) as term_id, unnest($2::text[]) as counter_term_id
+        ) pairs
+        CROSS JOIN (
             SELECT DISTINCT curve_id
             FROM vault
-            WHERE term_id IN ($1, $2)
+            WHERE term_id = ANY($1::text[]) OR term_id = ANY($2::text[])
         ) curves
-        LEFT JOIN vault v1 ON v1.term_id = $1 AND v1.curve_id = curves.curve_id
-        LEFT JOIN vault v2 ON v2.term_id = $2 AND v2.curve_id = curves.curve_id
+        LEFT JOIN vault v1 ON v1.term_id = pairs.term_id AND v1.curve_id = curves.curve_id
+        LEFT JOIN vault v2 ON v2.term_id = pairs.counter_term_id AND v2.curve_id = curves.curve_id
         ON CONFLICT (term_id, counter_term_id, curve_id) DO UPDATE
         SET total_shares = EXCLUDED.total_shares,
             total_assets = EXCLUDED.total_assets,
@@ -154,39 +215,48 @@ async fn update_triple_vault(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(term_id)
-    .bind(counter_term_id)
+    .bind(&term_ids)
+    .bind(&counter_term_ids)
     .execute(&mut **tx)
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
 
     debug!(
-        "Updated triple_vault for term {} (counter: {}): {} rows affected",
-        term_id, counter_term_id, result.rows_affected()
+        "Batch updated triple_vault for {} pairs: {} rows affected",
+        pairs.len(),
+        result.rows_affected()
     );
 
     Ok(())
 }
 
-async fn update_triple_term(
+/// Batch update triple_term for multiple term pairs using a single query
+async fn update_triple_term_batch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    term_id: &str,
-    counter_term_id: &str,
+    pairs: &[(String, String)],
 ) -> Result<()> {
-    // Aggregate triple_vault across all curves
+    if pairs.is_empty() {
+        return Ok(());
+    }
+
+    let term_ids: Vec<&str> = pairs.iter().map(|(t, _)| t.as_str()).collect();
+    let counter_term_ids: Vec<&str> = pairs.iter().map(|(_, c)| c.as_str()).collect();
+
     let result = sqlx::query(
         r#"
         INSERT INTO triple_term (term_id, counter_term_id, total_assets, total_market_cap, total_position_count, updated_at)
         SELECT
-            term_id,
-            counter_term_id,
-            COALESCE(SUM(total_assets), 0),
-            COALESCE(SUM(market_cap), 0),
-            COALESCE(SUM(position_count), 0),
+            tv.term_id,
+            tv.counter_term_id,
+            COALESCE(SUM(tv.total_assets), 0),
+            COALESCE(SUM(tv.market_cap), 0),
+            COALESCE(SUM(tv.position_count), 0),
             NOW()
-        FROM triple_vault
-        WHERE term_id = $1 AND counter_term_id = $2
-        GROUP BY term_id, counter_term_id
+        FROM triple_vault tv
+        INNER JOIN (
+            SELECT unnest($1::text[]) as term_id, unnest($2::text[]) as counter_term_id
+        ) pairs ON tv.term_id = pairs.term_id AND tv.counter_term_id = pairs.counter_term_id
+        GROUP BY tv.term_id, tv.counter_term_id
         ON CONFLICT (term_id, counter_term_id) DO UPDATE
         SET total_assets = EXCLUDED.total_assets,
             total_market_cap = EXCLUDED.total_market_cap,
@@ -194,26 +264,33 @@ async fn update_triple_term(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(term_id)
-    .bind(counter_term_id)
+    .bind(&term_ids)
+    .bind(&counter_term_ids)
     .execute(&mut **tx)
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
 
     debug!(
-        "Updated triple_term for term {} (counter: {}): {} rows affected",
-        term_id, counter_term_id, result.rows_affected()
+        "Batch updated triple_term for {} pairs: {} rows affected",
+        pairs.len(),
+        result.rows_affected()
     );
 
     Ok(())
 }
 
-async fn update_predicate_object(
+/// Batch update predicate_object for multiple pairs
+async fn update_predicate_object_batch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    predicate_id: &str,
-    object_id: &str,
+    pairs: &[(String, String)],
 ) -> Result<()> {
-    // Aggregate by predicate-object pairs
+    if pairs.is_empty() {
+        return Ok(());
+    }
+
+    let predicate_ids: Vec<&str> = pairs.iter().map(|(p, _)| p.as_str()).collect();
+    let object_ids: Vec<&str> = pairs.iter().map(|(_, o)| o.as_str()).collect();
+
     let result = sqlx::query(
         r#"
         INSERT INTO predicate_object (predicate_id, object_id, triple_count, total_position_count, total_market_cap, updated_at)
@@ -226,7 +303,9 @@ async fn update_predicate_object(
             NOW()
         FROM triple t
         LEFT JOIN triple_term tt ON t.term_id = tt.term_id AND t.counter_term_id = tt.counter_term_id
-        WHERE t.predicate_id = $1 AND t.object_id = $2
+        INNER JOIN (
+            SELECT unnest($1::text[]) as predicate_id, unnest($2::text[]) as object_id
+        ) pairs ON t.predicate_id = pairs.predicate_id AND t.object_id = pairs.object_id
         GROUP BY t.predicate_id, t.object_id
         ON CONFLICT (predicate_id, object_id) DO UPDATE
         SET triple_count = EXCLUDED.triple_count,
@@ -235,26 +314,33 @@ async fn update_predicate_object(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(predicate_id)
-    .bind(object_id)
+    .bind(&predicate_ids)
+    .bind(&object_ids)
     .execute(&mut **tx)
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
 
     debug!(
-        "Updated predicate_object for predicate {} (object: {}): {} rows affected",
-        predicate_id, object_id, result.rows_affected()
+        "Batch updated predicate_object for {} pairs: {} rows affected",
+        pairs.len(),
+        result.rows_affected()
     );
 
     Ok(())
 }
 
-async fn update_subject_predicate(
+/// Batch update subject_predicate for multiple pairs
+async fn update_subject_predicate_batch(
     tx: &mut sqlx::Transaction<'_, sqlx::Postgres>,
-    subject_id: &str,
-    predicate_id: &str,
+    pairs: &[(String, String)],
 ) -> Result<()> {
-    // Aggregate by subject-predicate pairs
+    if pairs.is_empty() {
+        return Ok(());
+    }
+
+    let subject_ids: Vec<&str> = pairs.iter().map(|(s, _)| s.as_str()).collect();
+    let predicate_ids: Vec<&str> = pairs.iter().map(|(_, p)| p.as_str()).collect();
+
     let result = sqlx::query(
         r#"
         INSERT INTO subject_predicate (subject_id, predicate_id, triple_count, total_position_count, total_market_cap, updated_at)
@@ -267,7 +353,9 @@ async fn update_subject_predicate(
             NOW()
         FROM triple t
         LEFT JOIN triple_term tt ON t.term_id = tt.term_id AND t.counter_term_id = tt.counter_term_id
-        WHERE t.subject_id = $1 AND t.predicate_id = $2
+        INNER JOIN (
+            SELECT unnest($1::text[]) as subject_id, unnest($2::text[]) as predicate_id
+        ) pairs ON t.subject_id = pairs.subject_id AND t.predicate_id = pairs.predicate_id
         GROUP BY t.subject_id, t.predicate_id
         ON CONFLICT (subject_id, predicate_id) DO UPDATE
         SET triple_count = EXCLUDED.triple_count,
@@ -276,15 +364,16 @@ async fn update_subject_predicate(
             updated_at = EXCLUDED.updated_at
         "#,
     )
-    .bind(subject_id)
-    .bind(predicate_id)
+    .bind(&subject_ids)
+    .bind(&predicate_ids)
     .execute(&mut **tx)
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
 
     debug!(
-        "Updated subject_predicate for subject {} (predicate: {}): {} rows affected",
-        subject_id, predicate_id, result.rows_affected()
+        "Batch updated subject_predicate for {} pairs: {} rows affected",
+        pairs.len(),
+        result.rows_affected()
     );
 
     Ok(())
