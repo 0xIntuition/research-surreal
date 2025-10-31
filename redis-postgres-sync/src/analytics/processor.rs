@@ -4,8 +4,7 @@
 use crate::{consumer::TermUpdateMessage, error::{Result, SyncError}};
 use sqlx::PgPool;
 use tracing::debug;
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
+use alloy_primitives::keccak256;
 
 const TRIPLE_BATCH_SIZE: i64 = 100;
 
@@ -16,14 +15,15 @@ async fn acquire_triple_lock(
     term_id: &str,
     counter_term_id: &str,
 ) -> Result<()> {
-    // Create a stable hash for the triple pair
-    // Combine both term IDs into a single string and hash to get a single i64
+    // Create a stable hash for the triple pair using keccak256
+    // This ensures stability across Rust versions and provides cryptographic collision resistance
     let combined = format!("{}:{}", term_id, counter_term_id);
-    let mut hasher = DefaultHasher::new();
-    combined.hash(&mut hasher);
+    let hash = keccak256(combined.as_bytes());
 
-    // Convert to i64 for pg_advisory_xact_lock(bigint)
-    let lock_id = hasher.finish() as i64;
+    // Convert first 8 bytes to i64, ensuring positive value for pg_advisory_xact_lock(bigint)
+    let mut bytes = [0u8; 8];
+    bytes.copy_from_slice(&hash[..8]);
+    let lock_id = i64::from_be_bytes(bytes) & 0x7FFFFFFFFFFFFFFF;
 
     // Use pg_advisory_xact_lock which is transaction-scoped and automatically released
     sqlx::query("SELECT pg_advisory_xact_lock($1)")
