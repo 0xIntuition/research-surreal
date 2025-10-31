@@ -34,7 +34,12 @@ impl EventProcessingPipeline {
         );
 
         let postgres_client = Arc::new(
-            PostgresClient::new(&config.database_url, Some(&config.redis_url)).await?
+            PostgresClient::new(
+                &config.database_url,
+                Some(&config.redis_url),
+                config.analytics_stream_name.clone(),
+            )
+            .await?
         );
 
         let circuit_breaker = Arc::new(

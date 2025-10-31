@@ -5,7 +5,8 @@
 CREATE TABLE IF NOT EXISTS atom_created_events (
     transaction_hash TEXT NOT NULL,
     log_index BIGINT NOT NULL,
-    atom_data TEXT NOT NULL,
+    atom_data TEXT,  -- Nullable: NULL when UTF-8 decode fails
+    raw_data BYTEA,  -- Stores raw bytes when UTF-8 decode fails
     atom_wallet TEXT NOT NULL,
     creator TEXT NOT NULL,
     term_id TEXT NOT NULL,

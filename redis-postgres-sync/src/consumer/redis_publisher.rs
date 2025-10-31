@@ -8,6 +8,7 @@ use crate::error::{Result, SyncError};
 /// Used to notify the analytics worker of term updates
 pub struct RedisPublisher {
     connection: MultiplexedConnection,
+    stream_name: String,
 }
 
 /// Message published to Redis stream for analytics worker
@@ -19,16 +20,22 @@ pub struct TermUpdateMessage {
 }
 
 impl RedisPublisher {
-    pub async fn new(redis_url: &str) -> Result<Self> {
+    pub async fn new(redis_url: &str, stream_name: String) -> Result<Self> {
         let client = Client::open(redis_url).map_err(SyncError::Redis)?;
         let connection = client
             .get_multiplexed_async_connection()
             .await
             .map_err(SyncError::Redis)?;
 
-        info!("Connected to Redis for publishing analytics updates");
+        info!(
+            "Connected to Redis for publishing analytics updates to stream '{}'",
+            stream_name
+        );
 
-        Ok(Self { connection })
+        Ok(Self {
+            connection,
+            stream_name,
+        })
     }
 
     /// Publish a term update to the analytics stream
@@ -46,14 +53,9 @@ impl RedisPublisher {
         let message_json =
             serde_json::to_string(&message).map_err(|e| SyncError::Serde(e))?;
 
-        debug!(
-            "Publishing term update to analytics stream: term={}, counter_term={:?}",
-            term_id, counter_term_id
-        );
-
         // Publish to Redis stream
         let message_id: String = redis::cmd("XADD")
-            .arg("term_updates") // stream name
+            .arg(&self.stream_name)
             .arg("*") // auto-generate ID
             .arg("data")
             .arg(&message_json)
@@ -62,8 +64,8 @@ impl RedisPublisher {
             .map_err(SyncError::Redis)?;
 
         debug!(
-            "Published term update: term={}, counter_term={:?}, message_id={}",
-            term_id, counter_term_id, message_id
+            "Published to stream '{}': term={}, message_id={}",
+            self.stream_name, term_id, message_id
         );
         Ok(())
     }
@@ -77,7 +79,11 @@ impl RedisPublisher {
             return Ok(());
         }
 
-        debug!("Publishing batch of {} term updates to analytics stream", updates.len());
+        debug!(
+            "Publishing batch of {} term updates to stream '{}'",
+            updates.len(),
+            self.stream_name
+        );
 
         let mut pipe = redis::pipe();
 
@@ -92,7 +98,7 @@ impl RedisPublisher {
                 serde_json::to_string(&message).map_err(|e| SyncError::Serde(e))?;
 
             pipe.cmd("XADD")
-                .arg("term_updates")
+                .arg(&self.stream_name)
                 .arg("*")
                 .arg("data")
                 .arg(&message_json);
@@ -103,10 +109,15 @@ impl RedisPublisher {
             .await
             .map_err(SyncError::Redis)?;
 
+        let first_id = message_ids.first().map(|s| s.as_str()).unwrap_or("none");
+        let last_id = message_ids.last().map(|s| s.as_str()).unwrap_or("none");
+
         debug!(
-            "Successfully published batch of {} term updates (first_id: {})",
+            "Published batch of {} updates to stream '{}' (IDs: {} ... {})",
             updates.len(),
-            message_ids.first().unwrap_or(&"none".to_string())
+            self.stream_name,
+            first_id,
+            last_id
         );
         Ok(())
     }

@@ -32,6 +32,7 @@ BEGIN
         wallet_id,
         creator_id,
         data,
+        raw_data,
         type,
         emoji,
         label,
@@ -46,7 +47,8 @@ BEGIN
         NEW.term_id,
         NEW.atom_wallet,
         NEW.creator,
-        NEW.atom_data,
+        NEW.atom_data,  -- Can be NULL if UTF-8 decode failed
+        NEW.raw_data,   -- Will contain raw bytes if atom_data is NULL
         NULL, -- type will be enriched later
         NULL, -- emoji will be enriched later
         NULL, -- label will be enriched later
@@ -62,6 +64,7 @@ BEGIN
         wallet_id = EXCLUDED.wallet_id,
         creator_id = EXCLUDED.creator_id,
         data = EXCLUDED.data,
+        raw_data = EXCLUDED.raw_data,
         last_event_block = EXCLUDED.last_event_block,
         last_event_log_index = EXCLUDED.last_event_log_index,
         updated_at = EXCLUDED.updated_at
@@ -357,7 +360,7 @@ CREATE TRIGGER trigger_update_vault
 -- ====================
 
 COMMENT ON FUNCTION is_event_newer IS 'Helper to compare (block, log_index) tuples for event ordering';
-COMMENT ON FUNCTION update_atom_table IS 'Trigger to maintain atom table from atom_created_events';
+COMMENT ON FUNCTION update_atom_table IS 'Trigger to maintain atom table from atom_created_events (supports NULL data with raw_data fallback)';
 COMMENT ON FUNCTION update_triple_table IS 'Trigger to maintain triple table from triple_created_events';
 COMMENT ON FUNCTION update_position_on_deposit IS 'Trigger to update position table on deposits (incremental)';
 COMMENT ON FUNCTION update_position_on_redeem IS 'Trigger to update position table on redemptions (incremental)';

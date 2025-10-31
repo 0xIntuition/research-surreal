@@ -10,7 +10,8 @@ CREATE TABLE atom (
     term_id TEXT PRIMARY KEY,
     wallet_id TEXT NOT NULL,
     creator_id TEXT NOT NULL,
-    data TEXT NOT NULL,
+    data TEXT,  -- Nullable: NULL when UTF-8 decode fails
+    raw_data BYTEA,  -- Stores raw bytes when UTF-8 decode fails
     type TEXT,
     emoji TEXT,
     label TEXT,

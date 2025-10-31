@@ -17,7 +17,11 @@ pub struct PostgresClient {
 }
 
 impl PostgresClient {
-    pub async fn new(database_url: &str, redis_url: Option<&str>) -> Result<Self> {
+    pub async fn new(
+        database_url: &str,
+        redis_url: Option<&str>,
+        analytics_stream_name: String,
+    ) -> Result<Self> {
         // Create connection pool
         let pool = PgPoolOptions::new()
             .max_connections(10)
@@ -63,7 +67,7 @@ impl PostgresClient {
 
         // Initialize Redis publisher if URL provided
         let redis_publisher = if let Some(url) = redis_url {
-            match RedisPublisher::new(url).await {
+            match RedisPublisher::new(url, analytics_stream_name).await {
                 Ok(publisher) => Some(Mutex::new(publisher)),
                 Err(e) => {
                     warn!("Failed to initialize Redis publisher: {}. Analytics updates will be disabled.", e);

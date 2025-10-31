@@ -94,7 +94,9 @@ services:
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
       CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
+      CONSUMER_GROUP_SUFFIX: ${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
+      ANALYTICS_STREAM_NAME: ${ANALYTICS_STREAM_NAME:-term_updates}
       TOKIO_WORKER_THREADS: "5"
       BATCH_SIZE: "10"
       BATCH_TIMEOUT_MS: "500"

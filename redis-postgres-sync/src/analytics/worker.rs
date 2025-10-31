@@ -9,7 +9,6 @@ use std::collections::HashMap;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-const STREAM_NAME: &str = "term_updates";
 const ANALYTICS_CONSUMER_GROUP_PREFIX: &str = "analytics";
 
 pub async fn start_analytics_worker(
@@ -35,16 +34,17 @@ pub async fn start_analytics_worker(
     };
 
     let consumer_name = config.consumer_name.clone();
+    let stream_name = config.analytics_stream_name.clone();
 
     info!(
-        "Analytics worker using consumer group '{}' and consumer name '{}'",
-        consumer_group, consumer_name
+        "Analytics worker using stream '{}', consumer group '{}', and consumer name '{}'",
+        stream_name, consumer_group, consumer_name
     );
 
     // Ensure consumer group exists
     let result: std::result::Result<String, redis::RedisError> = redis::cmd("XGROUP")
         .arg("CREATE")
-        .arg(STREAM_NAME)
+        .arg(&stream_name)
         .arg(&consumer_group)
         .arg("0")
         .arg("MKSTREAM")
@@ -63,7 +63,7 @@ pub async fn start_analytics_worker(
     }
 
     // Log initial stream state
-    match get_stream_pending_count(&mut redis_conn, STREAM_NAME, &consumer_group).await {
+    match get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await {
         Ok(pending) => {
             info!("Analytics worker started, {} pending messages in stream", pending);
         }
@@ -86,7 +86,7 @@ pub async fn start_analytics_worker(
 
     // Rate limiting: max messages per second
     // This prevents overwhelming the system during message floods
-    const MAX_MESSAGES_PER_SECOND: u64 = 1000;
+    const MAX_MESSAGES_PER_SECOND: u64 = 5000;
     const MIN_BATCH_INTERVAL_MS: u64 = 10; // Minimum 10ms between batches
 
     let mut last_batch_time = std::time::Instant::now();
@@ -98,7 +98,7 @@ pub async fn start_analytics_worker(
                 info!("Analytics worker received shutdown signal");
                 break;
             }
-            result = process_batch(&mut redis_conn, &pool, STREAM_NAME, &consumer_group, &consumer_name) => {
+            result = process_batch(&mut redis_conn, &pool, &stream_name, &consumer_group, &consumer_name) => {
                 match result {
                     Ok(processed_count) => {
                         if processed_count > 0 {
@@ -120,17 +120,17 @@ pub async fn start_analytics_worker(
                             // Log periodic summary
                             if last_summary_time.elapsed().as_secs() >= SUMMARY_INTERVAL_SECS {
                                 // Get stream pending count
-                                match get_stream_pending_count(&mut redis_conn, STREAM_NAME, &consumer_group).await {
+                                match get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await {
                                     Ok(pending) => {
                                         info!(
-                                            "Analytics summary: processed {} msgs total ({:.1} msg/s avg), {} pending in stream",
-                                            total_processed, rate, pending
+                                            "Analytics summary for stream '{}': processed {} msgs total ({:.1} msg/s avg), {} pending",
+                                            stream_name, total_processed, rate, pending
                                         );
                                     }
                                     Err(e) => {
                                         info!(
-                                            "Analytics summary: processed {} msgs total ({:.1} msg/s avg)",
-                                            total_processed, rate
+                                            "Analytics summary for stream '{}': processed {} msgs total ({:.1} msg/s avg)",
+                                            stream_name, total_processed, rate
                                         );
                                         debug!("Failed to get pending count: {}", e);
                                     }
@@ -253,7 +253,16 @@ async fn process_batch(
         return Ok(0);
     }
 
-    debug!("Received {} term update messages from analytics stream", messages.len());
+    let first_msg_id = messages.first().map(|(id, _)| id.as_str()).unwrap_or("none");
+    let last_msg_id = messages.last().map(|(id, _)| id.as_str()).unwrap_or("none");
+
+    debug!(
+        "Received {} messages from stream '{}' (IDs: {} ... {})",
+        messages.len(),
+        stream_name,
+        first_msg_id,
+        last_msg_id
+    );
 
     let mut successful = 0;
     let mut failed = 0;
@@ -290,8 +299,8 @@ async fn process_batch(
     }
 
     debug!(
-        "Batch complete: {} successful, {} failed (will retry)",
-        successful, failed
+        "Batch complete for stream '{}': {} successful, {} failed (will retry)",
+        stream_name, successful, failed
     );
 
     Ok(messages.len())
