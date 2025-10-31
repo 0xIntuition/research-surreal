@@ -19,15 +19,18 @@ services:
     networks:
       - rindexer-network
 
-  redisinsight:
-    image: redis/redisinsight:latest
+  redis-commander:
+    image: ghcr.io/joeferner/redis-commander:latest
     ports:
-      - '18400:5540'
-    volumes:
-      - redisinsight:/data
+      - '18400:8081'
+    environment:
+      REDIS_HOSTS: local:redis:6379
     restart: unless-stopped
     networks:
       - rindexer-network
+    depends_on:
+      redis:
+        condition: service_healthy
 
   # Override rindexer service for local development
   rindexer:
@@ -198,4 +201,3 @@ volumes:
   redis_data:
   prometheus_data:
   grafana_data:
-  redisinsight:
