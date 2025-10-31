@@ -3,7 +3,7 @@
 
 use crate::{consumer::TermUpdateMessage, error::{Result, SyncError}};
 use sqlx::PgPool;
-use tracing::{debug, info};
+use tracing::debug;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
@@ -159,10 +159,8 @@ pub async fn update_analytics_tables(
         }
     }
 
-    if total_processed == 0 {
-        info!("No triples affected by term update: {}", term_update.term_id);
-    } else {
-        info!(
+    if total_processed > 0 {
+        debug!(
             "Processed {} triples affected by term {}",
             total_processed,
             term_update.term_id

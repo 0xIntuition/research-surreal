@@ -1,5 +1,5 @@
 use sqlx::{Postgres, Transaction};
-use tracing::{debug, info};
+use tracing::debug;
 
 use crate::error::{Result, SyncError};
 use super::vault_updater::VaultUpdater;
@@ -55,7 +55,7 @@ impl CascadeProcessor {
         // Update term aggregates (sum across all vaults for this term)
         let updated_term_ids = self.term_updater.update_term_from_vaults(tx, term_id).await?;
 
-        info!("Cascade completed for position change. Updated {} terms", updated_term_ids.len());
+        debug!("Cascade completed for position change. Updated {} terms", updated_term_ids.len());
 
         // Note: Redis publishing happens after transaction commit
         // See process_position_change_with_redis for the full flow
@@ -88,7 +88,7 @@ impl CascadeProcessor {
         // Update term aggregates
         let updated_term_ids = self.term_updater.update_term_from_vaults(tx, term_id).await?;
 
-        info!("Cascade completed for price change. Updated {} terms", updated_term_ids.len());
+        debug!("Cascade completed for price change. Updated {} terms", updated_term_ids.len());
 
         Ok(())
     }
@@ -105,7 +105,7 @@ impl CascadeProcessor {
         // Initialize term entry for this atom
         self.term_updater.initialize_atom_term(tx, term_id).await?;
 
-        info!("Cascade completed for atom creation");
+        debug!("Cascade completed for atom creation");
         Ok(())
     }
 
@@ -124,7 +124,7 @@ impl CascadeProcessor {
         self.term_updater.initialize_triple_term(tx, term_id).await?;
         self.term_updater.initialize_triple_term(tx, counter_term_id).await?;
 
-        info!("Cascade completed for triple creation");
+        debug!("Cascade completed for triple creation");
         Ok(())
     }
 

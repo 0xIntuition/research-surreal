@@ -1,5 +1,5 @@
 use sqlx::{Postgres, Transaction};
-use tracing::{debug, warn};
+use tracing::debug;
 
 use crate::error::{Result, SyncError};
 
@@ -69,7 +69,7 @@ impl VaultUpdater {
         .rows_affected();
 
         if rows_affected == 0 {
-            warn!("No vault found for term={}, curve={}", term_id, curve_id);
+            debug!("No vault found for term={}, curve={}", term_id, curve_id);
         } else {
             debug!("Updated vault with position_count={}", position_count);
         }
@@ -112,7 +112,7 @@ impl VaultUpdater {
         .rows_affected();
 
         if rows_affected == 0 {
-            warn!("No vault found for term={}, curve={}", term_id, curve_id);
+            debug!("No vault found for term={}, curve={}", term_id, curve_id);
         } else {
             debug!("Recalculated market cap for vault");
         }

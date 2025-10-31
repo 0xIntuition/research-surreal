@@ -61,7 +61,7 @@ impl RedisPublisher {
             .await
             .map_err(SyncError::Redis)?;
 
-        info!(
+        debug!(
             "Published term update: term={}, counter_term={:?}, message_id={}",
             term_id, counter_term_id, message_id
         );
@@ -77,7 +77,7 @@ impl RedisPublisher {
             return Ok(());
         }
 
-        info!("Publishing batch of {} term updates to analytics stream", updates.len());
+        debug!("Publishing batch of {} term updates to analytics stream", updates.len());
 
         let mut pipe = redis::pipe();
 
@@ -103,7 +103,7 @@ impl RedisPublisher {
             .await
             .map_err(SyncError::Redis)?;
 
-        info!(
+        debug!(
             "Successfully published batch of {} term updates (first_id: {})",
             updates.len(),
             message_ids.first().unwrap_or(&"none".to_string())

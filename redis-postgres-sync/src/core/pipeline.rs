@@ -241,18 +241,48 @@ impl EventProcessingPipeline {
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60));
-            
+            let start_time = std::time::Instant::now();
+            let mut last_check_time = std::time::Instant::now();
+            let mut last_event_count = 0u64;
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
                         let snapshot = metrics.get_snapshot().await;
+
+                        // Calculate instantaneous rate (events since last check)
+                        let now = std::time::Instant::now();
+                        let elapsed_since_last_check = now.duration_since(last_check_time).as_secs_f64();
+                        let events_since_last_check = snapshot.total_events_processed.saturating_sub(last_event_count);
+                        let current_rate = if elapsed_since_last_check > 0.0 {
+                            events_since_last_check as f64 / elapsed_since_last_check
+                        } else {
+                            0.0
+                        };
+
+                        // Update the metrics with the calculated rate
+                        metrics.update_event_rate(current_rate).await;
+
+                        // Calculate average rate since start
+                        let total_elapsed = now.duration_since(start_time).as_secs_f64();
+                        let avg_rate = if total_elapsed > 0.0 {
+                            snapshot.total_events_processed as f64 / total_elapsed
+                        } else {
+                            0.0
+                        };
+
                         info!(
-                            "Metrics - Events processed: {}, not-ok: {}, batches: {}, rate: {:.2}/s", 
+                            "Metrics - Events processed: {}, not-ok: {}, batches: {}, rate: {:.2}/s (avg: {:.2}/s)",
                             snapshot.total_events_processed,
                             snapshot.total_events_failed,
                             snapshot.total_batches_processed,
-                            snapshot.events_per_second
+                            current_rate,
+                            avg_rate
                         );
+
+                        // Update tracking variables for next iteration
+                        last_check_time = now;
+                        last_event_count = snapshot.total_events_processed;
                     }
                     _ = cancellation_token.cancelled() => {
                         break;

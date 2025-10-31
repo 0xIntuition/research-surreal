@@ -62,10 +62,21 @@ pub async fn start_analytics_worker(
         }
     }
 
-    info!("Analytics worker started, processing messages...");
+    // Log initial stream state
+    match get_stream_pending_count(&mut redis_conn, STREAM_NAME, &consumer_group).await {
+        Ok(pending) => {
+            info!("Analytics worker started, {} pending messages in stream", pending);
+        }
+        Err(e) => {
+            info!("Analytics worker started, processing messages...");
+            debug!("Could not get initial pending count: {}", e);
+        }
+    }
 
     let mut total_processed = 0u64;
     let start_time = std::time::Instant::now();
+    let mut last_summary_time = std::time::Instant::now();
+    const SUMMARY_INTERVAL_SECS: u64 = 60; // Log summary every 60 seconds
 
     // Exponential backoff state
     let mut consecutive_failures = 0u32;
@@ -101,10 +112,32 @@ pub async fn start_analytics_worker(
                             } else {
                                 0.0
                             };
-                            info!(
+                            debug!(
                                 "Processed batch of {} term updates (total: {}, rate: {:.2} msg/s)",
                                 processed_count, total_processed, rate
                             );
+
+                            // Log periodic summary
+                            if last_summary_time.elapsed().as_secs() >= SUMMARY_INTERVAL_SECS {
+                                // Get stream pending count
+                                match get_stream_pending_count(&mut redis_conn, STREAM_NAME, &consumer_group).await {
+                                    Ok(pending) => {
+                                        info!(
+                                            "Analytics summary: processed {} msgs total ({:.1} msg/s avg), {} pending in stream",
+                                            total_processed, rate, pending
+                                        );
+                                    }
+                                    Err(e) => {
+                                        info!(
+                                            "Analytics summary: processed {} msgs total ({:.1} msg/s avg)",
+                                            total_processed, rate
+                                        );
+                                        debug!("Failed to get pending count: {}", e);
+                                    }
+                                }
+
+                                last_summary_time = std::time::Instant::now();
+                            }
 
                             // Rate limiting: enforce minimum interval between batches
                             let batch_elapsed = last_batch_time.elapsed();
@@ -163,6 +196,32 @@ pub async fn start_analytics_worker(
     Ok(())
 }
 
+/// Get the number of pending messages in the stream for this consumer group
+async fn get_stream_pending_count(
+    redis_conn: &mut MultiplexedConnection,
+    stream_name: &str,
+    consumer_group: &str,
+) -> Result<u64> {
+    // XPENDING returns summary: [min_id, max_id, count, consumers]
+    let result: redis::Value = redis::cmd("XPENDING")
+        .arg(stream_name)
+        .arg(consumer_group)
+        .query_async(redis_conn)
+        .await
+        .map_err(SyncError::Redis)?;
+
+    // Parse the third element which is the pending count
+    if let redis::Value::Array(ref arr) = result {
+        if arr.len() >= 3 {
+            if let redis::Value::Int(count) = arr[2] {
+                return Ok(count as u64);
+            }
+        }
+    }
+
+    Ok(0)
+}
+
 async fn process_batch(
     redis_conn: &mut MultiplexedConnection,
     pool: &PgPool,
@@ -194,7 +253,7 @@ async fn process_batch(
         return Ok(0);
     }
 
-    info!("Received {} term update messages from analytics stream", messages.len());
+    debug!("Received {} term update messages from analytics stream", messages.len());
 
     let mut successful = 0;
     let mut failed = 0;
@@ -204,7 +263,7 @@ async fn process_batch(
     for (message_id, term_update) in &messages {
         match update_analytics_tables(pool, term_update).await {
             Ok(_) => {
-                info!("Successfully updated analytics for term {}", term_update.term_id);
+                debug!("Successfully updated analytics for term {}", term_update.term_id);
                 messages_to_ack.push(message_id);
                 successful += 1;
             }
@@ -230,7 +289,7 @@ async fn process_batch(
             .map_err(SyncError::Redis)?;
     }
 
-    info!(
+    debug!(
         "Batch complete: {} successful, {} failed (will retry)",
         successful, failed
     );
