@@ -153,6 +153,8 @@ services:
     build:
       context: ../redis-postgres-sync
       dockerfile: Dockerfile
+      args:
+        BINARY_NAME: redis-postgres-sync
     environment:
       RUST_LOG: "redis_postgres_sync=info,tokio=warn"
       RUST_BACKTRACE: "1"
@@ -178,6 +180,40 @@ services:
       - dokploy-network
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
+      interval: 30s
+      timeout: 10s
+      start_period: 15s
+      retries: 3
+
+  analytics-worker:
+    build:
+      context: ../redis-postgres-sync
+      dockerfile: Dockerfile
+      args:
+        BINARY_NAME: analytics-worker
+    environment:
+      RUST_LOG: "info,tokio=warn"
+      RUST_BACKTRACE: "1"
+      REDIS_URL: ${REDIS_URL}
+      DATABASE_URL: ${DATABASE_URL}
+      CONSUMER_GROUP: analytics-${CONSUMER_GROUP_SUFFIX:-worker}
+      CONSUMER_NAME: ${CONSUMER_NAME:-analytics-consumer}
+      TOKIO_WORKER_THREADS: "4"
+      BATCH_SIZE: "100"
+      PROCESSING_INTERVAL_MS: "1000"
+      RECONNECT_DELAY_MS: "5000"
+      MAX_RETRIES: "3"
+      HTTP_PORT: "8082"
+    ports:
+      - "8082"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8082/health"]
       interval: 30s
       timeout: 10s
       start_period: 15s

@@ -21,6 +21,7 @@ pub mod sync;
 pub mod monitoring;
 pub mod error;
 pub mod http_server;
+pub mod processors;
 
 // Re-export main types for convenience
 pub use config::Config;

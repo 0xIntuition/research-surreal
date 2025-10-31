@@ -113,6 +113,33 @@ services:
     networks:
       - rindexer-network
 
+  # Override analytics-worker for local development
+  analytics-worker:
+    environment:
+      RUST_LOG: "info,tokio=warn"
+      RUST_BACKTRACE: "1"
+      REDIS_URL: redis://redis:6379
+      DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
+      CONSUMER_GROUP: analytics-${CONSUMER_GROUP_SUFFIX:-worker}
+      CONSUMER_NAME: ${CONSUMER_NAME:-analytics-consumer}
+      TOKIO_WORKER_THREADS: "2"
+      BATCH_SIZE: "50"
+      PROCESSING_INTERVAL_MS: "2000"
+      RECONNECT_DELAY_MS: "2000"
+      MAX_RETRIES: "5"
+      HTTP_PORT: "18212"
+    ports:
+      - "18212:18212"  # Health check endpoint
+    depends_on:
+      redis:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis-postgres-sync:
+        condition: service_started  # Wait for main app to start publishing
+    networks:
+      - rindexer-network
+
   surrealist:
     image: surrealdb/surrealist:latest
     container_name: surrealist
