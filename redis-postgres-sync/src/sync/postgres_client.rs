@@ -1,5 +1,6 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use tokio::time::{sleep, Duration};
+use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
 
 use crate::core::types::{RindexerEvent, TransactionInformation};
@@ -12,7 +13,7 @@ use super::utils::{ensure_hex_prefix, to_eip55_address};
 pub struct PostgresClient {
     pool: PgPool,
     cascade_processor: CascadeProcessor,
-    redis_publisher: Option<RedisPublisher>,
+    redis_publisher: Option<Mutex<RedisPublisher>>,
 }
 
 impl PostgresClient {
@@ -63,7 +64,7 @@ impl PostgresClient {
         // Initialize Redis publisher if URL provided
         let redis_publisher = if let Some(url) = redis_url {
             match RedisPublisher::new(url).await {
-                Ok(publisher) => Some(publisher),
+                Ok(publisher) => Some(Mutex::new(publisher)),
                 Err(e) => {
                     warn!("Failed to initialize Redis publisher: {}. Analytics updates will be disabled.", e);
                     None
@@ -108,7 +109,8 @@ impl PostgresClient {
         let term_ids = self.run_cascade_after_event(event).await?;
 
         // After successful commit, publish to Redis for analytics worker
-        if let Some(publisher) = &self.redis_publisher {
+        if let Some(publisher_mutex) = &self.redis_publisher {
+            let mut publisher = publisher_mutex.lock().await;
             let term_updater = TermUpdater::new();
             for term_id in term_ids {
                 // Get counter_term_id for triples

@@ -67,6 +67,19 @@ pub async fn start_analytics_worker(
     let mut total_processed = 0u64;
     let start_time = std::time::Instant::now();
 
+    // Exponential backoff state
+    let mut consecutive_failures = 0u32;
+    const MAX_BACKOFF_SECS: u64 = 60;
+    const INITIAL_BACKOFF_SECS: u64 = 1;
+    const MAX_CONSECUTIVE_FAILURES: u32 = 10;
+
+    // Rate limiting: max messages per second
+    // This prevents overwhelming the system during message floods
+    const MAX_MESSAGES_PER_SECOND: u64 = 1000;
+    const MIN_BATCH_INTERVAL_MS: u64 = 10; // Minimum 10ms between batches
+
+    let mut last_batch_time = std::time::Instant::now();
+
     // Main processing loop
     loop {
         tokio::select! {
@@ -78,6 +91,9 @@ pub async fn start_analytics_worker(
                 match result {
                     Ok(processed_count) => {
                         if processed_count > 0 {
+                            // Reset failure counter on success
+                            consecutive_failures = 0;
+
                             total_processed += processed_count as u64;
                             let elapsed = start_time.elapsed().as_secs();
                             let rate = if elapsed > 0 {
@@ -89,12 +105,54 @@ pub async fn start_analytics_worker(
                                 "Processed batch of {} term updates (total: {}, rate: {:.2} msg/s)",
                                 processed_count, total_processed, rate
                             );
+
+                            // Rate limiting: enforce minimum interval between batches
+                            let batch_elapsed = last_batch_time.elapsed();
+                            if batch_elapsed.as_millis() < MIN_BATCH_INTERVAL_MS as u128 {
+                                let sleep_ms = MIN_BATCH_INTERVAL_MS - batch_elapsed.as_millis() as u64;
+                                tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
+                            }
+
+                            // Check if we're exceeding rate limit
+                            if rate > MAX_MESSAGES_PER_SECOND as f64 {
+                                warn!(
+                                    "Processing rate ({:.2} msg/s) exceeds limit ({} msg/s), throttling...",
+                                    rate, MAX_MESSAGES_PER_SECOND
+                                );
+                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                            }
+
+                            last_batch_time = std::time::Instant::now();
                         }
                     }
                     Err(e) => {
-                        error!("Error processing batch: {}", e);
-                        // Sleep on error to avoid tight loop
-                        tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
+                        consecutive_failures += 1;
+                        error!(
+                            "Error processing batch (failure {} of {}): {}",
+                            consecutive_failures, MAX_CONSECUTIVE_FAILURES, e
+                        );
+
+                        // Calculate exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)
+                        let backoff_secs = std::cmp::min(
+                            INITIAL_BACKOFF_SECS * 2u64.pow(consecutive_failures.saturating_sub(1)),
+                            MAX_BACKOFF_SECS
+                        );
+
+                        warn!(
+                            "Backing off for {} seconds before retry (consecutive failures: {})",
+                            backoff_secs, consecutive_failures
+                        );
+                        tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
+
+                        // If we've hit max consecutive failures, log a critical error
+                        if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
+                            error!(
+                                "Analytics worker has failed {} times consecutively. Continuing with max backoff.",
+                                MAX_CONSECUTIVE_FAILURES
+                            );
+                            // Continue processing but keep the backoff at maximum
+                            consecutive_failures = MAX_CONSECUTIVE_FAILURES;
+                        }
                     }
                 }
             }

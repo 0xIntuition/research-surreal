@@ -42,11 +42,18 @@ impl VaultUpdater {
         debug!("Found {} active positions for vault", position_count);
 
         // Update vault with new position count and recalculate market_cap
+        // Use CASE to detect overflow and set to NULL if it occurs
         let rows_affected = sqlx::query(
             r#"
             UPDATE vault
             SET position_count = $1,
-                market_cap = (total_shares * current_share_price) / 1000000000000000000,
+                market_cap = CASE
+                    WHEN total_shares IS NULL OR current_share_price IS NULL THEN NULL
+                    WHEN total_shares = 0 OR current_share_price = 0 THEN 0
+                    -- Check if multiplication would overflow by comparing with max numeric
+                    WHEN total_shares > (10^78 - 1) / current_share_price THEN NULL
+                    ELSE (total_shares * current_share_price) / 1000000000000000000
+                END,
                 updated_at = NOW()
             WHERE term_id = $2
               AND curve_id = $3
@@ -83,7 +90,13 @@ impl VaultUpdater {
         let rows_affected = sqlx::query(
             r#"
             UPDATE vault
-            SET market_cap = (total_shares * current_share_price) / 1000000000000000000,
+            SET market_cap = CASE
+                    WHEN total_shares IS NULL OR current_share_price IS NULL THEN NULL
+                    WHEN total_shares = 0 OR current_share_price = 0 THEN 0
+                    -- Check if multiplication would overflow by comparing with max numeric
+                    WHEN total_shares > (10^78 - 1) / current_share_price THEN NULL
+                    ELSE (total_shares * current_share_price) / 1000000000000000000
+                END,
                 updated_at = NOW()
             WHERE term_id = $1
               AND curve_id = $2

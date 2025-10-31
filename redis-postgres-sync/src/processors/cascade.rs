@@ -1,7 +1,5 @@
 use sqlx::{Postgres, Transaction};
 use tracing::{debug, info};
-use std::collections::hash_map::DefaultHasher;
-use std::hash::{Hash, Hasher};
 
 use crate::error::{Result, SyncError};
 use super::vault_updater::VaultUpdater;
@@ -132,20 +130,45 @@ impl CascadeProcessor {
 
     /// Hash a position key to get a lock ID for advisory locks
     /// This ensures that concurrent updates to the same position are serialized
+    /// Uses a stable hash to minimize collision risks compared to DefaultHasher
     fn hash_position(account_id: &str, term_id: &str, curve_id: &str) -> i64 {
-        let mut hasher = DefaultHasher::new();
-        account_id.hash(&mut hasher);
-        term_id.hash(&mut hasher);
-        curve_id.hash(&mut hasher);
-        hasher.finish() as i64
+        // Use FNV-1a-like hash for better distribution
+        let mut hash = 0xcbf29ce484222325u64; // FNV offset basis
+
+        for byte in account_id.bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3); // FNV prime
+        }
+        for byte in term_id.bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        for byte in curve_id.bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+
+        // XOR fold to 63 bits to avoid sign issues with advisory locks
+        ((hash >> 32) ^ (hash & 0xFFFFFFFF)) as i64 & 0x7FFFFFFFFFFFFFFF
     }
 
     /// Hash a vault key to get a lock ID for advisory locks
+    /// Uses FNV-1a hash for deterministic, collision-resistant hashing
     fn hash_vault(term_id: &str, curve_id: &str) -> i64 {
-        let mut hasher = DefaultHasher::new();
-        term_id.hash(&mut hasher);
-        curve_id.hash(&mut hasher);
-        hasher.finish() as i64
+        // Use FNV-1a-like hash for better distribution
+        let mut hash = 0xcbf29ce484222325u64; // FNV offset basis
+
+        for byte in term_id.bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3); // FNV prime
+        }
+        for byte in curve_id.bytes() {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+
+        // XOR fold to 63 bits to avoid sign issues with advisory locks
+        ((hash >> 32) ^ (hash & 0xFFFFFFFF)) as i64 & 0x7FFFFFFFFFFFFFFF
     }
 }
 

@@ -33,7 +33,7 @@ impl RedisPublisher {
 
     /// Publish a term update to the analytics stream
     pub async fn publish_term_update(
-        &self,
+        &mut self,
         term_id: &str,
         counter_term_id: Option<&str>,
     ) -> Result<()> {
@@ -57,7 +57,7 @@ impl RedisPublisher {
             .arg("*") // auto-generate ID
             .arg("data")
             .arg(&message_json)
-            .query_async(&mut self.connection.clone())
+            .query_async(&mut self.connection)
             .await
             .map_err(SyncError::Redis)?;
 
@@ -70,7 +70,7 @@ impl RedisPublisher {
 
     /// Publish multiple term updates in a single pipeline for efficiency
     pub async fn publish_term_updates_batch(
-        &self,
+        &mut self,
         updates: &[(String, Option<String>)],
     ) -> Result<()> {
         if updates.is_empty() {
@@ -99,7 +99,7 @@ impl RedisPublisher {
         }
 
         let message_ids: Vec<String> = pipe
-            .query_async(&mut self.connection.clone())
+            .query_async(&mut self.connection)
             .await
             .map_err(SyncError::Redis)?;
 

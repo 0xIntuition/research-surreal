@@ -5,63 +5,117 @@ use crate::{consumer::TermUpdateMessage, error::{Result, SyncError}};
 use sqlx::PgPool;
 use tracing::{debug, info};
 
+const TRIPLE_BATCH_SIZE: i64 = 100;
+
 pub async fn update_analytics_tables(
     pool: &PgPool,
     term_update: &TermUpdateMessage,
 ) -> Result<()> {
-    // Find all triples that reference this term (as the triple itself, counter, subject, predicate, or object)
-    let affected_triples: Vec<(String, String, String, String, String)> = sqlx::query_as(
-        r#"
-        SELECT
-            term_id::text,
-            counter_term_id::text,
-            subject_id::text,
-            predicate_id::text,
-            object_id::text
-        FROM triple
-        WHERE term_id = $1
-           OR counter_term_id = $1
-           OR subject_id = $1
-           OR predicate_id = $1
-           OR object_id = $1
-        "#,
-    )
-    .bind(&term_update.term_id)
-    .fetch_all(pool)
-    .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    // Process triples in batches to avoid loading too many into memory at once
+    let mut offset = 0i64;
+    let mut total_processed = 0usize;
 
-    if affected_triples.is_empty() {
+    loop {
+        // Find a batch of triples that reference this term (as the triple itself, counter, subject, predicate, or object)
+        let affected_triples: Vec<(String, String, String, String, String)> = sqlx::query_as(
+            r#"
+            SELECT
+                term_id::text,
+                counter_term_id::text,
+                subject_id::text,
+                predicate_id::text,
+                object_id::text
+            FROM triple
+            WHERE term_id = $1
+               OR counter_term_id = $1
+               OR subject_id = $1
+               OR predicate_id = $1
+               OR object_id = $1
+            ORDER BY term_id, counter_term_id
+            LIMIT $2
+            OFFSET $3
+            "#,
+        )
+        .bind(&term_update.term_id)
+        .bind(TRIPLE_BATCH_SIZE)
+        .bind(offset)
+        .fetch_all(pool)
+        .await
+        .map_err(|e| SyncError::Sqlx(e))?;
+
+        if affected_triples.is_empty() {
+            break;
+        }
+
+        debug!(
+            "Processing batch of {} triples (offset: {}) for term {}",
+            affected_triples.len(),
+            offset,
+            term_update.term_id
+        );
+
+        // Start a transaction for this batch
+        let mut tx = pool.begin().await.map_err(SyncError::Sqlx)?;
+
+        // Collect unique combinations to avoid duplicate updates
+        // This significantly reduces the N+1 query problem by deduplicating updates
+        // Note: This could be further optimized by using a single SQL query with VALUES or unnest,
+        // but that would require more complex SQL generation and is left for future optimization.
+        use std::collections::HashSet;
+        let mut triple_pairs: HashSet<(String, String)> = HashSet::new();
+        let mut predicate_object_pairs: HashSet<(String, String)> = HashSet::new();
+        let mut subject_predicate_pairs: HashSet<(String, String)> = HashSet::new();
+
+        for (term_id, counter_term_id, subject_id, predicate_id, object_id) in &affected_triples {
+            triple_pairs.insert((term_id.clone(), counter_term_id.clone()));
+            predicate_object_pairs.insert((predicate_id.clone(), object_id.clone()));
+            subject_predicate_pairs.insert((subject_id.clone(), predicate_id.clone()));
+        }
+
+        debug!(
+            "Batch contains {} unique triple pairs, {} predicate-object pairs, {} subject-predicate pairs",
+            triple_pairs.len(),
+            predicate_object_pairs.len(),
+            subject_predicate_pairs.len()
+        );
+
+        // Batch update triple_vault and triple_term for all unique term pairs
+        for (term_id, counter_term_id) in triple_pairs {
+            update_triple_vault(&mut tx, &term_id, &counter_term_id).await?;
+            update_triple_term(&mut tx, &term_id, &counter_term_id).await?;
+        }
+
+        // Batch update predicate_object for all unique predicate-object pairs
+        for (predicate_id, object_id) in predicate_object_pairs {
+            update_predicate_object(&mut tx, &predicate_id, &object_id).await?;
+        }
+
+        // Batch update subject_predicate for all unique subject-predicate pairs
+        for (subject_id, predicate_id) in subject_predicate_pairs {
+            update_subject_predicate(&mut tx, &subject_id, &predicate_id).await?;
+        }
+
+        // Commit the transaction for this batch
+        tx.commit().await.map_err(SyncError::Sqlx)?;
+
+        total_processed += affected_triples.len();
+        offset += affected_triples.len() as i64;
+
+        // If we got fewer triples than the batch size, we've processed all triples
+        if (affected_triples.len() as i64) < TRIPLE_BATCH_SIZE {
+            break;
+        }
+    }
+
+    if total_processed == 0 {
         info!("No triples affected by term update: {}", term_update.term_id);
-        return Ok(());
+    } else {
+        info!(
+            "Processed {} triples affected by term {}",
+            total_processed,
+            term_update.term_id
+        );
     }
-
-    info!(
-        "Found {} triples affected by term {}",
-        affected_triples.len(),
-        term_update.term_id
-    );
-
-    // Start a transaction for all updates
-    let mut tx = pool.begin().await.map_err(SyncError::Sqlx)?;
-
-    // Update analytics for each affected triple
-    for (term_id, counter_term_id, subject_id, predicate_id, object_id) in affected_triples {
-        // Update triple_vault (combine pro + counter vault data)
-        update_triple_vault(&mut tx, &term_id, &counter_term_id).await?;
-
-        // Update triple_term (aggregate triple_vault by term)
-        update_triple_term(&mut tx, &term_id, &counter_term_id).await?;
-
-        // Update predicate_object aggregates
-        update_predicate_object(&mut tx, &predicate_id, &object_id).await?;
-
-        // Update subject_predicate aggregates
-        update_subject_predicate(&mut tx, &subject_id, &predicate_id).await?;
-    }
-
-    // Commit the transaction
-    tx.commit().await.map_err(SyncError::Sqlx)?;
 
     Ok(())
 }
