@@ -64,6 +64,9 @@ pub async fn start_analytics_worker(
 
     info!("Analytics worker started, processing messages...");
 
+    let mut total_processed = 0u64;
+    let start_time = std::time::Instant::now();
+
     // Main processing loop
     loop {
         tokio::select! {
@@ -75,7 +78,17 @@ pub async fn start_analytics_worker(
                 match result {
                     Ok(processed_count) => {
                         if processed_count > 0 {
-                            info!("Processed batch of {} term updates", processed_count);
+                            total_processed += processed_count as u64;
+                            let elapsed = start_time.elapsed().as_secs();
+                            let rate = if elapsed > 0 {
+                                total_processed as f64 / elapsed as f64
+                            } else {
+                                0.0
+                            };
+                            info!(
+                                "Processed batch of {} term updates (total: {}, rate: {:.2} msg/s)",
+                                processed_count, total_processed, rate
+                            );
                         }
                     }
                     Err(e) => {
@@ -123,24 +136,33 @@ async fn process_batch(
         return Ok(0);
     }
 
-    debug!("Received {} term update messages", messages.len());
+    info!("Received {} term update messages from analytics stream", messages.len());
+
+    let mut successful = 0;
+    let mut failed = 0;
+    let mut messages_to_ack = Vec::new();
 
     // Process each message
-    for (_message_id, term_update) in &messages {
+    for (message_id, term_update) in &messages {
         match update_analytics_tables(pool, term_update).await {
-            Ok(_) => debug!("Updated analytics for term {}", term_update.term_id),
+            Ok(_) => {
+                info!("Successfully updated analytics for term {}", term_update.term_id);
+                messages_to_ack.push(message_id);
+                successful += 1;
+            }
             Err(e) => {
                 warn!(
-                    "Failed to update analytics for term {}: {}",
-                    term_update.term_id, e
+                    "Failed to update analytics for term {} (message_id: {}): {}. Message will NOT be ACK'd and will be retried.",
+                    term_update.term_id, message_id, e
                 );
-                // Continue processing other messages
+                failed += 1;
+                // Don't add to messages_to_ack - this message will be retried
             }
         }
     }
 
-    // ACK all messages
-    for (message_id, _) in &messages {
+    // Only ACK successful messages
+    for message_id in &messages_to_ack {
         let _: u64 = redis::cmd("XACK")
             .arg(stream_name)
             .arg(consumer_group)
@@ -149,6 +171,11 @@ async fn process_batch(
             .await
             .map_err(SyncError::Redis)?;
     }
+
+    info!(
+        "Batch complete: {} successful, {} failed (will retry)",
+        successful, failed
+    );
 
     Ok(messages.len())
 }

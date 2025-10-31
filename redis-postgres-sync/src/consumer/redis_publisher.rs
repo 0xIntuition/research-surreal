@@ -52,7 +52,7 @@ impl RedisPublisher {
         );
 
         // Publish to Redis stream
-        let _: String = redis::cmd("XADD")
+        let message_id: String = redis::cmd("XADD")
             .arg("term_updates") // stream name
             .arg("*") // auto-generate ID
             .arg("data")
@@ -61,7 +61,10 @@ impl RedisPublisher {
             .await
             .map_err(SyncError::Redis)?;
 
-        debug!("Published term update to analytics stream");
+        info!(
+            "Published term update: term={}, counter_term={:?}, message_id={}",
+            term_id, counter_term_id, message_id
+        );
         Ok(())
     }
 
@@ -74,7 +77,7 @@ impl RedisPublisher {
             return Ok(());
         }
 
-        debug!("Publishing batch of {} term updates", updates.len());
+        info!("Publishing batch of {} term updates to analytics stream", updates.len());
 
         let mut pipe = redis::pipe();
 
@@ -95,12 +98,16 @@ impl RedisPublisher {
                 .arg(&message_json);
         }
 
-        let _: Vec<String> = pipe
+        let message_ids: Vec<String> = pipe
             .query_async(&mut self.connection.clone())
             .await
             .map_err(SyncError::Redis)?;
 
-        debug!("Published batch of {} term updates", updates.len());
+        info!(
+            "Successfully published batch of {} term updates (first_id: {})",
+            updates.len(),
+            message_ids.first().unwrap_or(&"none".to_string())
+        );
         Ok(())
     }
 }

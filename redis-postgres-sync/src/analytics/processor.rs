@@ -3,7 +3,7 @@
 
 use crate::{consumer::TermUpdateMessage, error::{Result, SyncError}};
 use sqlx::PgPool;
-use tracing::{debug, info, warn};
+use tracing::{debug, info};
 
 pub async fn update_analytics_tables(
     pool: &PgPool,
@@ -75,21 +75,26 @@ async fn update_triple_vault(
     let counter_term_clean = counter_term_id.strip_prefix("0x").unwrap_or(counter_term_id);
 
     // Aggregate pro vault + counter vault data for each curve_id
-    sqlx::query(
+    // First get all unique curve_ids for both terms, then join vaults for each
+    let result = sqlx::query(
         r#"
         INSERT INTO triple_vault (term_id, counter_term_id, curve_id, total_shares, total_assets, position_count, market_cap, updated_at)
         SELECT
-            $1::text,
-            $2::text,
-            COALESCE(v1.curve_id, v2.curve_id),
-            COALESCE(v1.total_shares, 0) + COALESCE(v2.total_shares, 0),
-            COALESCE(v1.total_assets, 0) + COALESCE(v2.total_assets, 0),
-            COALESCE(v1.position_count, 0) + COALESCE(v2.position_count, 0),
-            COALESCE(v1.market_cap, 0) + COALESCE(v2.market_cap, 0),
-            NOW()
-        FROM vault v1
-        FULL OUTER JOIN vault v2 ON v1.curve_id = v2.curve_id
-        WHERE v1.term_id = $1 OR v2.term_id = $3
+            $1::text as term_id,
+            $2::text as counter_term_id,
+            curves.curve_id,
+            COALESCE(v1.total_shares, 0) + COALESCE(v2.total_shares, 0) as total_shares,
+            COALESCE(v1.total_assets, 0) + COALESCE(v2.total_assets, 0) as total_assets,
+            COALESCE(v1.position_count, 0) + COALESCE(v2.position_count, 0) as position_count,
+            COALESCE(v1.market_cap, 0) + COALESCE(v2.market_cap, 0) as market_cap,
+            NOW() as updated_at
+        FROM (
+            SELECT DISTINCT curve_id
+            FROM vault
+            WHERE term_id IN ($1, $3)
+        ) curves
+        LEFT JOIN vault v1 ON v1.term_id = $1 AND v1.curve_id = curves.curve_id
+        LEFT JOIN vault v2 ON v2.term_id = $3 AND v2.curve_id = curves.curve_id
         ON CONFLICT (term_id, counter_term_id, curve_id) DO UPDATE
         SET total_shares = EXCLUDED.total_shares,
             total_assets = EXCLUDED.total_assets,
@@ -105,6 +110,11 @@ async fn update_triple_vault(
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
 
+    debug!(
+        "Updated triple_vault for term {} (counter: {}): {} rows affected",
+        term_id, counter_term_id, result.rows_affected()
+    );
+
     Ok(())
 }
 
@@ -114,7 +124,7 @@ async fn update_triple_term(
     counter_term_id: &str,
 ) -> Result<()> {
     // Aggregate triple_vault across all curves
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         INSERT INTO triple_term (term_id, counter_term_id, total_assets, total_market_cap, total_position_count, updated_at)
         SELECT
@@ -140,6 +150,11 @@ async fn update_triple_term(
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
 
+    debug!(
+        "Updated triple_term for term {} (counter: {}): {} rows affected",
+        term_id, counter_term_id, result.rows_affected()
+    );
+
     Ok(())
 }
 
@@ -149,7 +164,7 @@ async fn update_predicate_object(
     object_id: &str,
 ) -> Result<()> {
     // Aggregate by predicate-object pairs
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         INSERT INTO predicate_object (predicate_id, object_id, triple_count, total_position_count, total_market_cap, updated_at)
         SELECT
@@ -176,6 +191,11 @@ async fn update_predicate_object(
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
 
+    debug!(
+        "Updated predicate_object for predicate {} (object: {}): {} rows affected",
+        predicate_id, object_id, result.rows_affected()
+    );
+
     Ok(())
 }
 
@@ -185,7 +205,7 @@ async fn update_subject_predicate(
     predicate_id: &str,
 ) -> Result<()> {
     // Aggregate by subject-predicate pairs
-    sqlx::query(
+    let result = sqlx::query(
         r#"
         INSERT INTO subject_predicate (subject_id, predicate_id, triple_count, total_position_count, total_market_cap, updated_at)
         SELECT
@@ -211,6 +231,11 @@ async fn update_subject_predicate(
     .execute(&mut **tx)
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
+
+    debug!(
+        "Updated subject_predicate for subject {} (predicate: {}): {} rows affected",
+        subject_id, predicate_id, result.rows_affected()
+    );
 
     Ok(())
 }
