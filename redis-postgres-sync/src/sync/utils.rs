@@ -65,6 +65,76 @@ pub fn calculate_counter_term_id(term_id: &str) -> Result<String> {
     Ok(format!("0x{}", hex::encode(result)))
 }
 
+/// Ensures a hex string has the "0x" prefix
+///
+/// # Arguments
+/// * `value` - The hex string (with or without 0x prefix)
+///
+/// # Returns
+/// The hex string with 0x prefix
+pub fn ensure_hex_prefix(value: &str) -> String {
+    if value.starts_with("0x") || value.starts_with("0X") {
+        value.to_string()
+    } else {
+        format!("0x{}", value)
+    }
+}
+
+/// Converts an Ethereum address to EIP-55 checksum format
+///
+/// EIP-55 encodes the case of hex characters based on the hash of the address,
+/// providing a checksum mechanism to detect typos.
+///
+/// # Arguments
+/// * `address` - The hex-encoded Ethereum address (with or without 0x prefix)
+///
+/// # Returns
+/// The address in EIP-55 checksum format with 0x prefix
+pub fn to_eip55_address(address: &str) -> Result<String> {
+    // Remove 0x prefix if present
+    let address_cleaned = if address.starts_with("0x") || address.starts_with("0X") {
+        &address[2..]
+    } else {
+        address
+    };
+
+    // Validate address length (40 hex characters = 20 bytes)
+    if address_cleaned.len() != 40 {
+        return Err(SyncError::ParseError(format!(
+            "Invalid Ethereum address length: expected 40 hex characters, got {}",
+            address_cleaned.len()
+        )));
+    }
+
+    // Convert to lowercase for hashing
+    let address_lower = address_cleaned.to_lowercase();
+
+    // Hash the lowercase address
+    let hash = keccak256(address_lower.as_bytes());
+    let hash_hex = hex::encode(hash);
+
+    // Apply EIP-55 checksum: capitalize hex digits where hash has value >= 8
+    let checksummed: String = address_lower
+        .chars()
+        .enumerate()
+        .map(|(i, c)| {
+            if c.is_ascii_digit() {
+                c // Numbers are never capitalized
+            } else {
+                // Get the hash nibble value (each byte = 2 hex chars)
+                let hash_nibble = u8::from_str_radix(&hash_hex[i..i + 1], 16).unwrap_or(0);
+                if hash_nibble >= 8 {
+                    c.to_ascii_uppercase()
+                } else {
+                    c
+                }
+            }
+        })
+        .collect();
+
+    Ok(format!("0x{}", checksummed))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -123,6 +193,50 @@ mod tests {
         // Test that the same term_id always produces the same counter_term_id
         let counter_term_id_again = calculate_counter_term_id(term_id).unwrap();
         assert_eq!(counter_term_id, counter_term_id_again);
+    }
+
+    #[test]
+    fn test_ensure_hex_prefix() {
+        // Test with 0x prefix
+        assert_eq!(ensure_hex_prefix("0x1234"), "0x1234");
+        assert_eq!(ensure_hex_prefix("0X1234"), "0X1234");
+
+        // Test without 0x prefix
+        assert_eq!(ensure_hex_prefix("1234"), "0x1234");
+        assert_eq!(ensure_hex_prefix("abcdef"), "0xabcdef");
+
+        // Test empty string
+        assert_eq!(ensure_hex_prefix(""), "0x");
+    }
+
+    #[test]
+    fn test_to_eip55_address() {
+        // Test a known EIP-55 address
+        // Address: 0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed
+        let address = "5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
+        let result = to_eip55_address(address).unwrap();
+        assert_eq!(result, "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+
+        // Test with 0x prefix
+        let address_with_prefix = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
+        let result_with_prefix = to_eip55_address(address_with_prefix).unwrap();
+        assert_eq!(result_with_prefix, "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+
+        // Test another known EIP-55 address
+        // Address: 0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359
+        let address2 = "fb6916095ca1df60bb79ce92ce3ea74c37c5d359";
+        let result2 = to_eip55_address(address2).unwrap();
+        assert_eq!(result2, "0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359");
+
+        // Test all lowercase (still valid, just not checksummed input)
+        let address3 = "0x0000000000000000000000000000000000000000";
+        let result3 = to_eip55_address(address3).unwrap();
+        assert!(result3.starts_with("0x"));
+        assert_eq!(result3.len(), 42); // 0x + 40 hex chars
+
+        // Test invalid length
+        let invalid_address = "1234";
+        assert!(to_eip55_address(invalid_address).is_err());
     }
 }
 

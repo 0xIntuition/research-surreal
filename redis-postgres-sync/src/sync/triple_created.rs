@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
-use super::utils::{parse_hex_to_u64, calculate_counter_term_id};
+use super::utils::{calculate_counter_term_id, ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
 
@@ -27,8 +27,15 @@ pub async fn handle_triple_created(
 ) -> Result<()> {
     let log_index = parse_hex_to_u64(&tx_info.log_index)?;
 
-    // Calculate counter_term_id using alloy keccak256
-    let counter_term_id = calculate_counter_term_id(&event.term_id)?;
+    // Format IDs with 0x prefix and addresses in EIP-55 format
+    let term_id = ensure_hex_prefix(&event.term_id);
+    let object_id = ensure_hex_prefix(&event.object_id);
+    let predicate_id = ensure_hex_prefix(&event.predicate_id);
+    let subject_id = ensure_hex_prefix(&event.subject_id);
+    let creator = to_eip55_address(&event.creator)?;
+
+    // Calculate counter_term_id using alloy keccak256 (already returns with 0x prefix)
+    let counter_term_id = calculate_counter_term_id(&term_id)?;
 
     sqlx::query(
         r#"
@@ -53,11 +60,11 @@ pub async fn handle_triple_created(
     )
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
-    .bind(&event.creator)
-    .bind(&event.object_id)
-    .bind(&event.predicate_id)
-    .bind(&event.subject_id)
-    .bind(&event.term_id)
+    .bind(&creator)
+    .bind(&object_id)
+    .bind(&predicate_id)
+    .bind(&subject_id)
+    .bind(&term_id)
     .bind(&counter_term_id)
     .bind(&tx_info.address)
     .bind(&tx_info.block_hash)

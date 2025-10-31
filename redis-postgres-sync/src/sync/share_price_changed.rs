@@ -5,7 +5,7 @@ use tracing::{debug, error};
 
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
-use super::utils::parse_hex_to_u64;
+use super::utils::{ensure_hex_prefix, parse_hex_to_u64};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SharePriceChangedEvent {
@@ -29,6 +29,10 @@ pub async fn handle_share_price_changed(
     tx_info: &TransactionInformation,
 ) -> Result<()> {
     let log_index = parse_hex_to_u64(&tx_info.log_index)?;
+
+    // Format IDs with 0x prefix
+    let term_id = ensure_hex_prefix(&event.term_id);
+    let curve_id = &event.curve_id; // Keep curve_id as-is (without 0x prefix)
 
     sqlx::query(
         r#"
@@ -54,8 +58,8 @@ pub async fn handle_share_price_changed(
     )
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
-    .bind(&event.term_id)
-    .bind(&event.curve_id)
+    .bind(&term_id)
+    .bind(&curve_id)
     .bind(&event.share_price)
     .bind(&event.total_assets)
     .bind(&event.total_shares)

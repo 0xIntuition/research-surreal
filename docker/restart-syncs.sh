@@ -30,10 +30,6 @@ echo "🔨 Starting databases first..."
 docker compose up -d postgres surrealdb
 
 echo ""
-echo "⏳ Waiting for databases to fully initialize (5 seconds)..."
-sleep 5
-
-echo ""
 echo "🔨 Building and starting sync applications..."
 # Force recreate sync apps with new consumer name by stopping and removing them first
 docker compose rm -f redis-postgres-sync redis-surreal-sync

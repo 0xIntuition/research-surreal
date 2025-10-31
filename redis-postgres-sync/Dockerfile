@@ -42,12 +42,12 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # Copy actual source code
 COPY . .
 
-# Build the actual application - this layer rebuilds only when source code changes
+# Build the binary - this layer rebuilds only when source code changes
 # Dependencies are already compiled and cached from the previous layer
 RUN cargo build --release --bin redis-postgres-sync
 
 # Verify binary works
-RUN ./target/release/redis-postgres-sync --version || echo "Binary verification skipped"
+RUN ./target/release/redis-postgres-sync --version || echo "redis-postgres-sync binary verification skipped"
 
 # Runtime stage - Use Debian bookworm-slim for compatibility
 FROM debian:bookworm-slim
@@ -97,11 +97,12 @@ ENV MAX_RETRIES=3
 ENV HTTP_PORT=8081
 
 # Health check with proper timeout and retries
+# Note: Port varies by binary - set via HTTP_PORT env var
 HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
-  CMD curl -f http://localhost:8081/health 2>/dev/null || exit 1
+  CMD curl -f http://localhost:${HTTP_PORT:-8081}/health 2>/dev/null || exit 1
 
 # Set default command with signal handling
-ENTRYPOINT ["redis-postgres-sync"]
+ENTRYPOINT ["/usr/local/bin/redis-postgres-sync"]
 
 # Labels for metadata and security scanning
 LABEL maintainer="Simonas" \

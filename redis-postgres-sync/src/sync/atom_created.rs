@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
-use super::utils::parse_hex_to_u64;
+use super::utils::{ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
 
@@ -22,32 +22,42 @@ pub async fn handle_atom_created(
     event: AtomCreatedEvent,
     tx_info: &TransactionInformation,
 ) -> Result<()> {
-    // Decode atom_data from hex to UTF-8 string
-    let decoded_atom_data = hex::decode(&event.atom_data)
+    // Decode atom_data from hex to bytes
+    let decoded_bytes = hex::decode(&event.atom_data)
         .map_err(|e| {
             error!("Failed to decode atom_data from hex: {}", e);
             SyncError::ParseError(format!("Invalid hex in atom_data: {}", e))
-        })
-        .and_then(|bytes| {
-            String::from_utf8(bytes).map_err(|e| {
-                error!("Failed to convert atom_data to UTF-8 string: {}", e);
-                SyncError::ParseError(format!("Invalid UTF-8 in atom_data: {}", e))
-            })
         })?;
 
-    debug!("Decoded atom_data: {}", decoded_atom_data);
+    // Try to convert to UTF-8 string, fall back to storing raw bytes if it fails
+    let (decoded_atom_data, raw_data) = match String::from_utf8(decoded_bytes.clone()) {
+        Ok(utf8_string) => {
+            debug!("Decoded atom_data as UTF-8: {}", utf8_string);
+            (Some(utf8_string), None)
+        }
+        Err(e) => {
+            debug!("Failed to decode atom_data as UTF-8 ({}), storing raw bytes instead", e);
+            (None, Some(decoded_bytes))
+        }
+    };
 
     let log_index = parse_hex_to_u64(&tx_info.log_index)?;
+
+    // Format IDs with 0x prefix and addresses in EIP-55 format
+    let term_id = ensure_hex_prefix(&event.term_id);
+    let atom_wallet = to_eip55_address(&event.atom_wallet)?;
+    let creator = to_eip55_address(&event.creator)?;
 
     // Insert into atom_created_events table
     sqlx::query(
         r#"
         INSERT INTO atom_created_events (
-            transaction_hash, log_index, atom_data, atom_wallet, creator, term_id,
+            transaction_hash, log_index, atom_data, raw_data, atom_wallet, creator, term_id,
             address, block_hash, block_number, network, transaction_index, block_timestamp
-        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+        ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
         ON CONFLICT (transaction_hash, log_index) DO UPDATE SET
             atom_data = EXCLUDED.atom_data,
+            raw_data = EXCLUDED.raw_data,
             atom_wallet = EXCLUDED.atom_wallet,
             creator = EXCLUDED.creator,
             term_id = EXCLUDED.term_id,
@@ -62,9 +72,10 @@ pub async fn handle_atom_created(
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
     .bind(&decoded_atom_data)
-    .bind(&event.atom_wallet)
-    .bind(&event.creator)
-    .bind(&event.term_id)
+    .bind(&raw_data)
+    .bind(&atom_wallet)
+    .bind(&creator)
+    .bind(&term_id)
     .bind(&tx_info.address)
     .bind(&tx_info.block_hash)
     .bind(tx_info.block_number as i64)

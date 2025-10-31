@@ -14,6 +14,7 @@
 //! - **Error**: Centralized error handling
 //! - **HTTP Server**: Health checks and metrics endpoints
 
+pub mod analytics;
 pub mod config;
 pub mod core;
 pub mod consumer;
@@ -21,6 +22,7 @@ pub mod sync;
 pub mod monitoring;
 pub mod error;
 pub mod http_server;
+pub mod processors;
 
 // Re-export main types for convenience
 pub use config::Config;

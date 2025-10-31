@@ -26,6 +26,10 @@ pub struct Config {
 
     // HTTP server settings
     pub http_port: u16,
+
+    // Analytics worker settings
+    pub consumer_group_suffix: Option<String>,
+    pub analytics_stream_name: String,
 }
 
 impl Config {
@@ -85,6 +89,25 @@ impl Config {
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
                 .unwrap_or(8080),
+
+            // Analytics worker configuration
+            consumer_group_suffix: env::var("CONSUMER_GROUP_SUFFIX").ok(),
+            analytics_stream_name: {
+                let base_name = env::var("ANALYTICS_STREAM_NAME")
+                    .unwrap_or_else(|_| "term_updates".to_string());
+
+                // If CONSUMER_GROUP_SUFFIX is provided and the stream name is the default,
+                // append the suffix to create a unique stream per restart cycle
+                if let Some(ref suffix) = env::var("CONSUMER_GROUP_SUFFIX").ok() {
+                    if base_name == "term_updates" {
+                        format!("{}-{}", base_name, suffix)
+                    } else {
+                        base_name
+                    }
+                } else {
+                    base_name
+                }
+            },
         })
     }
 
