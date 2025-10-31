@@ -4,7 +4,7 @@ use tracing::{debug, error, info, warn};
 
 use crate::core::types::{RindexerEvent, TransactionInformation};
 use crate::error::{Result, SyncError};
-use crate::processors::CascadeProcessor;
+use crate::processors::{CascadeProcessor, TermUpdater};
 use crate::consumer::RedisPublisher;
 use super::event_handlers;
 
@@ -108,9 +108,17 @@ impl PostgresClient {
 
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher) = &self.redis_publisher {
+            let term_updater = TermUpdater::new();
             for term_id in term_ids {
-                // TODO: Get counter_term_id for triples
-                if let Err(e) = publisher.publish_term_update(&term_id, None).await {
+                // Get counter_term_id for triples
+                let counter_term_id = {
+                    let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
+                    let result = term_updater.get_counter_term_id(&mut tx, &term_id).await?;
+                    tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
+                    result
+                };
+
+                if let Err(e) = publisher.publish_term_update(&term_id, counter_term_id.as_deref()).await {
                     warn!("Failed to publish term update to Redis: {}", e);
                     // Don't fail the whole operation if Redis publish fails
                 }

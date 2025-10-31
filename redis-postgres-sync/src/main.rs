@@ -1,4 +1,4 @@
-use redis_postgres_sync::{Config, EventProcessingPipeline, HttpServer};
+use redis_postgres_sync::{analytics, Config, EventProcessingPipeline, HttpServer};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -43,6 +43,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })?
     );
 
+    // Start analytics worker
+    let analytics_config = config.clone();
+    let analytics_pool = pipeline.get_pool().clone();
+    let analytics_token = pipeline.get_cancellation_token();
+    let analytics_handle = tokio::spawn(async move {
+        info!("Spawning analytics worker");
+        if let Err(e) = analytics::start_analytics_worker(analytics_config, analytics_pool, analytics_token).await {
+            error!("Analytics worker error: {}", e);
+        } else {
+            info!("Analytics worker stopped gracefully");
+        }
+    });
+
     // Start HTTP server for health checks and metrics
     let http_server = HttpServer::new(pipeline.clone(), config.http_port);
     let http_handle = tokio::spawn(async move {
@@ -61,6 +74,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         if let Err(e) = shutdown_pipeline.stop().await {
             error!("Error during shutdown: {}", e);
         }
+        analytics_handle.abort();
         http_handle.abort();
     });
 

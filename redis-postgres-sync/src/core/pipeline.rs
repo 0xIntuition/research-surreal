@@ -261,4 +261,14 @@ impl EventProcessingPipeline {
             }
         })
     }
+
+    /// Get a reference to the database pool for shared use
+    pub fn get_pool(&self) -> &sqlx::PgPool {
+        self.postgres_client.pool()
+    }
+
+    /// Get a clone of the cancellation token for shutdown coordination
+    pub fn get_cancellation_token(&self) -> CancellationToken {
+        self.cancellation_token.clone()
+    }
 }

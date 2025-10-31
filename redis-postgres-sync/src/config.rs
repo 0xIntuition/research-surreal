@@ -26,6 +26,9 @@ pub struct Config {
 
     // HTTP server settings
     pub http_port: u16,
+
+    // Analytics worker settings
+    pub consumer_group_suffix: Option<String>,
 }
 
 impl Config {
@@ -85,6 +88,9 @@ impl Config {
                 .unwrap_or_else(|_| "8080".to_string())
                 .parse()
                 .unwrap_or(8080),
+
+            // Analytics worker configuration
+            consumer_group_suffix: env::var("CONSUMER_GROUP_SUFFIX").ok(),
         })
     }
 

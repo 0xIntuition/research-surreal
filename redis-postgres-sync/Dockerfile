@@ -42,22 +42,15 @@ RUN cargo chef cook --release --recipe-path recipe.json
 # Copy actual source code
 COPY . .
 
-# Build BOTH binaries - this layer rebuilds only when source code changes
+# Build the binary - this layer rebuilds only when source code changes
 # Dependencies are already compiled and cached from the previous layer
-RUN cargo build --release --bin redis-postgres-sync && \
-    cargo build --release --bin analytics-worker
+RUN cargo build --release --bin redis-postgres-sync
 
-# Verify binaries work
+# Verify binary works
 RUN ./target/release/redis-postgres-sync --version || echo "redis-postgres-sync binary verification skipped"
-RUN ./target/release/analytics-worker --version || echo "analytics-worker binary verification skipped"
 
 # Runtime stage - Use Debian bookworm-slim for compatibility
 FROM debian:bookworm-slim
-
-# Build argument to select which binary to include in the image
-ARG BINARY_NAME=redis-postgres-sync
-# Convert to ENV so it persists at runtime
-ENV BINARY_NAME=${BINARY_NAME}
 
 # Install runtime dependencies and security updates
 RUN apt-get update && apt-get install -y \
@@ -75,9 +68,9 @@ RUN groupadd -r -g 1001 sync || true && \
 WORKDIR /app
 RUN chown sync:sync /app
 
-# Copy selected binary from builder stage with correct permissions
-COPY --from=builder --chown=sync:sync /app/target/release/${BINARY_NAME} /usr/local/bin/${BINARY_NAME}
-RUN chmod +x /usr/local/bin/${BINARY_NAME}
+# Copy binary from builder stage with correct permissions
+COPY --from=builder --chown=sync:sync /app/target/release/redis-postgres-sync /usr/local/bin/redis-postgres-sync
+RUN chmod +x /usr/local/bin/redis-postgres-sync
 
 # Copy migrations
 COPY --from=builder --chown=sync:sync /app/migrations /app/migrations
@@ -109,8 +102,7 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD curl -f http://localhost:${HTTP_PORT:-8081}/health 2>/dev/null || exit 1
 
 # Set default command with signal handling
-# Use the binary name from env var (set from build arg above)
-ENTRYPOINT ["/bin/sh", "-c", "/usr/local/bin/${BINARY_NAME}"]
+ENTRYPOINT ["/usr/local/bin/redis-postgres-sync"]
 
 # Labels for metadata and security scanning
 LABEL maintainer="Simonas" \

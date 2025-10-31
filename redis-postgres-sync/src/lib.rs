@@ -14,6 +14,7 @@
 //! - **Error**: Centralized error handling
 //! - **HTTP Server**: Health checks and metrics endpoints
 
+pub mod analytics;
 pub mod config;
 pub mod core;
 pub mod consumer;

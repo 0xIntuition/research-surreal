@@ -50,22 +50,22 @@ impl TermUpdater {
             r#"
             INSERT INTO term (id, type, atom_id, triple_id, total_assets, total_market_cap, created_at, updated_at)
             SELECT
-                $1::numeric(78,0),
+                $1,
                 CASE
                     WHEN EXISTS (SELECT 1 FROM atom WHERE term_id = $1) THEN 'Atom'
                     WHEN EXISTS (SELECT 1 FROM triple WHERE term_id = $1) THEN 'Triple'
                     ELSE 'Unknown'
                 END,
                 CASE
-                    WHEN EXISTS (SELECT 1 FROM atom WHERE term_id = $1) THEN $1::numeric(78,0)
+                    WHEN EXISTS (SELECT 1 FROM atom WHERE term_id = $1) THEN $1
                     ELSE NULL
                 END,
                 CASE
-                    WHEN EXISTS (SELECT 1 FROM triple WHERE term_id = $1) THEN $1::numeric(78,0)
+                    WHEN EXISTS (SELECT 1 FROM triple WHERE term_id = $1) THEN $1
                     ELSE NULL
                 END,
-                $2,
-                $3,
+                $2::numeric(78,0),
+                $3::numeric(78,0),
                 NOW(),
                 NOW()
             ON CONFLICT (id) DO UPDATE
@@ -75,8 +75,8 @@ impl TermUpdater {
             "#,
         )
         .bind(term_id)
-        .bind(total_assets)
-        .bind(total_market_cap)
+        .bind(&total_assets)
+        .bind(&total_market_cap)
         .execute(&mut **tx)
         .await
         .map_err(|e| SyncError::Sqlx(e))?
