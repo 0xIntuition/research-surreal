@@ -250,37 +250,85 @@ impl RedisStreamConsumer {
     }
 
     /// Get stream metrics for monitoring - returns (lag, pending_count) for a stream
+    ///
+    /// Uses XINFO GROUPS to get accurate metrics:
+    /// - lag: Number of entries in the stream not yet delivered to the consumer group
+    /// - pending: Number of messages delivered but awaiting ACK
     pub async fn get_stream_metrics(&self, stream_name: &str) -> Result<(i64, i64)> {
-        // Get stream length using XLEN
-        let stream_length: i64 = redis::cmd("XLEN")
+        use tracing::warn;
+
+        // Get consumer group info using XINFO GROUPS
+        let groups_result: redis::Value = redis::cmd("XINFO")
+            .arg("GROUPS")
             .arg(stream_name)
             .query_async(&mut self.connection.clone())
             .await
-            .unwrap_or(0);
+            .map_err(|e| {
+                warn!("Failed to get stream info for {}: {}", stream_name, e);
+                e
+            })
+            .map_err(SyncError::Redis)?;
 
-        // Get pending messages count using XPENDING
-        let pending_result: redis::Value = redis::cmd("XPENDING")
-            .arg(stream_name)
-            .arg(&self.consumer_group)
-            .query_async(&mut self.connection.clone())
-            .await
-            .unwrap_or(redis::Value::Nil);
+        // Parse the XINFO GROUPS response to find our consumer group
+        let (lag, pending_count) = match groups_result {
+            redis::Value::Array(groups) => {
+                // XINFO GROUPS returns array of groups, each group is an array of field-value pairs
+                for group_data in groups {
+                    if let redis::Value::Array(fields) = group_data {
+                        let mut group_name = String::new();
+                        let mut lag_value: i64 = 0;
+                        let mut pending_value: i64 = 0;
 
-        let pending_count = match pending_result {
-            redis::Value::Array(ref arr) if !arr.is_empty() => {
-                // XPENDING returns [count, smallest_id, largest_id, consumers]
-                if let redis::Value::Int(count) = arr[0] {
-                    count
-                } else {
-                    0
+                        // Parse field-value pairs
+                        for chunk in fields.chunks(2) {
+                            if chunk.len() == 2 {
+                                let key = match &chunk[0] {
+                                    redis::Value::BulkString(k) => String::from_utf8_lossy(k).to_string(),
+                                    redis::Value::SimpleString(k) => k.clone(),
+                                    _ => continue,
+                                };
+
+                                match key.as_str() {
+                                    "name" => {
+                                        group_name = match &chunk[1] {
+                                            redis::Value::BulkString(v) => String::from_utf8_lossy(v).to_string(),
+                                            redis::Value::SimpleString(v) => v.clone(),
+                                            _ => String::new(),
+                                        };
+                                    }
+                                    "lag" => {
+                                        lag_value = match &chunk[1] {
+                                            redis::Value::Int(v) => *v,
+                                            _ => 0,
+                                        };
+                                    }
+                                    "pending" => {
+                                        pending_value = match &chunk[1] {
+                                            redis::Value::Int(v) => *v,
+                                            _ => 0,
+                                        };
+                                    }
+                                    _ => {}
+                                }
+                            }
+                        }
+
+                        // Check if this is our consumer group
+                        if group_name == self.consumer_group {
+                            return Ok((lag_value, pending_value));
+                        }
+                    }
                 }
-            }
-            _ => 0,
-        };
 
-        // Estimate lag as difference between stream length and consumer group's last delivered ID
-        // Note: This is a simplified estimate. Real lag calculation requires tracking last_delivered_id
-        let lag = stream_length.saturating_sub(pending_count);
+                // Consumer group not found
+                warn!("Consumer group '{}' not found for stream '{}'", self.consumer_group, stream_name);
+                (0, 0)
+            }
+            _ => {
+                warn!("Unexpected response format from XINFO GROUPS for stream '{}'", stream_name);
+                (0, 0)
+            }
+        };
 
         Ok((lag, pending_count))
     }
