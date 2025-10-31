@@ -2,7 +2,7 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
-use super::utils::parse_hex_to_u64;
+use super::utils::{ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
 
@@ -39,6 +39,11 @@ pub async fn handle_atom_created(
 
     let log_index = parse_hex_to_u64(&tx_info.log_index)?;
 
+    // Format IDs with 0x prefix and addresses in EIP-55 format
+    let term_id = ensure_hex_prefix(&event.term_id);
+    let atom_wallet = to_eip55_address(&event.atom_wallet)?;
+    let creator = to_eip55_address(&event.creator)?;
+
     // Insert into atom_created_events table
     sqlx::query(
         r#"
@@ -62,9 +67,9 @@ pub async fn handle_atom_created(
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
     .bind(&decoded_atom_data)
-    .bind(&event.atom_wallet)
-    .bind(&event.creator)
-    .bind(&event.term_id)
+    .bind(&atom_wallet)
+    .bind(&creator)
+    .bind(&term_id)
     .bind(&tx_info.address)
     .bind(&tx_info.block_hash)
     .bind(tx_info.block_number as i64)

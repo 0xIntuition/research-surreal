@@ -7,6 +7,7 @@ use crate::error::{Result, SyncError};
 use crate::processors::{CascadeProcessor, TermUpdater};
 use crate::consumer::RedisPublisher;
 use super::event_handlers;
+use super::utils::{ensure_hex_prefix, to_eip55_address};
 
 pub struct PostgresClient {
     pool: PgPool,
@@ -141,7 +142,7 @@ impl PostgresClient {
 
         let term_ids = match event.event_name.as_str() {
             "Deposited" => {
-                // Extract deposit event data
+                // Extract deposit event data and format IDs
                 if let Ok(receiver) = event.event_data.get("receiver")
                     .and_then(|v| v.as_str())
                     .ok_or(SyncError::Processing("Missing receiver".to_string())) {
@@ -151,10 +152,15 @@ impl PostgresClient {
                         if let Ok(curve_id) = event.event_data.get("curveId")
                             .and_then(|v| v.as_str())
                             .ok_or(SyncError::Processing("Missing curveId".to_string())) {
+                            // Format IDs to match database format
+                            let term_id_formatted = ensure_hex_prefix(term_id);
+                            let curve_id_formatted = ensure_hex_prefix(curve_id);
+                            let receiver_formatted = to_eip55_address(receiver)?;
+
                             self.cascade_processor.process_position_change(
-                                &mut tx, receiver, term_id, curve_id
+                                &mut tx, &receiver_formatted, &term_id_formatted, &curve_id_formatted
                             ).await?;
-                            vec![term_id.to_string()]
+                            vec![term_id_formatted]
                         } else {
                             vec![]
                         }
@@ -166,7 +172,7 @@ impl PostgresClient {
                 }
             }
             "Redeemed" => {
-                // Extract redeem event data
+                // Extract redeem event data and format IDs
                 if let Ok(receiver) = event.event_data.get("receiver")
                     .and_then(|v| v.as_str())
                     .ok_or(SyncError::Processing("Missing receiver".to_string())) {
@@ -176,10 +182,15 @@ impl PostgresClient {
                         if let Ok(curve_id) = event.event_data.get("curveId")
                             .and_then(|v| v.as_str())
                             .ok_or(SyncError::Processing("Missing curveId".to_string())) {
+                            // Format IDs to match database format
+                            let term_id_formatted = ensure_hex_prefix(term_id);
+                            let curve_id_formatted = ensure_hex_prefix(curve_id);
+                            let receiver_formatted = to_eip55_address(receiver)?;
+
                             self.cascade_processor.process_position_change(
-                                &mut tx, receiver, term_id, curve_id
+                                &mut tx, &receiver_formatted, &term_id_formatted, &curve_id_formatted
                             ).await?;
-                            vec![term_id.to_string()]
+                            vec![term_id_formatted]
                         } else {
                             vec![]
                         }
@@ -191,17 +202,21 @@ impl PostgresClient {
                 }
             }
             "SharePriceChanged" => {
-                // Extract price change event data
+                // Extract price change event data and format IDs
                 if let Ok(term_id) = event.event_data.get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or(SyncError::Processing("Missing termId".to_string())) {
                     if let Ok(curve_id) = event.event_data.get("curveId")
                         .and_then(|v| v.as_str())
                         .ok_or(SyncError::Processing("Missing curveId".to_string())) {
+                        // Format IDs to match database format
+                        let term_id_formatted = ensure_hex_prefix(term_id);
+                        let curve_id_formatted = ensure_hex_prefix(curve_id);
+
                         self.cascade_processor.process_price_change(
-                            &mut tx, term_id, curve_id
+                            &mut tx, &term_id_formatted, &curve_id_formatted
                         ).await?;
-                        vec![term_id.to_string()]
+                        vec![term_id_formatted]
                     } else {
                         vec![]
                     }
@@ -210,28 +225,35 @@ impl PostgresClient {
                 }
             }
             "AtomCreated" => {
-                // Extract atom creation data
+                // Extract atom creation data and format IDs
                 if let Ok(term_id) = event.event_data.get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or(SyncError::Processing("Missing termId".to_string())) {
-                    self.cascade_processor.process_atom_creation(&mut tx, term_id).await?;
-                    vec![term_id.to_string()]
+                    // Format IDs to match database format
+                    let term_id_formatted = ensure_hex_prefix(term_id);
+
+                    self.cascade_processor.process_atom_creation(&mut tx, &term_id_formatted).await?;
+                    vec![term_id_formatted]
                 } else {
                     vec![]
                 }
             }
             "TripleCreated" => {
-                // Extract triple creation data
+                // Extract triple creation data and format IDs
                 if let Ok(term_id) = event.event_data.get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or(SyncError::Processing("Missing termId".to_string())) {
                     if let Ok(counter_term_id) = event.event_data.get("counterTermId")
                         .and_then(|v| v.as_str())
                         .ok_or(SyncError::Processing("Missing counterTermId".to_string())) {
+                        // Format IDs to match database format
+                        let term_id_formatted = ensure_hex_prefix(term_id);
+                        let counter_term_id_formatted = ensure_hex_prefix(counter_term_id);
+
                         self.cascade_processor.process_triple_creation(
-                            &mut tx, term_id, counter_term_id
+                            &mut tx, &term_id_formatted, &counter_term_id_formatted
                         ).await?;
-                        vec![term_id.to_string(), counter_term_id.to_string()]
+                        vec![term_id_formatted, counter_term_id_formatted]
                     } else {
                         vec![]
                     }

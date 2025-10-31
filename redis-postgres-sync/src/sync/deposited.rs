@@ -4,7 +4,7 @@ use tracing::{debug, error};
 
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
-use super::utils::parse_hex_to_u64;
+use super::utils::{ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepositedEvent {
@@ -30,6 +30,12 @@ pub async fn handle_deposited(
     tx_info: &TransactionInformation,
 ) -> Result<()> {
     let log_index = parse_hex_to_u64(&tx_info.log_index)?;
+
+    // Format IDs with 0x prefix and addresses in EIP-55 format
+    let term_id = ensure_hex_prefix(&event.term_id);
+    let curve_id = ensure_hex_prefix(&event.curve_id);
+    let receiver = to_eip55_address(&event.receiver)?;
+    let sender = to_eip55_address(&event.sender)?;
 
     sqlx::query(
         r#"
@@ -60,11 +66,11 @@ pub async fn handle_deposited(
     .bind(log_index as i64)
     .bind(&event.assets)
     .bind(&event.assets_after_fees)
-    .bind(&event.curve_id)
-    .bind(&event.receiver)
-    .bind(&event.sender)
+    .bind(&curve_id)
+    .bind(&receiver)
+    .bind(&sender)
     .bind(&event.shares)
-    .bind(&event.term_id)
+    .bind(&term_id)
     .bind(&event.total_shares)
     .bind(event.vault_type as i16)
     .bind(&tx_info.address)

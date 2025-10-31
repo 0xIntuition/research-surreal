@@ -71,9 +71,6 @@ async fn update_triple_vault(
     term_id: &str,
     counter_term_id: &str,
 ) -> Result<()> {
-    // Strip 0x prefix from counter_term_id if present (vault.term_id doesn't have 0x prefix)
-    let counter_term_clean = counter_term_id.strip_prefix("0x").unwrap_or(counter_term_id);
-
     // Aggregate pro vault + counter vault data for each curve_id
     // First get all unique curve_ids for both terms, then join vaults for each
     let result = sqlx::query(
@@ -91,10 +88,10 @@ async fn update_triple_vault(
         FROM (
             SELECT DISTINCT curve_id
             FROM vault
-            WHERE term_id IN ($1, $3)
+            WHERE term_id IN ($1, $2)
         ) curves
         LEFT JOIN vault v1 ON v1.term_id = $1 AND v1.curve_id = curves.curve_id
-        LEFT JOIN vault v2 ON v2.term_id = $3 AND v2.curve_id = curves.curve_id
+        LEFT JOIN vault v2 ON v2.term_id = $2 AND v2.curve_id = curves.curve_id
         ON CONFLICT (term_id, counter_term_id, curve_id) DO UPDATE
         SET total_shares = EXCLUDED.total_shares,
             total_assets = EXCLUDED.total_assets,
@@ -104,8 +101,7 @@ async fn update_triple_vault(
         "#,
     )
     .bind(term_id)
-    .bind(counter_term_id) // Keep original with 0x for storage
-    .bind(counter_term_clean) // Use cleaned version for vault lookup
+    .bind(counter_term_id)
     .execute(&mut **tx)
     .await
     .map_err(|e| SyncError::Sqlx(e))?;
