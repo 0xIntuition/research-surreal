@@ -52,9 +52,26 @@ inhibit_rules:
     equal: ['alertname', 'event_type', 'instance']
 
 receivers:
-  # Default receiver - logs to console
+  # Default receiver - catches all unmatched alerts
+  # IMPORTANT: Currently configured as NO-OP. Alerts will be visible in Alertmanager UI
+  # but NO notifications will be sent until you configure a notification method.
+  # See infrastructure/monitoring/README.md for configuration examples.
   - name: 'default-receiver'
-    # Add your notification methods here
+    # Uncomment one of the following to enable notifications:
+    #
+    # Option 1: Webhook for logging (development/testing)
+    # webhook_configs:
+    #   - url: 'http://localhost:5001/alerts'
+    #     send_resolved: true
+    #
+    # Option 2: Slack notifications
+    # slack_configs:
+    #   - api_url: 'https://hooks.slack.com/services/YOUR/WEBHOOK/URL'
+    #     channel: '#alerts'
+    #
+    # Option 3: Email notifications (configure SMTP in global section first)
+    # email_configs:
+    #   - to: 'team@example.com'
 
   # Critical alerts receiver
   - name: 'critical-alerts'

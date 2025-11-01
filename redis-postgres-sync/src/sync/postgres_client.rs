@@ -131,7 +131,10 @@ impl PostgresClient {
         // to update aggregated tables (vault, term)
         let cascade_start = std::time::Instant::now();
         let term_ids = self.run_cascade_after_event(event).await.map_err(|e| {
-            // Record failure if cascade fails
+            // Record cascade failure - this is a specific edge case where event was already
+            // committed but cascade failed. This is tracked separately due to the TODO about
+            // transaction consistency at lines 105-108.
+            self.metrics.record_cascade_failure(event_type);
             self.metrics.record_event_by_type_failure(event_type);
             self.metrics.record_event_processing_duration(event_type, event_start.elapsed());
             e
@@ -143,19 +146,21 @@ impl PostgresClient {
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher_mutex) = &self.redis_publisher {
             // Collect all data needed for publishing BEFORE acquiring the lock
+            // Use a single transaction for all counter_term_id lookups instead of N separate transactions
             let term_updater = TermUpdater::new();
             let mut term_data = Vec::new();
 
+            // Begin a single transaction for all lookups
+            let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
+
             for term_id in term_ids {
-                // Get counter_term_id for triples
-                let counter_term_id = {
-                    let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
-                    let result = term_updater.get_counter_term_id(&mut tx, &term_id).await?;
-                    tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
-                    result
-                };
+                // Get counter_term_id for triples using the shared transaction
+                let counter_term_id = term_updater.get_counter_term_id(&mut tx, &term_id).await?;
                 term_data.push((term_id, counter_term_id));
             }
+
+            // Commit once after all lookups
+            tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
 
             // Now acquire the lock and publish all messages quickly
             let mut publisher = publisher_mutex.lock().await;

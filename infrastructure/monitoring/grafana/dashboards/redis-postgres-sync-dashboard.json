@@ -1157,5 +1157,6 @@
   "timezone": "",
   "title": "Redis Postgres Sync Dashboard",
   "uid": "redis-postgres-sync",
-  "version": 1
+  "version": 1,
+  "refresh": "30s"
 }
