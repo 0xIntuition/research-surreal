@@ -47,7 +47,7 @@ impl CascadeProcessor {
             .bind(lock_id)
             .execute(&mut **tx)
             .await
-            .map_err(|e| SyncError::Sqlx(e))?;
+            .map_err(SyncError::Sqlx)?;
 
         debug!("Acquired advisory lock {} for position", lock_id);
 
@@ -91,7 +91,7 @@ impl CascadeProcessor {
             .bind(lock_id)
             .execute(&mut **tx)
             .await
-            .map_err(|e| SyncError::Sqlx(e))?;
+            .map_err(SyncError::Sqlx)?;
 
         debug!("Acquired advisory lock {} for vault", lock_id);
 

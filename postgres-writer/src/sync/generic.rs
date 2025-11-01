@@ -43,14 +43,14 @@ pub async fn handle_generic_event(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert {} record: {}", event_name, e);
+        error!("Failed to insert {event_name} record: {e}");
         SyncError::from(e)
     })?;
 
-    debug!("Created {} record", event_name);
+    debug!("Created {event_name} record");
     Ok(())
 }

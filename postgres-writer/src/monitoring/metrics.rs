@@ -507,7 +507,7 @@ mod tests {
 
         // Print for manual verification
         println!("Prometheus metrics output:");
-        println!("{}", output);
+        println!("{output}");
     }
 
     #[test]
@@ -730,7 +730,7 @@ mod tests {
 
         // Verify all event types are present in metrics
         for event_type in &event_types {
-            assert!(output.contains(&format!("event_type=\"{}\"", event_type)));
+            assert!(output.contains(&format!("event_type=\"{event_type}\"")));
         }
 
         // Verify different metric types

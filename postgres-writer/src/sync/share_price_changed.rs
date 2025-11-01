@@ -58,7 +58,7 @@ pub async fn handle_share_price_changed(
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
     .bind(&term_id)
-    .bind(&curve_id)
+    .bind(curve_id)
     .bind(&event.share_price)
     .bind(&event.total_assets)
     .bind(&event.total_shares)
@@ -68,11 +68,11 @@ pub async fn handle_share_price_changed(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert SharePriceChanged record: {}", e);
+        error!("Failed to insert SharePriceChanged record: {e}");
         SyncError::from(e)
     })?;
 

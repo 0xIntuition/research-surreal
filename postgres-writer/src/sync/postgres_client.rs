@@ -31,8 +31,8 @@ impl PostgresClient {
             .connect(database_url)
             .await
             .map_err(|e| {
-                error!("Failed to connect to PostgreSQL: {}", e);
-                SyncError::Connection(format!("Failed to connect to PostgreSQL: {}", e))
+                error!("Failed to connect to PostgreSQL: {e}");
+                SyncError::Connection(format!("Failed to connect to PostgreSQL: {e}"))
             })?;
 
         info!("Connected to PostgreSQL database");
@@ -57,12 +57,10 @@ impl PostgresClient {
                         sleep(Duration::from_millis(delay_ms)).await;
                     } else {
                         error!(
-                            "Failed to run migrations after {} attempts: {}",
-                            MAX_RETRIES, e
+                            "Failed to run migrations after {MAX_RETRIES} attempts: {e}"
                         );
                         return Err(SyncError::Connection(format!(
-                            "Failed to run migrations after {} attempts: {}",
-                            MAX_RETRIES, e
+                            "Failed to run migrations after {MAX_RETRIES} attempts: {e}"
                         )));
                     }
                 }
@@ -145,7 +143,7 @@ impl PostgresClient {
         // After event insert and triggers, run cascade updates in a separate transaction
         // to update aggregated tables (vault, term)
         let cascade_start = std::time::Instant::now();
-        let term_ids = self.run_cascade_after_event(event).await.map_err(|e| {
+        let term_ids = self.run_cascade_after_event(event).await.inspect_err(|_e| {
             // Record cascade failure - this is a specific edge case where event was already
             // committed but cascade failed. This is tracked separately due to the TODO about
             // transaction consistency at lines 105-108.
@@ -153,7 +151,6 @@ impl PostgresClient {
             self.metrics.record_event_by_type_failure(event_type);
             self.metrics
                 .record_event_processing_duration(event_type, event_start.elapsed());
-            e
         })?;
 
         // Record cascade processing duration
@@ -175,7 +172,7 @@ impl PostgresClient {
 
             // Process term_ids in chunks to avoid long-running transactions
             for chunk in term_ids.chunks(MAX_BATCH_SIZE) {
-                let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
+                let mut tx = self.pool.begin().await.map_err(SyncError::Sqlx)?;
 
                 for term_id in chunk {
                     // Get counter_term_id for triples using the shared transaction
@@ -185,7 +182,7 @@ impl PostgresClient {
                 }
 
                 // Commit after each chunk
-                tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
+                tx.commit().await.map_err(SyncError::Sqlx)?;
             }
 
             // Now acquire the lock and publish all messages quickly
@@ -214,7 +211,7 @@ impl PostgresClient {
     /// Run cascade updates after event processing
     /// This updates aggregated tables (vault, term) based on triggered base table updates
     async fn run_cascade_after_event(&self, event: &RindexerEvent) -> Result<Vec<String>> {
-        let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
+        let mut tx = self.pool.begin().await.map_err(SyncError::Sqlx)?;
 
         let term_ids = match event.event_name.as_str() {
             "Deposited" => {
@@ -372,7 +369,7 @@ impl PostgresClient {
         };
 
         // Commit the transaction
-        tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
+        tx.commit().await.map_err(SyncError::Sqlx)?;
 
         Ok(term_ids)
     }

@@ -18,8 +18,7 @@ pub const DEFAULT_NETWORK: &str = "base_sepolia";
 fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
     if !addr.starts_with("0x") {
         return Err(format!(
-            "{} must start with '0x', got: {}",
-            field_name, addr
+            "{field_name} must start with '0x', got: {addr}"
         ));
     }
     if addr.len() != 42 {
@@ -31,8 +30,7 @@ fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
     }
     if !addr[2..].chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!(
-            "{} must contain only hex digits after '0x', got: {}",
-            field_name, addr
+            "{field_name} must contain only hex digits after '0x', got: {addr}"
         ));
     }
     Ok(())
@@ -41,7 +39,7 @@ fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
 /// Validates that a string is a properly formatted term ID (bytes32)
 fn validate_term_id(id: &str, field_name: &str) -> Result<(), String> {
     if !id.starts_with("0x") {
-        return Err(format!("{} must start with '0x', got: {}", field_name, id));
+        return Err(format!("{field_name} must start with '0x', got: {id}"));
     }
     if id.len() != 66 {
         return Err(format!(
@@ -52,8 +50,7 @@ fn validate_term_id(id: &str, field_name: &str) -> Result<(), String> {
     }
     if !id[2..].chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!(
-            "{} must contain only hex digits after '0x', got: {}",
-            field_name, id
+            "{field_name} must contain only hex digits after '0x', got: {id}"
         ));
     }
     Ok(())

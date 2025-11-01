@@ -98,9 +98,9 @@ impl Config {
 
                 // If CONSUMER_GROUP_SUFFIX is provided and the stream name is the default,
                 // append the suffix to create a unique stream per restart cycle
-                if let Some(ref suffix) = env::var("CONSUMER_GROUP_SUFFIX").ok() {
+                if let Ok(ref suffix) = env::var("CONSUMER_GROUP_SUFFIX") {
                     if base_name == "term_updates" {
-                        format!("{}-{}", base_name, suffix)
+                        format!("{base_name}-{suffix}")
                     } else {
                         base_name
                     }

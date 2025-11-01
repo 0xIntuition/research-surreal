@@ -33,8 +33,8 @@ pub async fn start_analytics_worker(
 
     // Build consumer group name with suffix
     let consumer_group = match &config.consumer_group_suffix {
-        Some(suffix) => format!("{}-{}", ANALYTICS_CONSUMER_GROUP_PREFIX, suffix),
-        None => format!("{}-worker", ANALYTICS_CONSUMER_GROUP_PREFIX),
+        Some(suffix) => format!("{ANALYTICS_CONSUMER_GROUP_PREFIX}-{suffix}"),
+        None => format!("{ANALYTICS_CONSUMER_GROUP_PREFIX}-worker"),
     };
 
     let consumer_name = config.consumer_name.clone();

@@ -13,8 +13,9 @@ impl TermUpdater {
 
     /// Update term metrics by aggregating across all vaults for this term
     /// Calculates:
-    /// - total_assets: sum of total_assets across all vaults
-    /// - total_market_cap: sum of market_cap across all vaults
+    ///   - total_assets: sum of total_assets across all vaults
+    ///   - total_market_cap: sum of market_cap across all vaults
+    ///
     /// Returns a list of updated term IDs (for Redis publishing)
     pub async fn update_term_from_vaults(
         &self,
@@ -37,7 +38,7 @@ impl TermUpdater {
         .bind(term_id)
         .fetch_optional(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         let (total_assets, total_market_cap) =
             aggregate.unwrap_or_else(|| ("0".to_string(), "0".to_string()));
@@ -81,7 +82,7 @@ impl TermUpdater {
         .bind(&total_market_cap)
         .execute(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?
+        .map_err(SyncError::Sqlx)?
         .rows_affected();
 
         if rows_affected > 0 {
@@ -111,7 +112,7 @@ impl TermUpdater {
         .bind(term_id)
         .execute(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         debug!("Initialized atom term");
         Ok(())
@@ -135,7 +136,7 @@ impl TermUpdater {
         .bind(term_id)
         .execute(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         debug!("Initialized triple term");
         Ok(())
@@ -158,7 +159,7 @@ impl TermUpdater {
         .bind(term_id)
         .fetch_optional(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         Ok(counter_term.map(|(id,)| id))
     }

@@ -18,9 +18,9 @@ impl TestHarness {
     /// Creates a new test environment with isolated containers
     pub async fn new() -> Result<Self> {
         // Start Redis container
-        let redis_container = Redis::default().start().await?;
+        let redis_container = Redis.start().await?;
         let redis_port = redis_container.get_host_port_ipv4(6379).await?;
-        let redis_url = format!("redis://127.0.0.1:{}", redis_port);
+        let redis_url = format!("redis://127.0.0.1:{redis_port}");
 
         // Start PostgreSQL container
         let postgres_container = Postgres::default()
@@ -34,8 +34,7 @@ impl TestHarness {
         // Create unique database for this test
         let test_db_name = format!("test_{}", uuid::Uuid::new_v4().simple());
         let database_url = format!(
-            "postgres://test:test@127.0.0.1:{}/{}",
-            postgres_port, test_db_name
+            "postgres://test:test@127.0.0.1:{postgres_port}/{test_db_name}"
         );
 
         let harness = Self {
@@ -206,9 +205,7 @@ impl TestHarness {
 
             if start.elapsed().as_secs() > timeout_secs {
                 return Err(anyhow::anyhow!(
-                    "Timeout waiting for events. Expected: {}, Got: {}",
-                    expected_count,
-                    count
+                    "Timeout waiting for events. Expected: {expected_count}, Got: {count}"
                 ));
             }
 
@@ -248,8 +245,7 @@ impl TestHarness {
 
             if start.elapsed().as_secs() > timeout_secs {
                 return Err(anyhow::anyhow!(
-                    "Timeout waiting for cascade processing for term: {}",
-                    term_id
+                    "Timeout waiting for cascade processing for term: {term_id}"
                 ));
             }
 

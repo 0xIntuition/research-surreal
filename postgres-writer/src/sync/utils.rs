@@ -10,7 +10,7 @@ pub fn parse_hex_to_u64(hex_str: &str) -> Result<u64> {
     };
 
     u64::from_str_radix(cleaned, 16).map_err(|e| {
-        SyncError::ParseError(format!("Failed to parse hex string '{}': {}", hex_str, e))
+        SyncError::ParseError(format!("Failed to parse hex string '{hex_str}': {e}"))
     })
 }
 
@@ -19,8 +19,7 @@ pub fn parse_hex_timestamp_to_datetime(hex_str: &str) -> Result<DateTime<Utc>> {
 
     DateTime::from_timestamp(timestamp_u64 as i64, 0).ok_or_else(|| {
         SyncError::ParseError(format!(
-            "Failed to convert timestamp '{}' to datetime",
-            timestamp_u64
+            "Failed to convert timestamp '{timestamp_u64}' to datetime"
         ))
     })
 }
@@ -48,7 +47,7 @@ pub fn calculate_counter_term_id(term_id: &str) -> Result<String> {
 
     // Decode hex string to bytes
     let term_id_bytes = hex::decode(term_id_cleaned).map_err(|e| {
-        SyncError::ParseError(format!("Failed to decode term_id '{}': {}", term_id, e))
+        SyncError::ParseError(format!("Failed to decode term_id '{term_id}': {e}"))
     })?;
 
     // Calculate COUNTER_SALT = keccak256("COUNTER_SALT")
@@ -60,9 +59,10 @@ pub fn calculate_counter_term_id(term_id: &str) -> Result<String> {
     concatenated.extend_from_slice(&term_id_bytes);
 
     let result = keccak256(&concatenated);
+    let encoded = hex::encode(result);
 
     // Return as hex-encoded string with 0x prefix
-    Ok(format!("0x{}", hex::encode(result)))
+    Ok(format!("0x{encoded}"))
 }
 
 /// Ensures a hex string has the "0x" prefix
@@ -76,7 +76,7 @@ pub fn ensure_hex_prefix(value: &str) -> String {
     if value.starts_with("0x") || value.starts_with("0X") {
         value.to_string()
     } else {
-        format!("0x{}", value)
+        format!("0x{value}")
     }
 }
 
@@ -132,7 +132,7 @@ pub fn to_eip55_address(address: &str) -> Result<String> {
         })
         .collect();
 
-    Ok(format!("0x{}", checksummed))
+    Ok(format!("0x{checksummed}"))
 }
 
 #[cfg(test)]

@@ -20,7 +20,7 @@ async fn acquire_triple_lock(
 ) -> Result<()> {
     // Create a stable hash for the triple pair using keccak256
     // This ensures stability across Rust versions and provides cryptographic collision resistance
-    let combined = format!("{}:{}", term_id, counter_term_id);
+    let combined = format!("{term_id}:{counter_term_id}");
     let hash = keccak256(combined.as_bytes());
 
     // Convert first 8 bytes to i64, ensuring positive value for pg_advisory_xact_lock(bigint)
@@ -84,7 +84,7 @@ pub async fn update_analytics_tables(pool: &PgPool, term_update: &TermUpdateMess
         .bind(offset)
         .fetch_all(pool)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         if affected_triples.is_empty() {
             break;
@@ -221,7 +221,7 @@ async fn update_triple_vault_batch(
     .bind(&counter_term_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated triple_vault for {} pairs: {} rows affected",
@@ -270,7 +270,7 @@ async fn update_triple_term_batch(
     .bind(&counter_term_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated triple_term for {} pairs: {} rows affected",
@@ -320,7 +320,7 @@ async fn update_predicate_object_batch(
     .bind(&object_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated predicate_object for {} pairs: {} rows affected",
@@ -370,7 +370,7 @@ async fn update_subject_predicate_batch(
     .bind(&predicate_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated subject_predicate for {} pairs: {} rows affected",

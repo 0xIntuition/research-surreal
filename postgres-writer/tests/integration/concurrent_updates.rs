@@ -17,7 +17,7 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
 
     // Create 10 different accounts depositing concurrently to the same vault
     for i in 0..10 {
-        let account_id = format!("0x{:040x}", i);
+        let account_id = format!("0x{i:040x}");
         events.push(
             EventBuilder::new()
                 .with_block(1000 + i + 1)
@@ -70,20 +70,18 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
 
     // Each position should exist with correct shares
     for i in 0..10 {
-        let account_id = format!("0x{:040x}", i);
+        let account_id = format!("0x{i:040x}");
         let position = DbAssertions::assert_position_exists(pool, &account_id, term_id, curve_id)
             .await
             .expect("Failed to find position");
 
         assert_eq!(
             position.shares, "1000",
-            "Account {} should have 1000 shares",
-            i
+            "Account {i} should have 1000 shares"
         );
         assert_eq!(
             position.total_deposit_assets_after_total_fees, "1000",
-            "Account {} should have 1000 in deposits",
-            i
+            "Account {i} should have 1000 in deposits"
         );
     }
 
@@ -227,7 +225,7 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
 
     // 5 accounts deposit
     for i in 0..5 {
-        let account_id = format!("0x{:040x}", i);
+        let account_id = format!("0x{i:040x}");
         events.push(EventBuilder::new().with_block(1001 + i).deposited(
             &account_id,
             term_id,
@@ -238,7 +236,7 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
 
     // 2 accounts redeem everything (shares -> 0)
     for i in 0..2 {
-        let account_id = format!("0x{:040x}", i);
+        let account_id = format!("0x{i:040x}");
         events.push(
             EventBuilder::new()
                 .with_block(1010 + i)

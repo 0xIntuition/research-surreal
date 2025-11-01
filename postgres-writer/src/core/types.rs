@@ -18,7 +18,7 @@ where
                 u64::from_str_radix(cleaned, 16).map_err(serde::de::Error::custom)?;
 
             let datetime = DateTime::from_timestamp(timestamp_u64 as i64, 0).ok_or_else(|| {
-                serde::de::Error::custom(format!("Invalid timestamp: {}", timestamp_u64))
+                serde::de::Error::custom(format!("Invalid timestamp: {timestamp_u64}"))
             })?;
 
             Ok(Some(datetime))

@@ -66,7 +66,7 @@ pub async fn handle_deposited(
     .bind(log_index as i64)
     .bind(&event.assets)
     .bind(&event.assets_after_fees)
-    .bind(&curve_id)
+    .bind(curve_id)
     .bind(&receiver)
     .bind(&sender)
     .bind(&event.shares)
@@ -78,11 +78,11 @@ pub async fn handle_deposited(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert Deposited record: {}", e);
+        error!("Failed to insert Deposited record: {e}");
         SyncError::from(e)
     })?;
 

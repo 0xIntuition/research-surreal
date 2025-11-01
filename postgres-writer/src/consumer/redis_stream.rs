@@ -434,7 +434,7 @@ impl RedisStreamConsumer {
                                             individual_event.event_data = event_data.clone();
 
                                             messages.push(StreamMessage {
-                                                id: format!("{}-{}", message_id, index),
+                                                id: format!("{message_id}-{index}"),
                                                 event: individual_event,
                                                 source_stream: stream_name.to_string(),
                                                 redis_message_id: message_id.clone(),

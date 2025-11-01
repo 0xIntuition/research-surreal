@@ -44,7 +44,7 @@ impl VaultUpdater {
         .bind(curve_id)
         .fetch_one(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         let position_net_assets = position_net_assets.unwrap_or_else(|| "0".to_string());
 
@@ -87,7 +87,7 @@ impl VaultUpdater {
         .bind(&position_net_assets)
         .execute(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?
+        .map_err(SyncError::Sqlx)?
         .rows_affected();
 
         if rows_affected == 0 {
@@ -133,7 +133,7 @@ impl VaultUpdater {
         .bind(curve_id)
         .execute(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?
+        .map_err(SyncError::Sqlx)?
         .rows_affected();
 
         if rows_affected == 0 {

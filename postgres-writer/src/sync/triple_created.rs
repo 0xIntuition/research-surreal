@@ -72,17 +72,16 @@ pub async fn handle_triple_created(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert TripleCreated record: {}", e);
+        error!("Failed to insert TripleCreated record: {e}");
         SyncError::from(e)
     })?;
 
     debug!(
-        "Created TripleCreated record with counter_term_id: {}",
-        counter_term_id
+        "Created TripleCreated record with counter_term_id: {counter_term_id}"
     );
     Ok(())
 }
