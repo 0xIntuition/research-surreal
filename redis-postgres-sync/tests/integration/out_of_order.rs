@@ -1,11 +1,11 @@
 use crate::helpers::{DbAssertions, EventBuilder, TestHarness};
-use redis_postgres_sync::{config::Config, core::pipeline::EventProcessingPipeline};
+use redis_postgres_sync::core::pipeline::EventProcessingPipeline;
 
 #[tokio::test]
 #[ignore] // Run with --ignored flag since it requires containers
 async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
     // Setup test harness with isolated containers
-    let harness = TestHarness::new().await.unwrap();
+    let mut harness = TestHarness::new().await.unwrap();
 
     let term_id = "0x0000000000000000000000000000000000000000000000000000000000000001";
     let account_id = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0";
@@ -47,43 +47,29 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
         .unwrap();
 
     // Step 3: Start pipeline
-    let config = Config {
-        redis_url: harness.redis_url().to_string(),
-        database_url: harness.database_url().to_string(),
-        stream_names: vec!["rindexer_producer".to_string()],
-        consumer_group: "test-group".to_string(),
-        consumer_name: "test-consumer".to_string(),
-        batch_size: 10,
-        batch_timeout_ms: 1000,
-        workers: 1,
-        processing_timeout_ms: 5000,
-        max_retries: 3,
-        circuit_breaker_threshold: 10,
-        circuit_breaker_timeout_ms: 60000,
-        http_port: 0, // Random port
-        consumer_group_suffix: None,
-        analytics_stream_name: "term_updates".to_string(),
-    };
-
-    let pipeline = EventProcessingPipeline::new(config).await.unwrap();
+    let config = harness.default_config();
+    let pipeline = EventProcessingPipeline::new(config).await
+        .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
         async move { pipeline.start().await }
     });
 
     // Step 4: Wait for processing
-    harness.wait_for_processing(4, 15).await.unwrap();
+    harness.wait_for_processing(4, 15).await
+        .expect("Failed to process 4 events within 15 seconds");
 
     // Give it a bit more time to ensure cascade processing completes
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // Step 5: Assertions
-    let pool = harness.get_pool().await.unwrap();
+    let pool = harness.get_pool().await
+        .expect("Failed to get database pool");
 
     // Should use the LATEST event (block 1005) for position shares
-    let position = DbAssertions::assert_position_exists(&pool, account_id, term_id, curve_id)
+    let position = DbAssertions::assert_position_exists(pool, account_id, term_id, curve_id)
         .await
-        .unwrap();
+        .expect("Failed to find position");
 
     // The shares should be from block 1005 (the latest block)
     assert_eq!(
@@ -93,9 +79,9 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
 
     // Get the last deposit block info
     let (last_block, last_log_index) =
-        DbAssertions::get_position_last_deposit_info(&pool, account_id, term_id, curve_id)
+        DbAssertions::get_position_last_deposit_info(pool, account_id, term_id, curve_id)
             .await
-            .unwrap();
+            .expect("Failed to get position last deposit info");
 
     assert_eq!(
         last_block, 1005,
@@ -110,29 +96,37 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
     );
 
     // Check that all events were stored
-    DbAssertions::assert_total_events(&pool, 4)
+    DbAssertions::assert_total_events(pool, 4)
         .await
-        .unwrap();
+        .expect("Failed to verify total events count");
 
     // Check that vault was updated
-    let vault = DbAssertions::assert_vault_state(&pool, term_id, curve_id, 1)
+    let vault = DbAssertions::assert_vault_state(pool, term_id, curve_id, 1)
         .await
-        .unwrap();
+        .expect("Failed to verify vault state");
 
     assert_eq!(
         vault.position_count, 1,
         "Vault should have 1 position"
     );
 
-    // Cleanup
-    pipeline.stop().await.unwrap();
+    // Cleanup - ensure pipeline stops even if stop() hangs
+    let stop_result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        pipeline.stop()
+    ).await;
+
     pipeline_handle.abort();
+
+    stop_result
+        .expect("Pipeline stop timeout")
+        .expect("Pipeline stop failed");
 }
 
 #[tokio::test]
 #[ignore] // Run with --ignored flag since it requires containers
 async fn test_share_price_changes_use_latest_block() {
-    let harness = TestHarness::new().await.unwrap();
+    let mut harness = TestHarness::new().await.unwrap();
 
     let term_id = "0x0000000000000000000000000000000000000000000000000000000000000001";
     let account_id = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0";
@@ -173,41 +167,27 @@ async fn test_share_price_changes_use_latest_block() {
         .unwrap();
 
     // Start pipeline
-    let config = Config {
-        redis_url: harness.redis_url().to_string(),
-        database_url: harness.database_url().to_string(),
-        stream_names: vec!["rindexer_producer".to_string()],
-        consumer_group: "test-group".to_string(),
-        consumer_name: "test-consumer".to_string(),
-        batch_size: 10,
-        batch_timeout_ms: 1000,
-        workers: 1,
-        processing_timeout_ms: 5000,
-        max_retries: 3,
-        circuit_breaker_threshold: 10,
-        circuit_breaker_timeout_ms: 60000,
-        http_port: 0,
-        consumer_group_suffix: None,
-        analytics_stream_name: "term_updates".to_string(),
-    };
-
-    let pipeline = EventProcessingPipeline::new(config).await.unwrap();
+    let config = harness.default_config();
+    let pipeline = EventProcessingPipeline::new(config).await
+        .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
         async move { pipeline.start().await }
     });
 
     // Wait for processing
-    harness.wait_for_processing(5, 15).await.unwrap();
+    harness.wait_for_processing(5, 15).await
+        .expect("Failed to process 5 events within 15 seconds");
     tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
 
     // Assertions
-    let pool = harness.get_pool().await.unwrap();
+    let pool = harness.get_pool().await
+        .expect("Failed to get database pool");
 
     // Vault should have the price from block 1008 (the latest)
-    let vault = DbAssertions::assert_vault_state(&pool, term_id, curve_id, 1)
+    let vault = DbAssertions::assert_vault_state(pool, term_id, curve_id, 1)
         .await
-        .unwrap();
+        .expect("Failed to verify vault state");
 
     assert_eq!(
         vault.current_share_price, "2000000000000000000",
@@ -216,14 +196,22 @@ async fn test_share_price_changes_use_latest_block() {
 
     // Get the last price event info
     let (last_block, last_log_index) =
-        DbAssertions::get_vault_last_price_info(&pool, term_id, curve_id)
+        DbAssertions::get_vault_last_price_info(pool, term_id, curve_id)
             .await
-            .unwrap();
+            .expect("Failed to get vault last price info");
 
     assert_eq!(last_block, 1008, "Last price block should be 1008");
     assert_eq!(last_log_index, 0, "Last price log index should be 0");
 
-    // Cleanup
-    pipeline.stop().await.unwrap();
+    // Cleanup - ensure pipeline stops even if stop() hangs
+    let stop_result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        pipeline.stop()
+    ).await;
+
     pipeline_handle.abort();
+
+    stop_result
+        .expect("Pipeline stop timeout")
+        .expect("Pipeline stop failed");
 }

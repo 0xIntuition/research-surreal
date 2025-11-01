@@ -1,5 +1,6 @@
 use anyhow::Result;
 use sqlx::PgPool;
+use redis_postgres_sync::sync::utils::to_eip55_address;
 
 #[derive(Debug, sqlx::FromRow, PartialEq)]
 pub struct AtomRow {
@@ -72,8 +73,12 @@ impl DbAssertions {
         .await?
         .ok_or_else(|| anyhow::anyhow!("Atom not found: {}", term_id))?;
 
+        // Convert expected creator to EIP-55 format for comparison
+        let creator_eip55 = to_eip55_address(creator_id)
+            .map_err(|e| anyhow::anyhow!("Invalid creator address: {}", e))?;
+
         assert_eq!(
-            row.creator_id, creator_id,
+            row.creator_id, creator_eip55,
             "Creator mismatch for atom {}",
             term_id
         );
@@ -159,6 +164,10 @@ impl DbAssertions {
         term_id: &str,
         curve_id: &str,
     ) -> Result<PositionRow> {
+        // Convert account address to EIP-55 format for lookup
+        let account_eip55 = to_eip55_address(account_id)
+            .map_err(|e| anyhow::anyhow!("Invalid account address: {}", e))?;
+
         let row = sqlx::query_as::<_, PositionRow>(
             r#"
             SELECT account_id, term_id, curve_id, shares,
@@ -168,13 +177,13 @@ impl DbAssertions {
             WHERE account_id = $1 AND term_id = $2 AND curve_id = $3
             "#,
         )
-        .bind(account_id)
+        .bind(&account_eip55)
         .bind(term_id)
         .bind(curve_id)
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| {
-            anyhow::anyhow!("Position not found: {} / {} / {}", account_id, term_id, curve_id)
+            anyhow::anyhow!("Position not found: {} / {} / {}", account_eip55, term_id, curve_id)
         })?;
 
         Ok(row)
@@ -188,7 +197,7 @@ impl DbAssertions {
     ) -> Result<TermRow> {
         let row = sqlx::query_as::<_, TermRow>(
             r#"
-            SELECT id, type, total_assets, total_market_cap
+            SELECT id, type, total_assets::TEXT as total_assets, total_market_cap::TEXT as total_market_cap
             FROM term
             WHERE id = $1
             "#,

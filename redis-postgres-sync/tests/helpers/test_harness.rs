@@ -2,37 +2,34 @@ use anyhow::Result;
 use redis::aio::MultiplexedConnection;
 use redis_postgres_sync::core::types::RindexerEvent;
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use std::sync::Arc;
-use testcontainers::{clients::Cli, Container, Image};
+use testcontainers::{ContainerAsync, runners::AsyncRunner};
 use testcontainers_modules::{postgres::Postgres, redis::Redis};
 
 pub struct TestHarness {
-    _docker: Arc<Cli>,
-    _redis_container: Container<'static, Redis>,
-    _postgres_container: Container<'static, Postgres>,
+    _redis_container: ContainerAsync<Redis>,
+    _postgres_container: ContainerAsync<Postgres>,
     redis_url: String,
     database_url: String,
     test_db_name: String,
+    pool: Option<PgPool>,
 }
 
 impl TestHarness {
     /// Creates a new test environment with isolated containers
     pub async fn new() -> Result<Self> {
-        let docker = Arc::new(Cli::default());
-
         // Start Redis container
-        let redis_container = docker.run(Redis::default());
-        let redis_port = redis_container.get_host_port_ipv4(6379);
+        let redis_container = Redis::default().start().await?;
+        let redis_port = redis_container.get_host_port_ipv4(6379).await?;
         let redis_url = format!("redis://127.0.0.1:{}", redis_port);
 
         // Start PostgreSQL container
-        let postgres_container = docker.run(
-            Postgres::default()
-                .with_db_name("test")
-                .with_user("test")
-                .with_password("test"),
-        );
-        let postgres_port = postgres_container.get_host_port_ipv4(5432);
+        let postgres_container = Postgres::default()
+            .with_db_name("test")
+            .with_user("test")
+            .with_password("test")
+            .start()
+            .await?;
+        let postgres_port = postgres_container.get_host_port_ipv4(5432).await?;
 
         // Create unique database for this test
         let test_db_name = format!("test_{}", uuid::Uuid::new_v4().simple());
@@ -41,13 +38,13 @@ impl TestHarness {
             postgres_port, test_db_name
         );
 
-        let harness = Self {
-            _docker: docker,
+        let mut harness = Self {
             _redis_container: redis_container,
             _postgres_container: postgres_container,
             redis_url,
             database_url: database_url.clone(),
             test_db_name: test_db_name.clone(),
+            pool: None,
         };
 
         // Create test database and run migrations
@@ -86,79 +83,80 @@ impl TestHarness {
     }
 
     /// Clears all data from Redis and PostgreSQL
-    pub async fn clear_data(&self) -> Result<()> {
+    pub async fn clear_data(&mut self) -> Result<()> {
         // Clear Redis streams
         let client = redis::Client::open(self.redis_url.as_str())?;
         let mut con = client.get_multiplexed_async_connection().await?;
 
         // Delete all streams
-        redis::cmd("FLUSHDB").query_async(&mut con).await?;
+        redis::cmd("FLUSHDB").query_async::<()>(&mut con).await?;
 
         // Clear PostgreSQL tables in dependency order
         let pool = self.get_pool().await?;
 
         // Analytics tables first
         sqlx::query("TRUNCATE TABLE predicate_object CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE subject_predicate CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE triple_term CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE triple_vault CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
 
         // Aggregated tables
         sqlx::query("TRUNCATE TABLE term CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
 
         // Base tables
         sqlx::query("TRUNCATE TABLE vault CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE position CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE triple CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE atom CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
 
         // Event tables
         sqlx::query("TRUNCATE TABLE share_price_changed_events CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE redeemed_events CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE deposited_events CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE triple_created_events CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
         sqlx::query("TRUNCATE TABLE atom_created_events CASCADE")
-            .execute(&pool)
+            .execute(pool)
             .await?;
-
-        pool.close().await;
 
         Ok(())
     }
 
-    /// Gets a connection pool for assertions
-    pub async fn get_pool(&self) -> Result<PgPool> {
-        PgPoolOptions::new()
-            .max_connections(5)
-            .connect(&self.database_url)
-            .await
-            .map_err(Into::into)
+    /// Gets a connection pool for assertions (cached for reuse)
+    pub async fn get_pool(&mut self) -> Result<&PgPool> {
+        if self.pool.is_none() {
+            let pool = PgPoolOptions::new()
+                .max_connections(5)
+                .connect(&self.database_url)
+                .await?;
+            self.pool = Some(pool);
+        }
+        Ok(self.pool.as_ref().unwrap())
     }
 
     /// Gets Redis connection
@@ -181,7 +179,7 @@ impl TestHarness {
                 .arg("*") // Auto-generate ID
                 .arg("data")
                 .arg(json)
-                .query_async(&mut con)
+                .query_async::<()>(&mut con)
                 .await?;
         }
 
@@ -189,7 +187,7 @@ impl TestHarness {
     }
 
     /// Waits for events to be processed
-    pub async fn wait_for_processing(&self, expected_count: usize, timeout_secs: u64) -> Result<()> {
+    pub async fn wait_for_processing(&mut self, expected_count: usize, timeout_secs: u64) -> Result<()> {
         let start = std::time::Instant::now();
         let pool = self.get_pool().await?;
 
@@ -203,7 +201,7 @@ impl TestHarness {
                     UNION ALL SELECT 1 FROM share_price_changed_events
                 ) AS all_events",
             )
-            .fetch_one(&pool)
+            .fetch_one(pool)
             .await?;
 
             if count as usize >= expected_count {
@@ -211,7 +209,6 @@ impl TestHarness {
             }
 
             if start.elapsed().as_secs() > timeout_secs {
-                pool.close().await;
                 return Err(anyhow::anyhow!(
                     "Timeout waiting for events. Expected: {}, Got: {}",
                     expected_count,
@@ -222,13 +219,12 @@ impl TestHarness {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
 
-        pool.close().await;
         Ok(())
     }
 
     /// Waits for analytics to be processed (separate from event processing)
     pub async fn wait_for_analytics(
-        &self,
+        &mut self,
         term_id: &str,
         counter_term_id: Option<&str>,
         timeout_secs: u64,
@@ -243,12 +239,12 @@ impl TestHarness {
                 )
                 .bind(term_id)
                 .bind(counter)
-                .fetch_one(&pool)
+                .fetch_one(pool)
                 .await?
             } else {
                 sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM term WHERE id = $1)")
                     .bind(term_id)
-                    .fetch_one(&pool)
+                    .fetch_one(pool)
                     .await?
             };
 
@@ -257,7 +253,6 @@ impl TestHarness {
             }
 
             if start.elapsed().as_secs() > timeout_secs {
-                pool.close().await;
                 return Err(anyhow::anyhow!(
                     "Timeout waiting for analytics for term: {}",
                     term_id
@@ -267,7 +262,6 @@ impl TestHarness {
             tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
         }
 
-        pool.close().await;
         Ok(())
     }
 
@@ -277,6 +271,34 @@ impl TestHarness {
 
     pub fn database_url(&self) -> &str {
         &self.database_url
+    }
+
+    /// Creates a default Config for testing
+    pub fn default_config(&self) -> redis_postgres_sync::config::Config {
+        redis_postgres_sync::config::Config {
+            redis_url: self.redis_url().to_string(),
+            database_url: self.database_url().to_string(),
+            stream_names: vec!["rindexer_producer".to_string()],
+            consumer_group: "test-group".to_string(),
+            consumer_name: "test-consumer".to_string(),
+            batch_size: 10,
+            batch_timeout_ms: 1000,
+            workers: 1,
+            processing_timeout_ms: 5000,
+            max_retries: 3,
+            circuit_breaker_threshold: 10,
+            circuit_breaker_timeout_ms: 60000,
+            http_port: 0,
+            consumer_group_suffix: None,
+            analytics_stream_name: "term_updates".to_string(),
+        }
+    }
+
+    /// Creates a Config with specified number of workers
+    pub fn config_with_workers(&self, workers: usize) -> redis_postgres_sync::config::Config {
+        let mut config = self.default_config();
+        config.workers = workers;
+        config
     }
 }
 
@@ -293,7 +315,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_clear_data() {
-        let harness = TestHarness::new().await.unwrap();
+        let mut harness = TestHarness::new().await.unwrap();
         harness.clear_data().await.unwrap();
     }
 }

@@ -45,8 +45,8 @@ impl EventBuilder {
         let event_data = json!({
             "termId": term_id,
             "creator": creator,
-            "walletId": wallet_id,
-            "data": "0x",
+            "atomWallet": wallet_id,
+            "atomData": "",  // Empty string is valid hex data
             "transaction_information": self.transaction_info(),
         });
 
@@ -98,13 +98,13 @@ impl EventBuilder {
         let event_data = json!({
             "sender": account_id,
             "receiver": account_id,
-            "id": term_id,
-            "curve": curve_id,
+            "termId": term_id,
+            "curveId": curve_id,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
-            "totalAssets": (assets * 2).to_string(),
             "totalShares": (shares * 2).to_string(),
-            "totalAssetsAfterTotalFees": assets.to_string(),
+            "assetsAfterFees": assets.to_string(),
+            "vaultType": 0,
             "transaction_information": self.transaction_info(),
         });
 
@@ -129,14 +129,13 @@ impl EventBuilder {
         let event_data = json!({
             "sender": account_id,
             "receiver": account_id,
-            "owner": account_id,
-            "id": term_id,
-            "curve": curve_id,
+            "termId": term_id,
+            "curveId": curve_id,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
-            "totalAssets": "0",
             "totalShares": "0",
-            "assetsForReceiver": assets.to_string(),
+            "fees": "0",
+            "vaultType": 0,
             "transaction_information": self.transaction_info(),
         });
 
@@ -153,10 +152,12 @@ impl EventBuilder {
         let curve_id = "0x0000000000000000000000000000000000000000000000000000000000000000";
 
         let event_data = json!({
-            "id": term_id,
-            "curve": curve_id,
-            "oldSharePrice": "1000000000000000000",
-            "newSharePrice": new_price.to_string(),
+            "termId": term_id,
+            "curveId": curve_id,
+            "sharePrice": new_price.to_string(),
+            "totalAssets": "1000000000000000000",
+            "totalShares": "1000000000000000000",
+            "vaultType": 0,
             "transaction_information": self.transaction_info(),
         });
 
@@ -171,12 +172,14 @@ impl EventBuilder {
     fn transaction_info(&self) -> serde_json::Value {
         let block_hash = format!("0x{}", hex::encode(Faker.fake::<[u8; 32]>()));
         let timestamp = Utc::now();
+        // Convert timestamp to hex-encoded Unix timestamp (as expected by deserialize_hex_timestamp)
+        let timestamp_hex = format!("0x{:x}", timestamp.timestamp());
 
         json!({
             "address": self.address,
             "block_hash": block_hash,
             "block_number": self.block_number,
-            "block_timestamp": timestamp.to_rfc3339(),
+            "block_timestamp": timestamp_hex,
             "log_index": self.log_index.to_string(),
             "network": self.network,
             "transaction_hash": self.transaction_hash,
