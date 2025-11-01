@@ -1,6 +1,6 @@
 use anyhow::Result;
-use sqlx::PgPool;
 use postgres_writer::sync::utils::to_eip55_address;
+use sqlx::PgPool;
 
 #[derive(Debug, sqlx::FromRow, PartialEq)]
 pub struct AtomRow {
@@ -71,16 +71,15 @@ impl DbAssertions {
         .bind(term_id)
         .fetch_optional(pool)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Atom not found: {}", term_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Atom not found: {term_id}"))?;
 
         // Convert expected creator to EIP-55 format for comparison
         let creator_eip55 = to_eip55_address(creator_id)
-            .map_err(|e| anyhow::anyhow!("Invalid creator address: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid creator address: {e}"))?;
 
         assert_eq!(
             row.creator_id, creator_eip55,
-            "Creator mismatch for atom {}",
-            term_id
+            "Creator mismatch for atom {term_id}"
         );
 
         Ok(row)
@@ -105,22 +104,19 @@ impl DbAssertions {
         .bind(term_id)
         .fetch_optional(pool)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Triple not found: {}", term_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Triple not found: {term_id}"))?;
 
         assert_eq!(
             row.subject_id, subject_id,
-            "Subject mismatch for triple {}",
-            term_id
+            "Subject mismatch for triple {term_id}"
         );
         assert_eq!(
             row.predicate_id, predicate_id,
-            "Predicate mismatch for triple {}",
-            term_id
+            "Predicate mismatch for triple {term_id}"
         );
         assert_eq!(
             row.object_id, object_id,
-            "Object mismatch for triple {}",
-            term_id
+            "Object mismatch for triple {term_id}"
         );
 
         Ok(row)
@@ -149,13 +145,11 @@ impl DbAssertions {
         .bind(curve_id)
         .fetch_optional(pool)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Vault not found: {} / {}", term_id, curve_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Vault not found: {term_id} / {curve_id}"))?;
 
         assert_eq!(
             row.position_count, expected_position_count,
-            "Position count mismatch for vault {} / {}",
-            term_id,
-            curve_id
+            "Position count mismatch for vault {term_id} / {curve_id}"
         );
 
         Ok(row)
@@ -170,7 +164,7 @@ impl DbAssertions {
     ) -> Result<PositionRow> {
         // Convert account address to EIP-55 format for lookup
         let account_eip55 = to_eip55_address(account_id)
-            .map_err(|e| anyhow::anyhow!("Invalid account address: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid account address: {e}"))?;
 
         let row = sqlx::query_as::<_, PositionRow>(
             r#"
@@ -188,7 +182,7 @@ impl DbAssertions {
         .fetch_optional(pool)
         .await?
         .ok_or_else(|| {
-            anyhow::anyhow!("Position not found: {} / {} / {}", account_eip55, term_id, curve_id)
+            anyhow::anyhow!("Position not found: {account_eip55} / {term_id} / {curve_id}")
         })?;
 
         Ok(row)
@@ -210,12 +204,11 @@ impl DbAssertions {
         .bind(term_id)
         .fetch_optional(pool)
         .await?
-        .ok_or_else(|| anyhow::anyhow!("Term not found: {}", term_id))?;
+        .ok_or_else(|| anyhow::anyhow!("Term not found: {term_id}"))?;
 
         assert_eq!(
             row.r#type, expected_type,
-            "Term type mismatch for {}",
-            term_id
+            "Term type mismatch for {term_id}"
         );
 
         Ok(row)
@@ -240,7 +233,6 @@ impl DbAssertions {
         Ok(())
     }
 
-
     /// Gets the latest block and log index from a position
     pub async fn get_position_last_deposit_info(
         pool: &PgPool,
@@ -250,7 +242,7 @@ impl DbAssertions {
     ) -> Result<(i64, i64)> {
         // Convert account address to EIP-55 format for lookup
         let account_eip55 = to_eip55_address(account_id)
-            .map_err(|e| anyhow::anyhow!("Invalid account address: {}", e))?;
+            .map_err(|e| anyhow::anyhow!("Invalid account address: {e}"))?;
 
         let row: (i64, i64) = sqlx::query_as(
             "SELECT last_deposit_block, last_deposit_log_index

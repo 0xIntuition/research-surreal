@@ -22,7 +22,10 @@ impl VaultUpdater {
         term_id: &str,
         curve_id: &str,
     ) -> Result<()> {
-        debug!("Updating vault from positions: term={}, curve={}", term_id, curve_id);
+        debug!(
+            "Updating vault from positions: term={}, curve={}",
+            term_id, curve_id
+        );
 
         // Get position aggregates for this vault in a single query
         let (position_count, position_net_assets): (i64, Option<String>) = sqlx::query_as(
@@ -41,12 +44,14 @@ impl VaultUpdater {
         .bind(curve_id)
         .fetch_one(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         let position_net_assets = position_net_assets.unwrap_or_else(|| "0".to_string());
 
-        debug!("Found {} active positions for vault, net assets from positions: {}",
-               position_count, position_net_assets);
+        debug!(
+            "Found {} active positions for vault, net assets from positions: {}",
+            position_count, position_net_assets
+        );
 
         // Update vault with new metrics
         // For total_assets:
@@ -82,7 +87,7 @@ impl VaultUpdater {
         .bind(&position_net_assets)
         .execute(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?
+        .map_err(SyncError::Sqlx)?
         .rows_affected();
 
         if rows_affected == 0 {
@@ -103,7 +108,10 @@ impl VaultUpdater {
         term_id: &str,
         curve_id: &str,
     ) -> Result<()> {
-        debug!("Recalculating market cap for vault: term={}, curve={}", term_id, curve_id);
+        debug!(
+            "Recalculating market cap for vault: term={}, curve={}",
+            term_id, curve_id
+        );
 
         let rows_affected = sqlx::query(
             r#"
@@ -125,7 +133,7 @@ impl VaultUpdater {
         .bind(curve_id)
         .execute(&mut **tx)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?
+        .map_err(SyncError::Sqlx)?
         .rows_affected();
 
         if rows_affected == 0 {

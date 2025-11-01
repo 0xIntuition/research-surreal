@@ -18,12 +18,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Load configuration from environment
     let config = Config::from_env().map_err(|e| {
-        error!("Failed to load configuration: {}", e);
+        error!("Failed to load configuration: {e}");
         e
     })?;
 
     config.validate().map_err(|e| {
-        error!("Configuration validation failed: {}", e);
+        error!("Configuration validation failed: {e}");
         e
     })?;
 
@@ -31,16 +31,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Redis URL: {}", config.redis_url);
     info!("Database URL: {}", config.database_url);
     info!("Streams: {:?}", config.stream_names);
-    info!("Batch size: {}, Workers: {}", config.batch_size, config.workers);
+    info!(
+        "Batch size: {}, Workers: {}",
+        config.batch_size, config.workers
+    );
 
     // Create pipeline
     let pipeline = Arc::new(
         EventProcessingPipeline::new(config.clone())
             .await
             .map_err(|e| {
-                error!("Failed to create pipeline: {}", e);
+                error!("Failed to create pipeline: {e}");
                 e
-            })?
+            })?,
     );
 
     // Start analytics worker
@@ -49,8 +52,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let analytics_token = pipeline.get_cancellation_token();
     let analytics_handle = tokio::spawn(async move {
         info!("Spawning analytics worker");
-        if let Err(e) = analytics::start_analytics_worker(analytics_config, analytics_pool, analytics_token).await {
-            error!("Analytics worker error: {}", e);
+        if let Err(e) =
+            analytics::start_analytics_worker(analytics_config, analytics_pool, analytics_token)
+                .await
+        {
+            error!("Analytics worker error: {e}");
         } else {
             info!("Analytics worker stopped gracefully");
         }
@@ -60,7 +66,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let http_server = HttpServer::new(pipeline.clone(), config.http_port);
     let http_handle = tokio::spawn(async move {
         if let Err(e) = http_server.start().await {
-            error!("HTTP server error: {}", e);
+            error!("HTTP server error: {e}");
         }
     });
 
@@ -72,7 +78,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .expect("Failed to listen for ctrl-c");
         warn!("Received Ctrl-C, initiating graceful shutdown...");
         if let Err(e) = shutdown_pipeline.stop().await {
-            error!("Error during shutdown: {}", e);
+            error!("Error during shutdown: {e}");
         }
         analytics_handle.abort();
         http_handle.abort();
@@ -86,7 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             Ok(())
         }
         Err(e) => {
-            error!("Pipeline error: {}", e);
+            error!("Pipeline error: {e}");
             Err(e.into())
         }
     }

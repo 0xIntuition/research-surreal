@@ -1,11 +1,10 @@
-
 use serde_json::Value;
 use sqlx::PgPool;
 use tracing::{debug, error};
 
-use crate::error::{Result, SyncError};
-use crate::core::types::TransactionInformation;
 use super::utils::parse_hex_to_u64;
+use crate::core::types::TransactionInformation;
+use crate::error::{Result, SyncError};
 
 pub async fn handle_generic_event(
     pool: &PgPool,
@@ -33,7 +32,7 @@ pub async fn handle_generic_event(
             network = EXCLUDED.network,
             transaction_index = EXCLUDED.transaction_index,
             block_timestamp = EXCLUDED.block_timestamp
-        "#
+        "#,
     )
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
@@ -44,14 +43,14 @@ pub async fn handle_generic_event(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert {} record: {}", event_name, e);
+        error!("Failed to insert {event_name} record: {e}");
         SyncError::from(e)
     })?;
 
-    debug!("Created {} record", event_name);
+    debug!("Created {event_name} record");
     Ok(())
 }

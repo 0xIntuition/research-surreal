@@ -2,9 +2,9 @@ use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
+use super::utils::{ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
-use super::utils::{ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepositedEvent {
@@ -60,13 +60,13 @@ pub async fn handle_deposited(
             network = EXCLUDED.network,
             transaction_index = EXCLUDED.transaction_index,
             block_timestamp = EXCLUDED.block_timestamp
-        "#
+        "#,
     )
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
     .bind(&event.assets)
     .bind(&event.assets_after_fees)
-    .bind(&curve_id)
+    .bind(curve_id)
     .bind(&receiver)
     .bind(&sender)
     .bind(&event.shares)
@@ -78,11 +78,11 @@ pub async fn handle_deposited(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert Deposited record: {}", e);
+        error!("Failed to insert Deposited record: {e}");
         SyncError::from(e)
     })?;
 

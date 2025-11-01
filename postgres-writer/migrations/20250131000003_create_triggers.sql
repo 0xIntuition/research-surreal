@@ -148,6 +148,8 @@ RETURNS TRIGGER AS $$
 DECLARE
     current_shares NUMERIC(78, 0);
     current_deposit_total NUMERIC(78, 0);
+    current_shares_event_block BIGINT;
+    current_shares_event_log_index BIGINT;
     current_deposit_block BIGINT;
     current_deposit_log_index BIGINT;
 BEGIN
@@ -155,11 +157,15 @@ BEGIN
     SELECT
         shares,
         total_deposit_assets_after_total_fees,
+        last_shares_event_block,
+        last_shares_event_log_index,
         last_deposit_block,
         last_deposit_log_index
     INTO
         current_shares,
         current_deposit_total,
+        current_shares_event_block,
+        current_shares_event_log_index,
         current_deposit_block,
         current_deposit_log_index
     FROM position
@@ -178,6 +184,8 @@ BEGIN
             shares,
             total_deposit_assets_after_total_fees,
             total_redeem_assets_for_receiver,
+            last_shares_event_block,
+            last_shares_event_log_index,
             last_deposit_block,
             last_deposit_log_index,
             created_at,
@@ -186,37 +194,73 @@ BEGIN
             NEW.receiver,
             NEW.term_id,
             NEW.curve_id,
-            NEW.shares::NUMERIC(78, 0),
+            NEW.total_shares::NUMERIC(78, 0),
             NEW.assets_after_fees::NUMERIC(78, 0),
             0,
+            NEW.block_number,
+            NEW.log_index,
             NEW.block_number,
             NEW.log_index,
             NEW.block_timestamp,
             NEW.block_timestamp
         );
     ELSE
-        -- Position exists: always accumulate deposits, but only update shares if newer
-        IF is_event_newer(NEW.block_number, NEW.log_index, current_deposit_block, current_deposit_log_index) THEN
-            -- This is a newer event: update both shares and accumulated total
-            UPDATE position SET
-                shares = NEW.shares::NUMERIC(78, 0),
-                total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
-                last_deposit_block = NEW.block_number,
-                last_deposit_log_index = NEW.log_index,
-                updated_at = NEW.block_timestamp
-            WHERE
-                account_id = NEW.receiver
-                AND term_id = NEW.term_id
-                AND curve_id = NEW.curve_id;
+        -- Position exists: always accumulate deposits
+        -- Check if this deposit is newer than the last shares event (across all types)
+        IF is_event_newer(NEW.block_number, NEW.log_index, current_shares_event_block, current_shares_event_log_index) THEN
+            -- This deposit is newer than the last shares event: update shares
+            -- Also check if it's newer than last deposit for tracking
+            IF is_event_newer(NEW.block_number, NEW.log_index, current_deposit_block, current_deposit_log_index) THEN
+                -- Newest deposit AND newest shares event: update everything
+                UPDATE position SET
+                    shares = NEW.total_shares::NUMERIC(78, 0),
+                    total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
+                    last_shares_event_block = NEW.block_number,
+                    last_shares_event_log_index = NEW.log_index,
+                    last_deposit_block = NEW.block_number,
+                    last_deposit_log_index = NEW.log_index,
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            ELSE
+                -- Newer shares event but older deposit: update shares but not last_deposit tracking
+                UPDATE position SET
+                    shares = NEW.total_shares::NUMERIC(78, 0),
+                    total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
+                    last_shares_event_block = NEW.block_number,
+                    last_shares_event_log_index = NEW.log_index,
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            END IF;
         ELSE
-            -- This is an older event: only accumulate the deposit total, don't change shares
-            UPDATE position SET
-                total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
-                updated_at = NEW.block_timestamp
-            WHERE
-                account_id = NEW.receiver
-                AND term_id = NEW.term_id
-                AND curve_id = NEW.curve_id;
+            -- This deposit is older than the last shares event
+            -- Check if it's newer than last deposit for tracking purposes
+            IF is_event_newer(NEW.block_number, NEW.log_index, current_deposit_block, current_deposit_log_index) THEN
+                -- Older shares event but newer deposit: update deposit tracking and accumulate
+                UPDATE position SET
+                    total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
+                    last_deposit_block = NEW.block_number,
+                    last_deposit_log_index = NEW.log_index,
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            ELSE
+                -- Older than both: just accumulate the deposit total
+                UPDATE position SET
+                    total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            END IF;
         END IF;
     END IF;
 
@@ -286,6 +330,8 @@ RETURNS TRIGGER AS $$
 DECLARE
     current_shares NUMERIC(78, 0);
     current_redeem_total NUMERIC(78, 0);
+    current_shares_event_block BIGINT;
+    current_shares_event_log_index BIGINT;
     current_redeem_block BIGINT;
     current_redeem_log_index BIGINT;
 BEGIN
@@ -293,11 +339,15 @@ BEGIN
     SELECT
         shares,
         total_redeem_assets_for_receiver,
+        last_shares_event_block,
+        last_shares_event_log_index,
         last_redeem_block,
         last_redeem_log_index
     INTO
         current_shares,
         current_redeem_total,
+        current_shares_event_block,
+        current_shares_event_log_index,
         current_redeem_block,
         current_redeem_log_index
     FROM position
@@ -316,6 +366,8 @@ BEGIN
             shares,
             total_deposit_assets_after_total_fees,
             total_redeem_assets_for_receiver,
+            last_shares_event_block,
+            last_shares_event_log_index,
             last_redeem_block,
             last_redeem_log_index,
             created_at,
@@ -324,37 +376,73 @@ BEGIN
             NEW.receiver,
             NEW.term_id,
             NEW.curve_id,
-            NEW.shares::NUMERIC(78, 0),
+            NEW.total_shares::NUMERIC(78, 0),
             0,
             NEW.assets::NUMERIC(78, 0),
+            NEW.block_number,
+            NEW.log_index,
             NEW.block_number,
             NEW.log_index,
             NEW.block_timestamp,
             NEW.block_timestamp
         );
     ELSE
-        -- Position exists: always accumulate redeems, but only update shares if newer
-        IF is_event_newer(NEW.block_number, NEW.log_index, current_redeem_block, current_redeem_log_index) THEN
-            -- This is a newer event: update both shares and accumulated total
-            UPDATE position SET
-                shares = NEW.shares::NUMERIC(78, 0),
-                total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
-                last_redeem_block = NEW.block_number,
-                last_redeem_log_index = NEW.log_index,
-                updated_at = NEW.block_timestamp
-            WHERE
-                account_id = NEW.receiver
-                AND term_id = NEW.term_id
-                AND curve_id = NEW.curve_id;
+        -- Position exists: always accumulate redeems
+        -- Check if this redeem is newer than the last shares event (across all types)
+        IF is_event_newer(NEW.block_number, NEW.log_index, current_shares_event_block, current_shares_event_log_index) THEN
+            -- This redeem is newer than the last shares event: update shares
+            -- Also check if it's newer than last redeem for tracking
+            IF is_event_newer(NEW.block_number, NEW.log_index, current_redeem_block, current_redeem_log_index) THEN
+                -- Newest redeem AND newest shares event: update everything
+                UPDATE position SET
+                    shares = NEW.total_shares::NUMERIC(78, 0),
+                    total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
+                    last_shares_event_block = NEW.block_number,
+                    last_shares_event_log_index = NEW.log_index,
+                    last_redeem_block = NEW.block_number,
+                    last_redeem_log_index = NEW.log_index,
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            ELSE
+                -- Newer shares event but older redeem: update shares but not last_redeem tracking
+                UPDATE position SET
+                    shares = NEW.total_shares::NUMERIC(78, 0),
+                    total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
+                    last_shares_event_block = NEW.block_number,
+                    last_shares_event_log_index = NEW.log_index,
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            END IF;
         ELSE
-            -- This is an older event: only accumulate the redeem total, don't change shares
-            UPDATE position SET
-                total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
-                updated_at = NEW.block_timestamp
-            WHERE
-                account_id = NEW.receiver
-                AND term_id = NEW.term_id
-                AND curve_id = NEW.curve_id;
+            -- This redeem is older than the last shares event
+            -- Check if it's newer than last redeem for tracking purposes
+            IF is_event_newer(NEW.block_number, NEW.log_index, current_redeem_block, current_redeem_log_index) THEN
+                -- Older shares event but newer redeem: update redeem tracking and accumulate
+                UPDATE position SET
+                    total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
+                    last_redeem_block = NEW.block_number,
+                    last_redeem_log_index = NEW.log_index,
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            ELSE
+                -- Older than both: just accumulate the redeem total
+                UPDATE position SET
+                    total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
+                    updated_at = NEW.block_timestamp
+                WHERE
+                    account_id = NEW.receiver
+                    AND term_id = NEW.term_id
+                    AND curve_id = NEW.curve_id;
+            END IF;
         END IF;
     END IF;
 

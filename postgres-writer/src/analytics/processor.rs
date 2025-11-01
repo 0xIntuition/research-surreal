@@ -1,10 +1,13 @@
 // Analytics table update logic
 // Updates triple_vault, triple_term, predicate_object, subject_predicate tables
 
-use crate::{consumer::TermUpdateMessage, error::{Result, SyncError}};
+use crate::{
+    consumer::TermUpdateMessage,
+    error::{Result, SyncError},
+};
+use alloy_primitives::keccak256;
 use sqlx::PgPool;
 use tracing::debug;
-use alloy_primitives::keccak256;
 
 const TRIPLE_BATCH_SIZE: i64 = 100;
 
@@ -17,7 +20,7 @@ async fn acquire_triple_lock(
 ) -> Result<()> {
     // Create a stable hash for the triple pair using keccak256
     // This ensures stability across Rust versions and provides cryptographic collision resistance
-    let combined = format!("{}:{}", term_id, counter_term_id);
+    let combined = format!("{term_id}:{counter_term_id}");
     let hash = keccak256(combined.as_bytes());
 
     // Convert first 8 bytes to i64, ensuring positive value for pg_advisory_xact_lock(bigint)
@@ -32,14 +35,14 @@ async fn acquire_triple_lock(
         .await
         .map_err(SyncError::Sqlx)?;
 
-    debug!("Acquired advisory lock for triple pair: {} / {} (lock_id: {})", term_id, counter_term_id, lock_id);
+    debug!(
+        "Acquired advisory lock for triple pair: {} / {} (lock_id: {})",
+        term_id, counter_term_id, lock_id
+    );
     Ok(())
 }
 
-pub async fn update_analytics_tables(
-    pool: &PgPool,
-    term_update: &TermUpdateMessage,
-) -> Result<()> {
+pub async fn update_analytics_tables(pool: &PgPool, term_update: &TermUpdateMessage) -> Result<()> {
     // Process triples in batches to avoid loading too many into memory at once
     let mut offset = 0i64;
     let mut total_processed = 0usize;
@@ -81,7 +84,7 @@ pub async fn update_analytics_tables(
         .bind(offset)
         .fetch_all(pool)
         .await
-        .map_err(|e| SyncError::Sqlx(e))?;
+        .map_err(SyncError::Sqlx)?;
 
         if affected_triples.is_empty() {
             break;
@@ -122,8 +125,10 @@ pub async fn update_analytics_tables(
         // Batch update triple_vault and triple_term for all unique term pairs
         // Convert to vectors for batch processing
         let triple_pairs_vec: Vec<(String, String)> = triple_pairs.into_iter().collect();
-        let predicate_object_vec: Vec<(String, String)> = predicate_object_pairs.into_iter().collect();
-        let subject_predicate_vec: Vec<(String, String)> = subject_predicate_pairs.into_iter().collect();
+        let predicate_object_vec: Vec<(String, String)> =
+            predicate_object_pairs.into_iter().collect();
+        let subject_predicate_vec: Vec<(String, String)> =
+            subject_predicate_pairs.into_iter().collect();
 
         // Acquire all advisory locks first to prevent deadlocks
         for (term_id, counter_term_id) in &triple_pairs_vec {
@@ -162,8 +167,7 @@ pub async fn update_analytics_tables(
     if total_processed > 0 {
         debug!(
             "Processed {} triples affected by term {}",
-            total_processed,
-            term_update.term_id
+            total_processed, term_update.term_id
         );
     }
 
@@ -217,7 +221,7 @@ async fn update_triple_vault_batch(
     .bind(&counter_term_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated triple_vault for {} pairs: {} rows affected",
@@ -266,7 +270,7 @@ async fn update_triple_term_batch(
     .bind(&counter_term_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated triple_term for {} pairs: {} rows affected",
@@ -316,7 +320,7 @@ async fn update_predicate_object_batch(
     .bind(&object_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated predicate_object for {} pairs: {} rows affected",
@@ -366,7 +370,7 @@ async fn update_subject_predicate_batch(
     .bind(&predicate_ids)
     .execute(&mut **tx)
     .await
-    .map_err(|e| SyncError::Sqlx(e))?;
+    .map_err(SyncError::Sqlx)?;
 
     debug!(
         "Batch updated subject_predicate for {} pairs: {} rows affected",

@@ -17,7 +17,7 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
 
     // Create 10 different accounts depositing concurrently to the same vault
     for i in 0..10 {
-        let account_id = format!("0x{:040x}", i);
+        let account_id = format!("0x{i:040x}");
         events.push(
             EventBuilder::new()
                 .with_block(1000 + i + 1)
@@ -35,7 +35,8 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
     // Start pipeline with single worker first to debug
     let config = harness.config_with_workers(1);
 
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -43,13 +44,19 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
     });
 
     // Wait for processing (11 events: 1 atom + 10 deposits)
-    harness.wait_for_processing(11, 30).await
+    harness
+        .wait_for_processing(11, 30)
+        .await
         .expect("Failed to process 11 events within 30 seconds");
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Vault should have exactly 10 positions (advisory locks should prevent race conditions)
@@ -63,20 +70,18 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
 
     // Each position should exist with correct shares
     for i in 0..10 {
-        let account_id = format!("0x{:040x}", i);
+        let account_id = format!("0x{i:040x}");
         let position = DbAssertions::assert_position_exists(pool, &account_id, term_id, curve_id)
             .await
             .expect("Failed to find position");
 
         assert_eq!(
             position.shares, "1000",
-            "Account {} should have 1000 shares",
-            i
+            "Account {i} should have 1000 shares"
         );
         assert_eq!(
             position.total_deposit_assets_after_total_fees, "1000",
-            "Account {} should have 1000 in deposits",
-            i
+            "Account {i} should have 1000 in deposits"
         );
     }
 
@@ -92,10 +97,8 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
     );
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 
@@ -149,7 +152,8 @@ async fn test_concurrent_deposits_and_redeems_maintain_consistency() {
     // Start pipeline
     let config = harness.config_with_workers(3);
 
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -157,13 +161,19 @@ async fn test_concurrent_deposits_and_redeems_maintain_consistency() {
     });
 
     // Wait for processing
-    harness.wait_for_processing(6, 20).await
+    harness
+        .wait_for_processing(6, 20)
+        .await
         .expect("Failed to process 6 events within 20 seconds");
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     let position = DbAssertions::assert_position_exists(pool, account_id, term_id, curve_id)
@@ -189,10 +199,8 @@ async fn test_concurrent_deposits_and_redeems_maintain_consistency() {
     );
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 
@@ -217,17 +225,18 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
 
     // 5 accounts deposit
     for i in 0..5 {
-        let account_id = format!("0x{:040x}", i);
-        events.push(
-            EventBuilder::new()
-                .with_block(1001 + i)
-                .deposited(&account_id, term_id, 1000, 1000),
-        );
+        let account_id = format!("0x{i:040x}");
+        events.push(EventBuilder::new().with_block(1001 + i).deposited(
+            &account_id,
+            term_id,
+            1000,
+            1000,
+        ));
     }
 
     // 2 accounts redeem everything (shares -> 0)
     for i in 0..2 {
-        let account_id = format!("0x{:040x}", i);
+        let account_id = format!("0x{i:040x}");
         events.push(
             EventBuilder::new()
                 .with_block(1010 + i)
@@ -243,7 +252,8 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
     // Start pipeline
     let config = harness.config_with_workers(1);
 
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -251,13 +261,19 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
     });
 
     // Wait for processing
-    harness.wait_for_processing(8, 30).await
+    harness
+        .wait_for_processing(8, 30)
+        .await
         .expect("Failed to process 8 events within 30 seconds");
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Position count should be 3 (5 deposited, 2 redeemed to 0)
@@ -276,10 +292,7 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
     .await
     .expect("Failed to query position count");
 
-    assert_eq!(
-        actual_count, 3,
-        "Should have 3 positions with shares > 0"
-    );
+    assert_eq!(actual_count, 3, "Should have 3 positions with shares > 0");
 
     assert_eq!(
         vault.position_count, 3,
@@ -287,10 +300,8 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
     );
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 

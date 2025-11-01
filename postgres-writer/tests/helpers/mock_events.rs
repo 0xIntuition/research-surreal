@@ -5,7 +5,8 @@ use serde_json::json;
 
 // Common test constants
 /// Default curve ID used in tests (linear bonding curve)
-pub const DEFAULT_CURVE_ID: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+pub const DEFAULT_CURVE_ID: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 /// Default starting block number for tests
 pub const DEFAULT_BLOCK_START: u64 = 1000;
@@ -16,10 +17,7 @@ pub const DEFAULT_NETWORK: &str = "base_sepolia";
 /// Validates that a string is a properly formatted Ethereum address
 fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
     if !addr.starts_with("0x") {
-        return Err(format!(
-            "{} must start with '0x', got: {}",
-            field_name, addr
-        ));
+        return Err(format!("{field_name} must start with '0x', got: {addr}"));
     }
     if addr.len() != 42 {
         return Err(format!(
@@ -30,8 +28,7 @@ fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
     }
     if !addr[2..].chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!(
-            "{} must contain only hex digits after '0x', got: {}",
-            field_name, addr
+            "{field_name} must contain only hex digits after '0x', got: {addr}"
         ));
     }
     Ok(())
@@ -40,10 +37,7 @@ fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
 /// Validates that a string is a properly formatted term ID (bytes32)
 fn validate_term_id(id: &str, field_name: &str) -> Result<(), String> {
     if !id.starts_with("0x") {
-        return Err(format!(
-            "{} must start with '0x', got: {}",
-            field_name, id
-        ));
+        return Err(format!("{field_name} must start with '0x', got: {id}"));
     }
     if id.len() != 66 {
         return Err(format!(
@@ -54,8 +48,7 @@ fn validate_term_id(id: &str, field_name: &str) -> Result<(), String> {
     }
     if !id[2..].chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!(
-            "{} must contain only hex digits after '0x', got: {}",
-            field_name, id
+            "{field_name} must contain only hex digits after '0x', got: {id}"
         ));
     }
     Ok(())
@@ -94,10 +87,8 @@ impl EventBuilder {
     /// Creates AtomCreated event
     pub fn atom_created(&self, term_id: &str, creator: &str) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in atom_created");
-        validate_address(creator, "creator")
-            .expect("Invalid creator address in atom_created");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in atom_created");
+        validate_address(creator, "creator").expect("Invalid creator address in atom_created");
 
         let wallet_id = format!("0x{}", hex::encode(Faker.fake::<[u8; 20]>()));
 
@@ -126,14 +117,11 @@ impl EventBuilder {
         object_id: &str,
     ) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in triple_created");
-        validate_term_id(subject_id, "subject_id")
-            .expect("Invalid subject_id in triple_created");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in triple_created");
+        validate_term_id(subject_id, "subject_id").expect("Invalid subject_id in triple_created");
         validate_term_id(predicate_id, "predicate_id")
             .expect("Invalid predicate_id in triple_created");
-        validate_term_id(object_id, "object_id")
-            .expect("Invalid object_id in triple_created");
+        validate_term_id(object_id, "object_id").expect("Invalid object_id in triple_created");
 
         let creator = format!("0x{}", hex::encode(Faker.fake::<[u8; 20]>()));
 
@@ -163,10 +151,8 @@ impl EventBuilder {
         shares: u64,
     ) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_address(account_id, "account_id")
-            .expect("Invalid account_id in deposited");
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in deposited");
+        validate_address(account_id, "account_id").expect("Invalid account_id in deposited");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in deposited");
 
         let event_data = json!({
             "sender": account_id,
@@ -175,7 +161,47 @@ impl EventBuilder {
             "curveId": DEFAULT_CURVE_ID,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
-            "totalShares": (shares * 2).to_string(),
+            // In real events, totalShares represents user's balance after deposit
+            // For test simplicity, we use shares value as the final balance
+            "totalShares": shares.to_string(),
+            "assetsAfterFees": assets.to_string(),
+            "vaultType": 0,
+            "transaction_information": self.transaction_info(),
+        });
+
+        RindexerEvent {
+            event_name: "Deposited".to_string(),
+            event_signature_hash: "0x789abcdef123456".to_string(),
+            event_data,
+            network: self.network.clone(),
+        }
+    }
+
+    /// Creates Deposited event with explicit totalShares
+    ///
+    /// # Parameters
+    /// - `shares_delta`: The shares minted in this transaction (delta)
+    /// - `total_shares`: The user's total share balance after the deposit (cumulative)
+    pub fn deposited_with_total(
+        &self,
+        account_id: &str,
+        term_id: &str,
+        assets: u64,
+        shares_delta: u64,
+        total_shares: u64,
+    ) -> RindexerEvent {
+        validate_address(account_id, "account_id")
+            .expect("Invalid account_id in deposited_with_total");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in deposited_with_total");
+
+        let event_data = json!({
+            "sender": account_id,
+            "receiver": account_id,
+            "termId": term_id,
+            "curveId": DEFAULT_CURVE_ID,
+            "assets": assets.to_string(),
+            "shares": shares_delta.to_string(),
+            "totalShares": total_shares.to_string(),
             "assetsAfterFees": assets.to_string(),
             "vaultType": 0,
             "transaction_information": self.transaction_info(),
@@ -198,10 +224,8 @@ impl EventBuilder {
         assets: u64,
     ) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_address(account_id, "account_id")
-            .expect("Invalid account_id in redeemed");
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in redeemed");
+        validate_address(account_id, "account_id").expect("Invalid account_id in redeemed");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in redeemed");
 
         let event_data = json!({
             "sender": account_id,
@@ -210,7 +234,47 @@ impl EventBuilder {
             "curveId": DEFAULT_CURVE_ID,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
-            "totalShares": "0",
+            // In real events, totalShares represents user's balance after redemption
+            // For test simplicity, we use shares value as the final balance
+            "totalShares": shares.to_string(),
+            "fees": "0",
+            "vaultType": 0,
+            "transaction_information": self.transaction_info(),
+        });
+
+        RindexerEvent {
+            event_name: "Redeemed".to_string(),
+            event_signature_hash: "0xabcdef123456789".to_string(),
+            event_data,
+            network: self.network.clone(),
+        }
+    }
+
+    /// Creates Redeemed event with explicit totalShares
+    ///
+    /// # Parameters
+    /// - `shares_delta`: The shares redeemed in this transaction (delta)
+    /// - `total_shares`: The user's total share balance after the redemption (cumulative)
+    pub fn redeemed_with_total(
+        &self,
+        account_id: &str,
+        term_id: &str,
+        shares_delta: u64,
+        assets: u64,
+        total_shares: u64,
+    ) -> RindexerEvent {
+        validate_address(account_id, "account_id")
+            .expect("Invalid account_id in redeemed_with_total");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in redeemed_with_total");
+
+        let event_data = json!({
+            "sender": account_id,
+            "receiver": account_id,
+            "termId": term_id,
+            "curveId": DEFAULT_CURVE_ID,
+            "assets": assets.to_string(),
+            "shares": shares_delta.to_string(),
+            "totalShares": total_shares.to_string(),
             "fees": "0",
             "vaultType": 0,
             "transaction_information": self.transaction_info(),
@@ -227,8 +291,7 @@ impl EventBuilder {
     /// Creates SharePriceChanged event
     pub fn share_price_changed(&self, term_id: &str, new_price: u64) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in share_price_changed");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in share_price_changed");
 
         let event_data = json!({
             "termId": term_id,
@@ -357,10 +420,7 @@ mod tests {
         assert_eq!(event.event_name, "Deposited");
         let tx_info = event.event_data.get("transaction_information").unwrap();
         assert_eq!(tx_info.get("block_number").unwrap().as_u64().unwrap(), 2000);
-        assert_eq!(
-            tx_info.get("log_index").unwrap().as_str().unwrap(),
-            "0x5"
-        );
+        assert_eq!(tx_info.get("log_index").unwrap().as_str().unwrap(), "0x5");
     }
 
     #[test]

@@ -22,7 +22,8 @@ async fn test_atom_creation_initializes_term() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -30,13 +31,19 @@ async fn test_atom_creation_initializes_term() {
     });
 
     // Wait for processing
-    harness.wait_for_processing(1, 10).await
+    harness
+        .wait_for_processing(1, 10)
+        .await
         .expect("Failed to process 1 event within 10 seconds");
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Check that atom was created
@@ -60,10 +67,8 @@ async fn test_atom_creation_initializes_term() {
     );
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 
@@ -97,14 +102,12 @@ async fn test_triple_creation_initializes_terms() {
     ];
 
     // Create triple
-    events.push(
-        EventBuilder::new().with_block(1003).triple_created(
-            triple_id,
-            subject_id,
-            predicate_id,
-            object_id,
-        ),
-    );
+    events.push(EventBuilder::new().with_block(1003).triple_created(
+        triple_id,
+        subject_id,
+        predicate_id,
+        object_id,
+    ));
 
     harness
         .publish_events("rindexer_producer", events)
@@ -114,7 +117,8 @@ async fn test_triple_creation_initializes_terms() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -122,25 +126,26 @@ async fn test_triple_creation_initializes_terms() {
     });
 
     // Wait for processing
-    harness.wait_for_processing(4, 15).await
+    harness
+        .wait_for_processing(4, 15)
+        .await
         .expect("Failed to process 4 events within 15 seconds");
-    harness.wait_for_cascade(triple_id, 5).await
+    harness
+        .wait_for_cascade(triple_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Check that triple was created
-    let triple = DbAssertions::assert_triple_exists(
-        pool,
-        triple_id,
-        subject_id,
-        predicate_id,
-        object_id,
-    )
-    .await
-    .expect("Failed to verify triple exists");
+    let triple =
+        DbAssertions::assert_triple_exists(pool, triple_id, subject_id, predicate_id, object_id)
+            .await
+            .expect("Failed to verify triple exists");
 
     // Check that the triple term was initialized
     DbAssertions::assert_term_aggregation(pool, triple_id, "Triple")
@@ -154,10 +159,8 @@ async fn test_triple_creation_initializes_terms() {
         .expect("Failed to verify counter term aggregation");
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 
@@ -192,7 +195,8 @@ async fn test_deposits_update_term_aggregations() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -200,13 +204,19 @@ async fn test_deposits_update_term_aggregations() {
     });
 
     // Wait for processing
-    harness.wait_for_processing(2, 15).await
+    harness
+        .wait_for_processing(2, 15)
+        .await
         .expect("Failed to process 2 events within 15 seconds");
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Check term aggregation was updated
@@ -222,10 +232,8 @@ async fn test_deposits_update_term_aggregations() {
     );
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 
@@ -263,7 +271,8 @@ async fn test_share_price_changes_update_term_market_cap() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -271,13 +280,19 @@ async fn test_share_price_changes_update_term_market_cap() {
     });
 
     // Wait for processing
-    harness.wait_for_processing(3, 15).await
+    harness
+        .wait_for_processing(3, 15)
+        .await
         .expect("Failed to process 3 events within 15 seconds");
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Check term aggregation
@@ -293,10 +308,8 @@ async fn test_share_price_changes_update_term_market_cap() {
     );
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 

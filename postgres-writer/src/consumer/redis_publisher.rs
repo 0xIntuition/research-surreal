@@ -50,8 +50,7 @@ impl RedisPublisher {
             timestamp: chrono::Utc::now().timestamp(),
         };
 
-        let message_json =
-            serde_json::to_string(&message).map_err(|e| SyncError::Serde(e))?;
+        let message_json = serde_json::to_string(&message).map_err(SyncError::Serde)?;
 
         // Publish to Redis stream
         let message_id: String = redis::cmd("XADD")
@@ -94,8 +93,7 @@ impl RedisPublisher {
                 timestamp: chrono::Utc::now().timestamp(),
             };
 
-            let message_json =
-                serde_json::to_string(&message).map_err(|e| SyncError::Serde(e))?;
+            let message_json = serde_json::to_string(&message).map_err(SyncError::Serde)?;
 
             pipe.cmd("XADD")
                 .arg(&self.stream_name)

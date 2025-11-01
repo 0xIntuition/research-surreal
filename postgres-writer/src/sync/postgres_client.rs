@@ -1,15 +1,15 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
-use tokio::time::{sleep, Duration};
 use tokio::sync::Mutex;
+use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
-use crate::core::types::{RindexerEvent, TransactionInformation};
-use crate::error::{Result, SyncError};
-use crate::processors::{CascadeProcessor, TermUpdater};
-use crate::consumer::RedisPublisher;
-use crate::monitoring::Metrics;
 use super::event_handlers;
 use super::utils::{ensure_hex_prefix, to_eip55_address};
+use crate::consumer::RedisPublisher;
+use crate::core::types::{RindexerEvent, TransactionInformation};
+use crate::error::{Result, SyncError};
+use crate::monitoring::Metrics;
+use crate::processors::{CascadeProcessor, TermUpdater};
 
 pub struct PostgresClient {
     pool: PgPool,
@@ -31,8 +31,8 @@ impl PostgresClient {
             .connect(database_url)
             .await
             .map_err(|e| {
-                error!("Failed to connect to PostgreSQL: {}", e);
-                SyncError::Connection(format!("Failed to connect to PostgreSQL: {}", e))
+                error!("Failed to connect to PostgreSQL: {e}");
+                SyncError::Connection(format!("Failed to connect to PostgreSQL: {e}"))
             })?;
 
         info!("Connected to PostgreSQL database");
@@ -56,10 +56,9 @@ impl PostgresClient {
                         );
                         sleep(Duration::from_millis(delay_ms)).await;
                     } else {
-                        error!("Failed to run migrations after {} attempts: {}", MAX_RETRIES, e);
+                        error!("Failed to run migrations after {MAX_RETRIES} attempts: {e}");
                         return Err(SyncError::Connection(format!(
-                            "Failed to run migrations after {} attempts: {}",
-                            MAX_RETRIES, e
+                            "Failed to run migrations after {MAX_RETRIES} attempts: {e}"
                         )));
                     }
                 }
@@ -94,11 +93,19 @@ impl PostgresClient {
         debug!("Starting sync for event: {}", event.event_name);
         debug!("Event signature hash: {}", event.event_signature_hash);
         debug!("Event network: {}", event.network);
-        debug!("Full event data: {}", serde_json::to_string_pretty(&event.event_data).unwrap_or_else(|_| "Failed to serialize event_data for logging".to_string()));
+        debug!(
+            "Full event data: {}",
+            serde_json::to_string_pretty(&event.event_data)
+                .unwrap_or_else(|_| "Failed to serialize event_data for logging".to_string())
+        );
 
         // Extract transaction information
         let tx_info = self.extract_transaction_info(event)?;
-        debug!("Extracted transaction info: {}", serde_json::to_string_pretty(&tx_info).unwrap_or_else(|_| "Failed to serialize tx_info for logging".to_string()));
+        debug!(
+            "Extracted transaction info: {}",
+            serde_json::to_string_pretty(&tx_info)
+                .unwrap_or_else(|_| "Failed to serialize tx_info for logging".to_string())
+        );
 
         // TODO: Refactor to use a single transaction for both event insert and cascade updates
         // Currently these use separate transactions which could lead to inconsistent state if
@@ -111,16 +118,22 @@ impl PostgresClient {
             &self.pool,
             &event.event_name,
             &event.event_data,
-            &tx_info
-        ).await;
+            &tx_info,
+        )
+        .await;
 
         if let Err(e) = event_handler_result {
             error!("Failed to process event '{}': {}", event.event_name, e);
-            error!("Event data that failed: {}", serde_json::to_string_pretty(&event.event_data).unwrap_or_else(|_| "Failed to serialize for logging".to_string()));
+            error!(
+                "Event data that failed: {}",
+                serde_json::to_string_pretty(&event.event_data)
+                    .unwrap_or_else(|_| "Failed to serialize for logging".to_string())
+            );
 
             // Record failure metrics
             self.metrics.record_event_by_type_failure(event_type);
-            self.metrics.record_event_processing_duration(event_type, event_start.elapsed());
+            self.metrics
+                .record_event_processing_duration(event_type, event_start.elapsed());
 
             return Err(e);
         }
@@ -128,22 +141,26 @@ impl PostgresClient {
         // After event insert and triggers, run cascade updates in a separate transaction
         // to update aggregated tables (vault, term)
         let cascade_start = std::time::Instant::now();
-        let term_ids = self.run_cascade_after_event(event).await.map_err(|e| {
-            // Record cascade failure - this is a specific edge case where event was already
-            // committed but cascade failed. This is tracked separately due to the TODO about
-            // transaction consistency at lines 105-108.
-            self.metrics.record_cascade_failure(event_type);
-            self.metrics.record_event_by_type_failure(event_type);
-            self.metrics.record_event_processing_duration(event_type, event_start.elapsed());
-            e
-        })?;
+        let term_ids = self
+            .run_cascade_after_event(event)
+            .await
+            .inspect_err(|_e| {
+                // Record cascade failure - this is a specific edge case where event was already
+                // committed but cascade failed. This is tracked separately due to the TODO about
+                // transaction consistency at lines 105-108.
+                self.metrics.record_cascade_failure(event_type);
+                self.metrics.record_event_by_type_failure(event_type);
+                self.metrics
+                    .record_event_processing_duration(event_type, event_start.elapsed());
+            })?;
 
         // Record cascade processing duration
         // NOTE: This measures only the cascade update queries (vault/term aggregations).
         // Redis publishing operations below are NOT included in this metric, as they
         // occur after cascade completion. This keeps cascade_duration focused on
         // database performance monitoring.
-        self.metrics.record_cascade_duration(event_type, cascade_start.elapsed());
+        self.metrics
+            .record_cascade_duration(event_type, cascade_start.elapsed());
 
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher_mutex) = &self.redis_publisher {
@@ -156,22 +173,26 @@ impl PostgresClient {
 
             // Process term_ids in chunks to avoid long-running transactions
             for chunk in term_ids.chunks(MAX_BATCH_SIZE) {
-                let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
+                let mut tx = self.pool.begin().await.map_err(SyncError::Sqlx)?;
 
                 for term_id in chunk {
                     // Get counter_term_id for triples using the shared transaction
-                    let counter_term_id = term_updater.get_counter_term_id(&mut tx, term_id).await?;
+                    let counter_term_id =
+                        term_updater.get_counter_term_id(&mut tx, term_id).await?;
                     term_data.push((term_id.clone(), counter_term_id));
                 }
 
                 // Commit after each chunk
-                tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
+                tx.commit().await.map_err(SyncError::Sqlx)?;
             }
 
             // Now acquire the lock and publish all messages quickly
             let mut publisher = publisher_mutex.lock().await;
             for (term_id, counter_term_id) in term_data {
-                if let Err(e) = publisher.publish_term_update(&term_id, counter_term_id.as_deref()).await {
+                if let Err(e) = publisher
+                    .publish_term_update(&term_id, counter_term_id.as_deref())
+                    .await
+                {
                     warn!("Failed to publish term update to Redis: {}", e);
                     // Don't fail the whole operation if Redis publish fails
                 }
@@ -182,31 +203,33 @@ impl PostgresClient {
 
         // Record successful event processing with metrics
         self.metrics.record_event_by_type_success(event_type);
-        self.metrics.record_event_processing_duration(event_type, event_start.elapsed());
+        self.metrics
+            .record_event_processing_duration(event_type, event_start.elapsed());
 
         Ok(())
     }
 
     /// Run cascade updates after event processing
     /// This updates aggregated tables (vault, term) based on triggered base table updates
-    async fn run_cascade_after_event(
-        &self,
-        event: &RindexerEvent,
-    ) -> Result<Vec<String>> {
-        let mut tx = self.pool.begin().await.map_err(|e| {
-            SyncError::Sqlx(e)
-        })?;
+    async fn run_cascade_after_event(&self, event: &RindexerEvent) -> Result<Vec<String>> {
+        let mut tx = self.pool.begin().await.map_err(SyncError::Sqlx)?;
 
         let term_ids = match event.event_name.as_str() {
             "Deposited" => {
                 // Extract deposit event data and format IDs
-                let receiver = event.event_data.get("receiver")
+                let receiver = event
+                    .event_data
+                    .get("receiver")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing receiver".to_string()))?;
-                let term_id = event.event_data.get("termId")
+                let term_id = event
+                    .event_data
+                    .get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing termId".to_string()))?;
-                let curve_id = event.event_data.get("curveId")
+                let curve_id = event
+                    .event_data
+                    .get("curveId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing curveId".to_string()))?;
 
@@ -215,23 +238,37 @@ impl PostgresClient {
                 let curve_id_formatted = curve_id.to_string(); // Keep curve_id as-is (without 0x prefix)
                 let receiver_formatted = to_eip55_address(receiver)?;
 
-                self.cascade_processor.process_position_change(
-                    &mut tx, &receiver_formatted, &term_id_formatted, &curve_id_formatted
-                ).await?;
-                self.metrics.record_database_operation("Deposited", "position_update");
-                self.metrics.record_database_operation("Deposited", "vault_aggregation");
-                self.metrics.record_database_operation("Deposited", "term_aggregation");
+                self.cascade_processor
+                    .process_position_change(
+                        &mut tx,
+                        &receiver_formatted,
+                        &term_id_formatted,
+                        &curve_id_formatted,
+                    )
+                    .await?;
+                self.metrics
+                    .record_database_operation("Deposited", "position_update");
+                self.metrics
+                    .record_database_operation("Deposited", "vault_aggregation");
+                self.metrics
+                    .record_database_operation("Deposited", "term_aggregation");
                 vec![term_id_formatted]
             }
             "Redeemed" => {
                 // Extract redeem event data and format IDs
-                let receiver = event.event_data.get("receiver")
+                let receiver = event
+                    .event_data
+                    .get("receiver")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing receiver".to_string()))?;
-                let term_id = event.event_data.get("termId")
+                let term_id = event
+                    .event_data
+                    .get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing termId".to_string()))?;
-                let curve_id = event.event_data.get("curveId")
+                let curve_id = event
+                    .event_data
+                    .get("curveId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing curveId".to_string()))?;
 
@@ -240,20 +277,32 @@ impl PostgresClient {
                 let curve_id_formatted = curve_id.to_string(); // Keep curve_id as-is (without 0x prefix)
                 let receiver_formatted = to_eip55_address(receiver)?;
 
-                self.cascade_processor.process_position_change(
-                    &mut tx, &receiver_formatted, &term_id_formatted, &curve_id_formatted
-                ).await?;
-                self.metrics.record_database_operation("Redeemed", "position_update");
-                self.metrics.record_database_operation("Redeemed", "vault_aggregation");
-                self.metrics.record_database_operation("Redeemed", "term_aggregation");
+                self.cascade_processor
+                    .process_position_change(
+                        &mut tx,
+                        &receiver_formatted,
+                        &term_id_formatted,
+                        &curve_id_formatted,
+                    )
+                    .await?;
+                self.metrics
+                    .record_database_operation("Redeemed", "position_update");
+                self.metrics
+                    .record_database_operation("Redeemed", "vault_aggregation");
+                self.metrics
+                    .record_database_operation("Redeemed", "term_aggregation");
                 vec![term_id_formatted]
             }
             "SharePriceChanged" => {
                 // Extract price change event data and format IDs
-                let term_id = event.event_data.get("termId")
+                let term_id = event
+                    .event_data
+                    .get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing termId".to_string()))?;
-                let curve_id = event.event_data.get("curveId")
+                let curve_id = event
+                    .event_data
+                    .get("curveId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing curveId".to_string()))?;
 
@@ -261,29 +310,38 @@ impl PostgresClient {
                 let term_id_formatted = ensure_hex_prefix(term_id);
                 let curve_id_formatted = curve_id.to_string(); // Keep curve_id as-is (without 0x prefix)
 
-                self.cascade_processor.process_price_change(
-                    &mut tx, &term_id_formatted, &curve_id_formatted
-                ).await?;
-                self.metrics.record_database_operation("SharePriceChanged", "vault_update");
-                self.metrics.record_database_operation("SharePriceChanged", "term_aggregation");
+                self.cascade_processor
+                    .process_price_change(&mut tx, &term_id_formatted, &curve_id_formatted)
+                    .await?;
+                self.metrics
+                    .record_database_operation("SharePriceChanged", "vault_update");
+                self.metrics
+                    .record_database_operation("SharePriceChanged", "term_aggregation");
                 vec![term_id_formatted]
             }
             "AtomCreated" => {
                 // Extract atom creation data and format IDs
-                let term_id = event.event_data.get("termId")
+                let term_id = event
+                    .event_data
+                    .get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing termId".to_string()))?;
 
                 // Format IDs to match database format
                 let term_id_formatted = ensure_hex_prefix(term_id);
 
-                self.cascade_processor.process_atom_creation(&mut tx, &term_id_formatted).await?;
-                self.metrics.record_database_operation("AtomCreated", "term_initialization");
+                self.cascade_processor
+                    .process_atom_creation(&mut tx, &term_id_formatted)
+                    .await?;
+                self.metrics
+                    .record_database_operation("AtomCreated", "term_initialization");
                 vec![term_id_formatted]
             }
             "TripleCreated" => {
                 // Extract triple creation data and calculate counter_term_id
-                let term_id = event.event_data.get("termId")
+                let term_id = event
+                    .event_data
+                    .get("termId")
                     .and_then(|v| v.as_str())
                     .ok_or_else(|| SyncError::Processing("Missing termId".to_string()))?;
 
@@ -291,12 +349,18 @@ impl PostgresClient {
                 let term_id_formatted = ensure_hex_prefix(term_id);
 
                 // Calculate counter_term_id using the same logic as the event handler
-                let counter_term_id_formatted = super::utils::calculate_counter_term_id(&term_id_formatted)?;
+                let counter_term_id_formatted =
+                    super::utils::calculate_counter_term_id(&term_id_formatted)?;
 
-                self.cascade_processor.process_triple_creation(
-                    &mut tx, &term_id_formatted, &counter_term_id_formatted
-                ).await?;
-                self.metrics.record_database_operation("TripleCreated", "term_initialization");
+                self.cascade_processor
+                    .process_triple_creation(
+                        &mut tx,
+                        &term_id_formatted,
+                        &counter_term_id_formatted,
+                    )
+                    .await?;
+                self.metrics
+                    .record_database_operation("TripleCreated", "term_initialization");
                 vec![term_id_formatted, counter_term_id_formatted]
             }
             _ => {
@@ -306,9 +370,7 @@ impl PostgresClient {
         };
 
         // Commit the transaction
-        tx.commit().await.map_err(|e| {
-            SyncError::Sqlx(e)
-        })?;
+        tx.commit().await.map_err(SyncError::Sqlx)?;
 
         Ok(term_ids)
     }
@@ -319,11 +381,13 @@ impl PostgresClient {
     }
 
     fn extract_transaction_info(&self, event: &RindexerEvent) -> Result<TransactionInformation> {
-        let tx_info_value = event.event_data
+        let tx_info_value = event
+            .event_data
             .get("transaction_information")
-            .ok_or_else(|| SyncError::Processing("Missing transaction_information in event".to_string()))?;
+            .ok_or_else(|| {
+                SyncError::Processing("Missing transaction_information in event".to_string())
+            })?;
 
-        serde_json::from_value(tx_info_value.clone())
-            .map_err(SyncError::Serde)
+        serde_json::from_value(tx_info_value.clone()).map_err(SyncError::Serde)
     }
 }

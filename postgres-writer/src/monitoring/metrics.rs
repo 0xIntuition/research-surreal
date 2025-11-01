@@ -1,11 +1,14 @@
 use chrono::{DateTime, Utc};
+use lazy_static::lazy_static;
+use prometheus::{
+    Counter, CounterVec, Encoder, Gauge, GaugeVec, Histogram, IntGaugeVec, Opts, Registry,
+    TextEncoder,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
-use tokio::sync::RwLock;
-use prometheus::{Counter, Gauge, Histogram, Registry, Encoder, TextEncoder, GaugeVec, CounterVec, IntGaugeVec, Opts};
-use lazy_static::lazy_static;
 use std::time::Instant;
+use tokio::sync::RwLock;
 
 lazy_static! {
     static ref REGISTRY: Registry = Registry::new();
@@ -155,13 +158,13 @@ pub struct Metrics {
     events_processed: Arc<AtomicU64>,
     events_failed: Arc<AtomicU64>,
     batches_processed: Arc<AtomicU64>,
-    
+
     // Timing and rates
     start_time: DateTime<Utc>,
     last_event_time: Arc<RwLock<Option<DateTime<Utc>>>>,
     events_per_second: Arc<RwLock<f64>>,
     peak_events_per_second: Arc<RwLock<f64>>,
-    
+
     // Health status
     redis_healthy: Arc<RwLock<bool>>,
     postgres_healthy: Arc<RwLock<bool>>,
@@ -170,31 +173,71 @@ pub struct Metrics {
 impl Metrics {
     pub fn new() -> Self {
         // Register metrics with Prometheus registry
-        REGISTRY.register(Box::new(EVENTS_PROCESSED_COUNTER.clone())).ok();
-        REGISTRY.register(Box::new(EVENTS_FAILED_COUNTER.clone())).ok();
-        REGISTRY.register(Box::new(BATCHES_PROCESSED_COUNTER.clone())).ok();
-        REGISTRY.register(Box::new(PROCESSING_DURATION_HISTOGRAM.clone())).ok();
-        REGISTRY.register(Box::new(EVENTS_PER_SECOND_GAUGE.clone())).ok();
-        REGISTRY.register(Box::new(PEAK_EVENTS_PER_SECOND_GAUGE.clone())).ok();
-        REGISTRY.register(Box::new(REDIS_HEALTHY_GAUGE.clone())).ok();
-        REGISTRY.register(Box::new(POSTGRES_HEALTHY_GAUGE.clone())).ok();
+        REGISTRY
+            .register(Box::new(EVENTS_PROCESSED_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(EVENTS_FAILED_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(BATCHES_PROCESSED_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(PROCESSING_DURATION_HISTOGRAM.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(EVENTS_PER_SECOND_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(PEAK_EVENTS_PER_SECOND_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(REDIS_HEALTHY_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(POSTGRES_HEALTHY_GAUGE.clone()))
+            .ok();
         REGISTRY.register(Box::new(UPTIME_GAUGE.clone())).ok();
 
         // Register Redis Streams metrics
         REGISTRY.register(Box::new(STREAM_LAG_GAUGE.clone())).ok();
-        REGISTRY.register(Box::new(STREAM_PENDING_MESSAGES_GAUGE.clone())).ok();
-        REGISTRY.register(Box::new(STREAM_MESSAGES_CLAIMED_COUNTER.clone())).ok();
-        REGISTRY.register(Box::new(STREAM_BATCH_SIZE_GAUGE.clone())).ok();
-        REGISTRY.register(Box::new(STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.clone())).ok();
-        REGISTRY.register(Box::new(STREAM_MESSAGES_CONSUMED_COUNTER.clone())).ok();
+        REGISTRY
+            .register(Box::new(STREAM_PENDING_MESSAGES_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(STREAM_MESSAGES_CLAIMED_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(STREAM_BATCH_SIZE_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(STREAM_MESSAGES_CONSUMED_COUNTER.clone()))
+            .ok();
 
         // Register event type-specific metrics
-        REGISTRY.register(Box::new(EVENTS_PROCESSED_BY_TYPE_COUNTER.clone())).ok();
-        REGISTRY.register(Box::new(EVENTS_FAILED_BY_TYPE_COUNTER.clone())).ok();
-        REGISTRY.register(Box::new(EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM.clone())).ok();
-        REGISTRY.register(Box::new(CASCADE_PROCESSING_DURATION_HISTOGRAM.clone())).ok();
-        REGISTRY.register(Box::new(DATABASE_OPERATIONS_COUNTER.clone())).ok();
-        REGISTRY.register(Box::new(CASCADE_FAILURES_COUNTER.clone())).ok();
+        REGISTRY
+            .register(Box::new(EVENTS_PROCESSED_BY_TYPE_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(EVENTS_FAILED_BY_TYPE_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(
+                EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM.clone(),
+            ))
+            .ok();
+        REGISTRY
+            .register(Box::new(CASCADE_PROCESSING_DURATION_HISTOGRAM.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(DATABASE_OPERATIONS_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(CASCADE_FAILURES_COUNTER.clone()))
+            .ok();
 
         Self {
             events_processed: Arc::new(AtomicU64::new(0)),
@@ -208,26 +251,26 @@ impl Metrics {
             postgres_healthy: Arc::new(RwLock::new(false)),
         }
     }
-    
+
     pub fn record_event_success(&self, count: u64) {
         self.events_processed.fetch_add(count, Ordering::Relaxed);
         EVENTS_PROCESSED_COUNTER.inc_by(count as f64);
     }
-    
+
     pub fn record_event_failure(&self, count: u64) {
         self.events_failed.fetch_add(count, Ordering::Relaxed);
         EVENTS_FAILED_COUNTER.inc_by(count as f64);
     }
-    
+
     pub fn record_batch(&self) {
         self.batches_processed.fetch_add(1, Ordering::Relaxed);
         BATCHES_PROCESSED_COUNTER.inc();
     }
-    
+
     pub fn record_processing_time(&self, duration: std::time::Duration) {
         PROCESSING_DURATION_HISTOGRAM.observe(duration.as_secs_f64());
     }
-    
+
     pub fn time_operation<F, R>(&self, f: F) -> R
     where
         F: FnOnce() -> R,
@@ -237,7 +280,7 @@ impl Metrics {
         self.record_processing_time(start.elapsed());
         result
     }
-    
+
     pub async fn time_async_operation<F, Fut, R>(&self, f: F) -> R
     where
         F: FnOnce() -> Fut,
@@ -248,29 +291,29 @@ impl Metrics {
         self.record_processing_time(start.elapsed());
         result
     }
-    
+
     pub async fn update_event_rate(&self, rate: f64) {
         let mut current_rate = self.events_per_second.write().await;
         *current_rate = rate;
         EVENTS_PER_SECOND_GAUGE.set(rate);
-        
+
         let mut peak = self.peak_events_per_second.write().await;
         if rate > *peak {
             *peak = rate;
             PEAK_EVENTS_PER_SECOND_GAUGE.set(rate);
         }
     }
-    
+
     pub async fn set_redis_health(&self, healthy: bool) {
         *self.redis_healthy.write().await = healthy;
         REDIS_HEALTHY_GAUGE.set(if healthy { 1.0 } else { 0.0 });
     }
-    
+
     pub async fn set_postgres_health(&self, healthy: bool) {
         *self.postgres_healthy.write().await = healthy;
         POSTGRES_HEALTHY_GAUGE.set(if healthy { 1.0 } else { 0.0 });
     }
-    
+
     pub async fn update_last_event_time(&self) {
         *self.last_event_time.write().await = Some(Utc::now());
     }
@@ -281,36 +324,54 @@ impl Metrics {
     }
 
     pub fn record_stream_pending_messages(&self, stream_name: &str, count: i64) {
-        STREAM_PENDING_MESSAGES_GAUGE.with_label_values(&[stream_name]).set(count);
+        STREAM_PENDING_MESSAGES_GAUGE
+            .with_label_values(&[stream_name])
+            .set(count);
     }
 
     pub fn record_stream_messages_claimed(&self, stream_name: &str, count: u64) {
-        STREAM_MESSAGES_CLAIMED_COUNTER.with_label_values(&[stream_name]).inc_by(count as f64);
+        STREAM_MESSAGES_CLAIMED_COUNTER
+            .with_label_values(&[stream_name])
+            .inc_by(count as f64);
     }
 
     pub fn record_stream_batch_size(&self, stream_name: &str, size: usize) {
-        STREAM_BATCH_SIZE_GAUGE.with_label_values(&[stream_name]).set(size as f64);
+        STREAM_BATCH_SIZE_GAUGE
+            .with_label_values(&[stream_name])
+            .set(size as f64);
     }
 
     pub fn record_stream_last_message_timestamp(&self, stream_name: &str) {
         let timestamp = Utc::now().timestamp() as f64;
-        STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.with_label_values(&[stream_name]).set(timestamp);
+        STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE
+            .with_label_values(&[stream_name])
+            .set(timestamp);
     }
 
     pub fn record_stream_messages_consumed(&self, stream_name: &str, count: usize) {
-        STREAM_MESSAGES_CONSUMED_COUNTER.with_label_values(&[stream_name]).inc_by(count as f64);
+        STREAM_MESSAGES_CONSUMED_COUNTER
+            .with_label_values(&[stream_name])
+            .inc_by(count as f64);
     }
 
     // Event type-specific metrics methods
     pub fn record_event_by_type_success(&self, event_type: &str) {
-        EVENTS_PROCESSED_BY_TYPE_COUNTER.with_label_values(&[event_type]).inc();
+        EVENTS_PROCESSED_BY_TYPE_COUNTER
+            .with_label_values(&[event_type])
+            .inc();
     }
 
     pub fn record_event_by_type_failure(&self, event_type: &str) {
-        EVENTS_FAILED_BY_TYPE_COUNTER.with_label_values(&[event_type]).inc();
+        EVENTS_FAILED_BY_TYPE_COUNTER
+            .with_label_values(&[event_type])
+            .inc();
     }
 
-    pub fn record_event_processing_duration(&self, event_type: &str, duration: std::time::Duration) {
+    pub fn record_event_processing_duration(
+        &self,
+        event_type: &str,
+        duration: std::time::Duration,
+    ) {
         EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM
             .with_label_values(&[event_type])
             .observe(duration.as_secs_f64());
@@ -323,17 +384,21 @@ impl Metrics {
     }
 
     pub fn record_database_operation(&self, event_type: &str, operation: &str) {
-        DATABASE_OPERATIONS_COUNTER.with_label_values(&[event_type, operation]).inc();
+        DATABASE_OPERATIONS_COUNTER
+            .with_label_values(&[event_type, operation])
+            .inc();
     }
 
     pub fn record_cascade_failure(&self, event_type: &str) {
-        CASCADE_FAILURES_COUNTER.with_label_values(&[event_type]).inc();
+        CASCADE_FAILURES_COUNTER
+            .with_label_values(&[event_type])
+            .inc();
     }
 
     pub async fn get_snapshot(&self) -> MetricsSnapshot {
         let uptime = (Utc::now() - self.start_time).num_seconds() as u64;
         UPTIME_GAUGE.set(uptime as f64);
-        
+
         MetricsSnapshot {
             total_events_processed: self.events_processed.load(Ordering::Relaxed),
             total_events_failed: self.events_failed.load(Ordering::Relaxed),
@@ -347,7 +412,7 @@ impl Metrics {
             last_event_time: *self.last_event_time.read().await,
         }
     }
-    
+
     pub fn get_prometheus_metrics() -> Result<String, Box<dyn std::error::Error>> {
         let encoder = TextEncoder::new();
         let metric_families = REGISTRY.gather();
@@ -430,19 +495,19 @@ mod tests {
         metrics.record_event_success(100);
         metrics.record_event_failure(5);
         metrics.record_batch();
-        
+
         // Test Prometheus output
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
-        
+
         // Check that it contains expected metrics
         assert!(output.contains("postgres_writer_events_processed_total"));
         assert!(output.contains("postgres_writer_events_failed_total"));
         assert!(output.contains("postgres_writer_batches_processed_total"));
         assert!(output.contains("postgres_writer_processing_duration_seconds"));
-        
+
         // Print for manual verification
         println!("Prometheus metrics output:");
-        println!("{}", output);
+        println!("{output}");
     }
 
     #[test]
@@ -466,11 +531,17 @@ mod tests {
 
         // Verify counts are recorded (checking that the metric line exists)
         // Note: Exact formatting may vary, so we check for presence of event types
-        let atom_created_lines: Vec<&str> = output.lines()
-            .filter(|line| line.contains("postgres_writer_events_processed_by_type_total")
-                        && line.contains("event_type=\"AtomCreated\""))
+        let atom_created_lines: Vec<&str> = output
+            .lines()
+            .filter(|line| {
+                line.contains("postgres_writer_events_processed_by_type_total")
+                    && line.contains("event_type=\"AtomCreated\"")
+            })
             .collect();
-        assert!(!atom_created_lines.is_empty(), "AtomCreated metrics should be present");
+        assert!(
+            !atom_created_lines.is_empty(),
+            "AtomCreated metrics should be present"
+        );
     }
 
     #[test]
@@ -493,8 +564,12 @@ mod tests {
         assert!(output.contains("event_type=\"TripleCreated\""));
 
         // Verify counts
-        assert!(output.contains("postgres_writer_events_failed_by_type_total{event_type=\"SharePriceChanged\"} 2"));
-        assert!(output.contains("postgres_writer_events_failed_by_type_total{event_type=\"TripleCreated\"} 1"));
+        assert!(output.contains(
+            "postgres_writer_events_failed_by_type_total{event_type=\"SharePriceChanged\"} 2"
+        ));
+        assert!(output.contains(
+            "postgres_writer_events_failed_by_type_total{event_type=\"TripleCreated\"} 1"
+        ));
     }
 
     #[test]
@@ -504,9 +579,12 @@ mod tests {
         let metrics = Metrics::new();
 
         // Record processing durations for different event types
-        metrics.record_event_processing_duration("AtomCreated", std::time::Duration::from_millis(100));
-        metrics.record_event_processing_duration("AtomCreated", std::time::Duration::from_millis(150));
-        metrics.record_event_processing_duration("Deposited", std::time::Duration::from_millis(200));
+        metrics
+            .record_event_processing_duration("AtomCreated", std::time::Duration::from_millis(100));
+        metrics
+            .record_event_processing_duration("AtomCreated", std::time::Duration::from_millis(150));
+        metrics
+            .record_event_processing_duration("Deposited", std::time::Duration::from_millis(200));
 
         // Get Prometheus output
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
@@ -517,11 +595,17 @@ mod tests {
         assert!(output.contains("event_type=\"Deposited\""));
 
         // Verify histogram has count (checking that the metric exists)
-        let atom_created_count: Vec<&str> = output.lines()
-            .filter(|line| line.contains("postgres_writer_event_processing_duration_by_type_seconds_count")
-                        && line.contains("event_type=\"AtomCreated\""))
+        let atom_created_count: Vec<&str> = output
+            .lines()
+            .filter(|line| {
+                line.contains("postgres_writer_event_processing_duration_by_type_seconds_count")
+                    && line.contains("event_type=\"AtomCreated\"")
+            })
             .collect();
-        assert!(!atom_created_count.is_empty(), "AtomCreated duration metrics should be present");
+        assert!(
+            !atom_created_count.is_empty(),
+            "AtomCreated duration metrics should be present"
+        );
     }
 
     #[test]
@@ -544,7 +628,9 @@ mod tests {
         assert!(output.contains("event_type=\"SharePriceChanged\""));
 
         // Verify histogram counts
-        assert!(output.contains("postgres_writer_cascade_processing_duration_seconds_count{event_type=\"Deposited\"} 2"));
+        assert!(output.contains(
+            "postgres_writer_cascade_processing_duration_seconds_count{event_type=\"Deposited\"} 2"
+        ));
         assert!(output.contains("postgres_writer_cascade_processing_duration_seconds_count{event_type=\"SharePriceChanged\"} 1"));
     }
 
@@ -601,8 +687,12 @@ mod tests {
         assert!(output.contains("event_type=\"SharePriceChanged\""));
 
         // Verify counts
-        assert!(output.contains("postgres_writer_cascade_failures_total{event_type=\"Deposited\"} 2"));
-        assert!(output.contains("postgres_writer_cascade_failures_total{event_type=\"SharePriceChanged\"} 1"));
+        assert!(
+            output.contains("postgres_writer_cascade_failures_total{event_type=\"Deposited\"} 2")
+        );
+        assert!(output.contains(
+            "postgres_writer_cascade_failures_total{event_type=\"SharePriceChanged\"} 1"
+        ));
     }
 
     #[test]
@@ -612,11 +702,20 @@ mod tests {
         let metrics = Metrics::new();
 
         // Simulate processing multiple different event types
-        let event_types = vec!["AtomCreated", "Deposited", "SharePriceChanged", "TripleCreated", "Redeemed"];
+        let event_types = vec![
+            "AtomCreated",
+            "Deposited",
+            "SharePriceChanged",
+            "TripleCreated",
+            "Redeemed",
+        ];
 
         for event_type in &event_types {
             metrics.record_event_by_type_success(event_type);
-            metrics.record_event_processing_duration(event_type, std::time::Duration::from_millis(100));
+            metrics.record_event_processing_duration(
+                event_type,
+                std::time::Duration::from_millis(100),
+            );
             metrics.record_cascade_duration(event_type, std::time::Duration::from_millis(25));
         }
 
@@ -631,7 +730,7 @@ mod tests {
 
         // Verify all event types are present in metrics
         for event_type in &event_types {
-            assert!(output.contains(&format!("event_type=\"{}\"", event_type)));
+            assert!(output.contains(&format!("event_type=\"{event_type}\"")));
         }
 
         // Verify different metric types

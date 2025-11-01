@@ -1,6 +1,6 @@
+use crate::error::{Result, SyncError};
 use serde::{Deserialize, Serialize};
 use std::env;
-use crate::error::{Result, SyncError};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -98,9 +98,9 @@ impl Config {
 
                 // If CONSUMER_GROUP_SUFFIX is provided and the stream name is the default,
                 // append the suffix to create a unique stream per restart cycle
-                if let Some(ref suffix) = env::var("CONSUMER_GROUP_SUFFIX").ok() {
+                if let Ok(ref suffix) = env::var("CONSUMER_GROUP_SUFFIX") {
                     if base_name == "term_updates" {
-                        format!("{}-{}", base_name, suffix)
+                        format!("{base_name}-{suffix}")
                     } else {
                         base_name
                     }
@@ -113,15 +113,21 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         if self.stream_names.is_empty() {
-            return Err(SyncError::Config("At least one stream name is required".to_string()));
+            return Err(SyncError::Config(
+                "At least one stream name is required".to_string(),
+            ));
         }
 
         if self.batch_size == 0 {
-            return Err(SyncError::Config("Batch size must be greater than 0".to_string()));
+            return Err(SyncError::Config(
+                "Batch size must be greater than 0".to_string(),
+            ));
         }
 
         if self.workers == 0 {
-            return Err(SyncError::Config("Number of workers must be greater than 0".to_string()));
+            return Err(SyncError::Config(
+                "Number of workers must be greater than 0".to_string(),
+            ));
         }
 
         Ok(())

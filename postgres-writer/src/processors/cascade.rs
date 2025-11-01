@@ -1,9 +1,9 @@
 use sqlx::{Postgres, Transaction};
 use tracing::debug;
 
-use crate::error::{Result, SyncError};
-use super::vault_updater::VaultUpdater;
 use super::term_updater::TermUpdater;
+use super::vault_updater::VaultUpdater;
+use crate::error::{Result, SyncError};
 
 /// CascadeProcessor handles cascading updates through the table hierarchy
 /// after events are inserted into event tables and processed by triggers.
@@ -36,8 +36,10 @@ impl CascadeProcessor {
         term_id: &str,
         curve_id: &str,
     ) -> Result<()> {
-        debug!("Processing cascade for position change: account={}, term={}, curve={}",
-               account_id, term_id, curve_id);
+        debug!(
+            "Processing cascade for position change: account={}, term={}, curve={}",
+            account_id, term_id, curve_id
+        );
 
         // Acquire advisory lock for this position to prevent concurrent updates
         let lock_id = Self::hash_position(account_id, term_id, curve_id);
@@ -45,17 +47,25 @@ impl CascadeProcessor {
             .bind(lock_id)
             .execute(&mut **tx)
             .await
-            .map_err(|e| SyncError::Sqlx(e))?;
+            .map_err(SyncError::Sqlx)?;
 
         debug!("Acquired advisory lock {} for position", lock_id);
 
         // Update vault aggregates (position_count and derived metrics)
-        self.vault_updater.update_vault_from_positions(tx, term_id, curve_id).await?;
+        self.vault_updater
+            .update_vault_from_positions(tx, term_id, curve_id)
+            .await?;
 
         // Update term aggregates (sum across all vaults for this term)
-        let updated_term_ids = self.term_updater.update_term_from_vaults(tx, term_id).await?;
+        let updated_term_ids = self
+            .term_updater
+            .update_term_from_vaults(tx, term_id)
+            .await?;
 
-        debug!("Cascade completed for position change. Updated {} terms", updated_term_ids.len());
+        debug!(
+            "Cascade completed for position change. Updated {} terms",
+            updated_term_ids.len()
+        );
 
         // Note: Redis publishing happens after transaction commit
         // See process_position_change_with_redis for the full flow
@@ -70,7 +80,10 @@ impl CascadeProcessor {
         term_id: &str,
         curve_id: &str,
     ) -> Result<()> {
-        debug!("Processing cascade for price change: term={}, curve={}", term_id, curve_id);
+        debug!(
+            "Processing cascade for price change: term={}, curve={}",
+            term_id, curve_id
+        );
 
         // Acquire advisory lock for this vault to prevent concurrent updates
         let lock_id = Self::hash_vault(term_id, curve_id);
@@ -78,17 +91,25 @@ impl CascadeProcessor {
             .bind(lock_id)
             .execute(&mut **tx)
             .await
-            .map_err(|e| SyncError::Sqlx(e))?;
+            .map_err(SyncError::Sqlx)?;
 
         debug!("Acquired advisory lock {} for vault", lock_id);
 
         // Recalculate vault market_cap based on new share price
-        self.vault_updater.recalculate_market_cap(tx, term_id, curve_id).await?;
+        self.vault_updater
+            .recalculate_market_cap(tx, term_id, curve_id)
+            .await?;
 
         // Update term aggregates
-        let updated_term_ids = self.term_updater.update_term_from_vaults(tx, term_id).await?;
+        let updated_term_ids = self
+            .term_updater
+            .update_term_from_vaults(tx, term_id)
+            .await?;
 
-        debug!("Cascade completed for price change. Updated {} terms", updated_term_ids.len());
+        debug!(
+            "Cascade completed for price change. Updated {} terms",
+            updated_term_ids.len()
+        );
 
         Ok(())
     }
@@ -117,12 +138,18 @@ impl CascadeProcessor {
         term_id: &str,
         counter_term_id: &str,
     ) -> Result<()> {
-        debug!("Processing cascade for triple creation: term={}, counter_term={}",
-               term_id, counter_term_id);
+        debug!(
+            "Processing cascade for triple creation: term={}, counter_term={}",
+            term_id, counter_term_id
+        );
 
         // Initialize term entries for this triple (both pro and counter)
-        self.term_updater.initialize_triple_term(tx, term_id).await?;
-        self.term_updater.initialize_triple_term(tx, counter_term_id).await?;
+        self.term_updater
+            .initialize_triple_term(tx, term_id)
+            .await?;
+        self.term_updater
+            .initialize_triple_term(tx, counter_term_id)
+            .await?;
 
         debug!("Cascade completed for triple creation");
         Ok(())
@@ -193,7 +220,10 @@ mod tests {
     fn test_hash_position_different_inputs() {
         let hash1 = CascadeProcessor::hash_position("acc1", "term1", "curve1");
         let hash2 = CascadeProcessor::hash_position("acc2", "term1", "curve1");
-        assert_ne!(hash1, hash2, "Different inputs should produce different hashes");
+        assert_ne!(
+            hash1, hash2,
+            "Different inputs should produce different hashes"
+        );
     }
 
     #[test]

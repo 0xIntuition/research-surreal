@@ -48,7 +48,8 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
 
     // Step 3: Start pipeline
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -56,15 +57,21 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
     });
 
     // Step 4: Wait for processing
-    harness.wait_for_processing(4, 15).await
+    harness
+        .wait_for_processing(4, 15)
+        .await
         .expect("Failed to process 4 events within 15 seconds");
 
     // Wait for cascade processing to complete
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Step 5: Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Should use the LATEST event (block 1005) for position shares
@@ -106,16 +113,11 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
         .await
         .expect("Failed to verify vault state");
 
-    assert_eq!(
-        vault.position_count, 1,
-        "Vault should have 1 position"
-    );
+    assert_eq!(vault.position_count, 1, "Vault should have 1 position");
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 
@@ -169,7 +171,8 @@ async fn test_share_price_changes_use_latest_block() {
 
     // Start pipeline
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config).await
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
         let pipeline = pipeline.clone();
@@ -177,13 +180,19 @@ async fn test_share_price_changes_use_latest_block() {
     });
 
     // Wait for processing
-    harness.wait_for_processing(5, 15).await
+    harness
+        .wait_for_processing(5, 15)
+        .await
         .expect("Failed to process 5 events within 15 seconds");
-    harness.wait_for_cascade(term_id, 5).await
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
         .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
-    let pool = harness.get_pool().await
+    let pool = harness
+        .get_pool()
+        .await
         .expect("Failed to get database pool");
 
     // Vault should have the price from block 1008 (the latest)
@@ -206,10 +215,8 @@ async fn test_share_price_changes_use_latest_block() {
     assert_eq!(last_log_index, 0, "Last price log index should be 0");
 
     // Cleanup - ensure pipeline stops even if stop() hangs
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    ).await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 

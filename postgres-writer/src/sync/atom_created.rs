@@ -23,11 +23,10 @@ pub async fn handle_atom_created(
     tx_info: &TransactionInformation,
 ) -> Result<()> {
     // Decode atom_data from hex to bytes
-    let decoded_bytes = hex::decode(&event.atom_data)
-        .map_err(|e| {
-            error!("Failed to decode atom_data from hex: {}", e);
-            SyncError::ParseError(format!("Invalid hex in atom_data: {}", e))
-        })?;
+    let decoded_bytes = hex::decode(&event.atom_data).map_err(|e| {
+        error!("Failed to decode atom_data from hex: {e}");
+        SyncError::ParseError(format!("Invalid hex in atom_data: {e}"))
+    })?;
 
     // Try to convert to UTF-8 string, fall back to storing raw bytes if it fails
     let (decoded_atom_data, raw_data) = match String::from_utf8(decoded_bytes.clone()) {
@@ -36,7 +35,10 @@ pub async fn handle_atom_created(
             (Some(utf8_string), None)
         }
         Err(e) => {
-            debug!("Failed to decode atom_data as UTF-8 ({}), storing raw bytes instead", e);
+            debug!(
+                "Failed to decode atom_data as UTF-8 ({}), storing raw bytes instead",
+                e
+            );
             (None, Some(decoded_bytes))
         }
     };
@@ -67,7 +69,7 @@ pub async fn handle_atom_created(
             network = EXCLUDED.network,
             transaction_index = EXCLUDED.transaction_index,
             block_timestamp = EXCLUDED.block_timestamp
-        "#
+        "#,
     )
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
@@ -81,11 +83,11 @@ pub async fn handle_atom_created(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert AtomCreated record: {}", e);
+        error!("Failed to insert AtomCreated record: {e}");
         SyncError::from(e)
     })?;
 

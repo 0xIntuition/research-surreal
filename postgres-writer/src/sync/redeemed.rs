@@ -1,11 +1,10 @@
-
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
-use crate::error::{Result, SyncError};
-use crate::core::types::TransactionInformation;
 use super::utils::{ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
+use crate::core::types::TransactionInformation;
+use crate::error::{Result, SyncError};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RedeemedEvent {
@@ -60,12 +59,12 @@ pub async fn handle_redeemed(
             network = EXCLUDED.network,
             transaction_index = EXCLUDED.transaction_index,
             block_timestamp = EXCLUDED.block_timestamp
-        "#
+        "#,
     )
     .bind(&tx_info.transaction_hash)
     .bind(log_index as i64)
     .bind(&event.assets)
-    .bind(&curve_id)
+    .bind(curve_id)
     .bind(&event.fees)
     .bind(&receiver)
     .bind(&sender)
@@ -78,11 +77,11 @@ pub async fn handle_redeemed(
     .bind(tx_info.block_number as i64)
     .bind(&tx_info.network)
     .bind(tx_info.transaction_index as i64)
-    .bind(&tx_info.block_timestamp)
+    .bind(tx_info.block_timestamp)
     .execute(pool)
     .await
     .map_err(|e| {
-        error!("Failed to insert Redeemed record: {}", e);
+        error!("Failed to insert Redeemed record: {e}");
         SyncError::from(e)
     })?;
 
