@@ -258,13 +258,15 @@ impl EventBuilder {
         let timestamp = Utc::now();
         // Convert timestamp to hex-encoded Unix timestamp (as expected by deserialize_hex_timestamp)
         let timestamp_hex = format!("0x{:x}", timestamp.timestamp());
+        // Convert log_index to hex string (as expected by parse_hex_to_u64)
+        let log_index_hex = format!("0x{:x}", self.log_index);
 
         json!({
             "address": self.address,
             "block_hash": block_hash,
             "block_number": self.block_number,
             "block_timestamp": timestamp_hex,
-            "log_index": self.log_index.to_string(),
+            "log_index": log_index_hex,
             "network": self.network,
             "transaction_hash": self.transaction_hash,
             "transaction_index": 0,

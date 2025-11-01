@@ -238,6 +238,7 @@ RETURNS TRIGGER AS $$
 BEGIN
     -- Insert vault if it doesn't exist yet (from first deposit to this vault)
     -- This ensures vault exists before cascade processor runs
+    -- Note: total_shares is only updated by SharePriceChanged events, not deposits
     INSERT INTO vault (
         term_id,
         curve_id,
@@ -254,7 +255,7 @@ BEGIN
     ) VALUES (
         NEW.term_id,
         NEW.curve_id,
-        0,  -- Will be updated by cascade processor
+        0,  -- Will be updated by SharePriceChanged events only
         0,  -- Will be updated when SharePriceChanged event arrives
         0,  -- Will be updated by cascade processor
         0,  -- Will be calculated by cascade processor
