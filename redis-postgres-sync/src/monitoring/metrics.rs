@@ -91,6 +91,43 @@ lazy_static! {
         ),
         &["stream_name"]
     ).unwrap();
+
+    // Event type-specific metrics
+    static ref EVENTS_PROCESSED_BY_TYPE_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_events_processed_by_type_total",
+            "Total number of events processed by event type"
+        ),
+        &["event_type"]
+    ).unwrap();
+    static ref EVENTS_FAILED_BY_TYPE_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_events_failed_by_type_total",
+            "Total number of events that failed to process by event type"
+        ),
+        &["event_type"]
+    ).unwrap();
+    static ref EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM: prometheus::HistogramVec = prometheus::HistogramVec::new(
+        prometheus::HistogramOpts::new(
+            "redis_postgres_sync_event_processing_duration_by_type_seconds",
+            "Time spent processing individual events by type in seconds"
+        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
+        &["event_type"]
+    ).unwrap();
+    static ref CASCADE_PROCESSING_DURATION_HISTOGRAM: prometheus::HistogramVec = prometheus::HistogramVec::new(
+        prometheus::HistogramOpts::new(
+            "redis_postgres_sync_cascade_processing_duration_seconds",
+            "Time spent in cascade processing by event type in seconds"
+        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
+        &["event_type"]
+    ).unwrap();
+    static ref DATABASE_OPERATIONS_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_database_operations_total",
+            "Total database operations by event type and operation name"
+        ),
+        &["event_type", "operation"]
+    ).unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +168,13 @@ impl Metrics {
         REGISTRY.register(Box::new(STREAM_BATCH_SIZE_GAUGE.clone())).ok();
         REGISTRY.register(Box::new(STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.clone())).ok();
         REGISTRY.register(Box::new(STREAM_MESSAGES_CONSUMED_COUNTER.clone())).ok();
+
+        // Register event type-specific metrics
+        REGISTRY.register(Box::new(EVENTS_PROCESSED_BY_TYPE_COUNTER.clone())).ok();
+        REGISTRY.register(Box::new(EVENTS_FAILED_BY_TYPE_COUNTER.clone())).ok();
+        REGISTRY.register(Box::new(EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM.clone())).ok();
+        REGISTRY.register(Box::new(CASCADE_PROCESSING_DURATION_HISTOGRAM.clone())).ok();
+        REGISTRY.register(Box::new(DATABASE_OPERATIONS_COUNTER.clone())).ok();
 
         Self {
             events_processed: Arc::new(AtomicU64::new(0)),
@@ -235,6 +279,31 @@ impl Metrics {
 
     pub fn record_stream_messages_consumed(&self, stream_name: &str, count: usize) {
         STREAM_MESSAGES_CONSUMED_COUNTER.with_label_values(&[stream_name]).inc_by(count as f64);
+    }
+
+    // Event type-specific metrics methods
+    pub fn record_event_by_type_success(&self, event_type: &str) {
+        EVENTS_PROCESSED_BY_TYPE_COUNTER.with_label_values(&[event_type]).inc();
+    }
+
+    pub fn record_event_by_type_failure(&self, event_type: &str) {
+        EVENTS_FAILED_BY_TYPE_COUNTER.with_label_values(&[event_type]).inc();
+    }
+
+    pub fn record_event_processing_duration(&self, event_type: &str, duration: std::time::Duration) {
+        EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM
+            .with_label_values(&[event_type])
+            .observe(duration.as_secs_f64());
+    }
+
+    pub fn record_cascade_duration(&self, event_type: &str, duration: std::time::Duration) {
+        CASCADE_PROCESSING_DURATION_HISTOGRAM
+            .with_label_values(&[event_type])
+            .observe(duration.as_secs_f64());
+    }
+
+    pub fn record_database_operation(&self, event_type: &str, operation: &str) {
+        DATABASE_OPERATIONS_COUNTER.with_label_values(&[event_type, operation]).inc();
     }
 
     pub async fn get_snapshot(&self) -> MetricsSnapshot {

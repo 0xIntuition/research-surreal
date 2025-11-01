@@ -7,6 +7,7 @@ use crate::core::types::{RindexerEvent, TransactionInformation};
 use crate::error::{Result, SyncError};
 use crate::processors::{CascadeProcessor, TermUpdater};
 use crate::consumer::RedisPublisher;
+use crate::monitoring::Metrics;
 use super::event_handlers;
 use super::utils::{ensure_hex_prefix, to_eip55_address};
 
@@ -14,6 +15,7 @@ pub struct PostgresClient {
     pool: PgPool,
     cascade_processor: CascadeProcessor,
     redis_publisher: Option<Mutex<RedisPublisher>>,
+    metrics: Metrics,
 }
 
 impl PostgresClient {
@@ -21,6 +23,7 @@ impl PostgresClient {
         database_url: &str,
         redis_url: Option<&str>,
         analytics_stream_name: String,
+        metrics: Metrics,
     ) -> Result<Self> {
         // Create connection pool
         let pool = PgPoolOptions::new()
@@ -82,10 +85,14 @@ impl PostgresClient {
             pool,
             cascade_processor: CascadeProcessor::new(),
             redis_publisher,
+            metrics,
         })
     }
 
     pub async fn sync_event(&self, event: &RindexerEvent) -> Result<()> {
+        let event_start = std::time::Instant::now();
+        let event_type = event.event_name.as_str();
+
         debug!("Starting sync for event: {}", event.event_name);
         debug!("Event signature hash: {}", event.event_signature_hash);
         debug!("Event network: {}", event.network);
@@ -102,20 +109,36 @@ impl PostgresClient {
 
         // Process the event using the appropriate handler which will create the DB entry
         // This will trigger the database triggers that update base tables (atom, triple, position, vault)
-        event_handlers::process_event(
+        let event_handler_result = event_handlers::process_event(
             &self.pool,
             &event.event_name,
             &event.event_data,
             &tx_info
-        ).await.map_err(|e| {
+        ).await;
+
+        if let Err(e) = event_handler_result {
             error!("Failed to process event '{}': {}", event.event_name, e);
             error!("Event data that failed: {}", serde_json::to_string_pretty(&event.event_data).unwrap_or_else(|_| "Failed to serialize for logging".to_string()));
-            e
-        })?;
+
+            // Record failure metrics
+            self.metrics.record_event_by_type_failure(event_type);
+            self.metrics.record_event_processing_duration(event_type, event_start.elapsed());
+
+            return Err(e);
+        }
 
         // After event insert and triggers, run cascade updates in a separate transaction
         // to update aggregated tables (vault, term)
-        let term_ids = self.run_cascade_after_event(event).await?;
+        let cascade_start = std::time::Instant::now();
+        let term_ids = self.run_cascade_after_event(event).await.map_err(|e| {
+            // Record failure if cascade fails
+            self.metrics.record_event_by_type_failure(event_type);
+            self.metrics.record_event_processing_duration(event_type, event_start.elapsed());
+            e
+        })?;
+
+        // Record cascade processing duration
+        self.metrics.record_cascade_duration(event_type, cascade_start.elapsed());
 
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher_mutex) = &self.redis_publisher {
@@ -145,6 +168,11 @@ impl PostgresClient {
         }
 
         debug!("Successfully synced event: {}", event.event_name);
+
+        // Record successful event processing with metrics
+        self.metrics.record_event_by_type_success(event_type);
+        self.metrics.record_event_processing_duration(event_type, event_start.elapsed());
+
         Ok(())
     }
 
@@ -178,6 +206,9 @@ impl PostgresClient {
                             self.cascade_processor.process_position_change(
                                 &mut tx, &receiver_formatted, &term_id_formatted, &curve_id_formatted
                             ).await?;
+                            self.metrics.record_database_operation("Deposited", "position_update");
+                            self.metrics.record_database_operation("Deposited", "vault_aggregation");
+                            self.metrics.record_database_operation("Deposited", "term_aggregation");
                             vec![term_id_formatted]
                         } else {
                             vec![]
@@ -208,6 +239,9 @@ impl PostgresClient {
                             self.cascade_processor.process_position_change(
                                 &mut tx, &receiver_formatted, &term_id_formatted, &curve_id_formatted
                             ).await?;
+                            self.metrics.record_database_operation("Redeemed", "position_update");
+                            self.metrics.record_database_operation("Redeemed", "vault_aggregation");
+                            self.metrics.record_database_operation("Redeemed", "term_aggregation");
                             vec![term_id_formatted]
                         } else {
                             vec![]
@@ -234,6 +268,8 @@ impl PostgresClient {
                         self.cascade_processor.process_price_change(
                             &mut tx, &term_id_formatted, &curve_id_formatted
                         ).await?;
+                        self.metrics.record_database_operation("SharePriceChanged", "vault_update");
+                        self.metrics.record_database_operation("SharePriceChanged", "term_aggregation");
                         vec![term_id_formatted]
                     } else {
                         vec![]
@@ -251,6 +287,7 @@ impl PostgresClient {
                     let term_id_formatted = ensure_hex_prefix(term_id);
 
                     self.cascade_processor.process_atom_creation(&mut tx, &term_id_formatted).await?;
+                    self.metrics.record_database_operation("AtomCreated", "term_initialization");
                     vec![term_id_formatted]
                 } else {
                     vec![]
@@ -271,6 +308,7 @@ impl PostgresClient {
                         self.cascade_processor.process_triple_creation(
                             &mut tx, &term_id_formatted, &counter_term_id_formatted
                         ).await?;
+                        self.metrics.record_database_operation("TripleCreated", "term_initialization");
                         vec![term_id_formatted, counter_term_id_formatted]
                     } else {
                         vec![]

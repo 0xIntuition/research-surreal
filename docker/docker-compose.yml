@@ -200,6 +200,8 @@ services:
     volumes:
       - prometheus_data:/prometheus
       - ../infrastructure/monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../infrastructure/monitoring/alert_rules.yml:/etc/prometheus/alert_rules.yml:ro
+      - ../infrastructure/monitoring/recording_rules.yml:/etc/prometheus/recording_rules.yml:ro
     ports:
       - "9090"
     restart: unless-stopped

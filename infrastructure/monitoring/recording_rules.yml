@@ -1,0 +1,116 @@
+groups:
+  - name: redis_postgres_sync_event_type_recording_rules
+    interval: 15s
+    rules:
+      # Rate metrics - events processed per second by type
+      - record: redis_postgres_sync:events_processed_rate:by_type
+        expr: rate(redis_postgres_sync_events_processed_by_type_total[5m])
+
+      # Rate metrics - events failed per second by type
+      - record: redis_postgres_sync:events_failed_rate:by_type
+        expr: rate(redis_postgres_sync_events_failed_by_type_total[5m])
+
+      # Rate metrics - database operations per second by type and operation
+      - record: redis_postgres_sync:database_operations_rate:by_type
+        expr: rate(redis_postgres_sync_database_operations_total[5m])
+
+      # Rate metrics - database operations per second by operation (summed across types)
+      - record: redis_postgres_sync:database_operations_rate:by_operation
+        expr: sum by (operation) (rate(redis_postgres_sync_database_operations_total[5m]))
+
+      # Failure rate percentage by type
+      - record: redis_postgres_sync:failure_rate_percent:by_type
+        expr: |
+          100 * (
+            rate(redis_postgres_sync_events_failed_by_type_total[5m])
+            /
+            (rate(redis_postgres_sync_events_processed_by_type_total[5m]) +
+             rate(redis_postgres_sync_events_failed_by_type_total[5m]))
+          )
+
+      # Success rate percentage by type
+      - record: redis_postgres_sync:success_rate_percent:by_type
+        expr: |
+          100 * (
+            rate(redis_postgres_sync_events_processed_by_type_total[5m])
+            /
+            (rate(redis_postgres_sync_events_processed_by_type_total[5m]) +
+             rate(redis_postgres_sync_events_failed_by_type_total[5m]))
+          )
+
+      # Cascade overhead percentage by type (cascade time as % of total processing time)
+      - record: redis_postgres_sync:cascade_overhead_percent:by_type
+        expr: |
+          100 * (
+            rate(redis_postgres_sync_cascade_processing_duration_seconds_sum[5m])
+            /
+            rate(redis_postgres_sync_event_processing_duration_by_type_seconds_sum[5m])
+          )
+
+      # Event distribution percentage (what % of all events is each type)
+      - record: redis_postgres_sync:event_distribution_percent:by_type
+        expr: |
+          100 * (
+            sum by (event_type) (rate(redis_postgres_sync_events_processed_by_type_total[5m]))
+            / ignoring(event_type) group_left
+            sum(rate(redis_postgres_sync_events_processed_by_type_total[5m]))
+          )
+
+      # Processing duration quantiles by type
+      - record: redis_postgres_sync:event_processing_duration_seconds:p50:by_type
+        expr: histogram_quantile(0.50, rate(redis_postgres_sync_event_processing_duration_by_type_seconds_bucket[5m]))
+
+      - record: redis_postgres_sync:event_processing_duration_seconds:p95:by_type
+        expr: histogram_quantile(0.95, rate(redis_postgres_sync_event_processing_duration_by_type_seconds_bucket[5m]))
+
+      - record: redis_postgres_sync:event_processing_duration_seconds:p99:by_type
+        expr: histogram_quantile(0.99, rate(redis_postgres_sync_event_processing_duration_by_type_seconds_bucket[5m]))
+
+      # Average processing duration by type
+      - record: redis_postgres_sync:event_processing_duration_seconds:avg:by_type
+        expr: |
+          rate(redis_postgres_sync_event_processing_duration_by_type_seconds_sum[5m])
+          /
+          rate(redis_postgres_sync_event_processing_duration_by_type_seconds_count[5m])
+
+      # Cascade duration quantiles by type
+      - record: redis_postgres_sync:cascade_duration_seconds:p50:by_type
+        expr: histogram_quantile(0.50, rate(redis_postgres_sync_cascade_processing_duration_seconds_bucket[5m]))
+
+      - record: redis_postgres_sync:cascade_duration_seconds:p95:by_type
+        expr: histogram_quantile(0.95, rate(redis_postgres_sync_cascade_processing_duration_seconds_bucket[5m]))
+
+      - record: redis_postgres_sync:cascade_duration_seconds:p99:by_type
+        expr: histogram_quantile(0.99, rate(redis_postgres_sync_cascade_processing_duration_seconds_bucket[5m]))
+
+      # Average cascade duration by type
+      - record: redis_postgres_sync:cascade_duration_seconds:avg:by_type
+        expr: |
+          rate(redis_postgres_sync_cascade_processing_duration_seconds_sum[5m])
+          /
+          rate(redis_postgres_sync_cascade_processing_duration_seconds_count[5m])
+
+      # SLO compliance - percentage of events processed under 1 second
+      - record: redis_postgres_sync:latency_slo_compliance_percent:by_type
+        expr: |
+          100 * (
+            sum by (event_type) (
+              rate(redis_postgres_sync_event_processing_duration_by_type_seconds_bucket{le="1.0"}[5m])
+            )
+            /
+            sum by (event_type) (
+              rate(redis_postgres_sync_event_processing_duration_by_type_seconds_count[5m])
+            )
+          )
+
+      # Hourly metrics - total events processed in last hour by type
+      - record: redis_postgres_sync:events_processed_1h:by_type
+        expr: increase(redis_postgres_sync_events_processed_by_type_total[1h])
+
+      # Hourly metrics - total events failed in last hour by type
+      - record: redis_postgres_sync:events_failed_1h:by_type
+        expr: increase(redis_postgres_sync_events_failed_by_type_total[1h])
+
+      # Hourly metrics - peak event processing rate in last hour
+      - record: redis_postgres_sync:events_processed_rate_1h_max:by_type
+        expr: max_over_time(rate(redis_postgres_sync_events_processed_by_type_total[5m])[1h:1m])

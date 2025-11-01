@@ -1,23 +1,93 @@
 global:
   smtp_smarthost: 'localhost:587'
   smtp_from: 'alertmanager@rindexer-surreal.local'
+  resolve_timeout: 5m
 
 route:
-  group_by: ['alertname']
+  receiver: 'default-receiver'
+  group_by: ['alertname', 'event_type', 'severity']
   group_wait: 10s
   group_interval: 10s
-  repeat_interval: 1h
-  receiver: 'web.hook'
+  repeat_interval: 12h
 
-receivers:
-  - name: 'web.hook'
-    webhook_configs:
-      - url: 'http://localhost:5001/'
-        send_resolved: true
+  routes:
+    # Critical alerts - send immediately
+    - receiver: 'critical-alerts'
+      match:
+        severity: critical
+      group_wait: 0s
+      repeat_interval: 5m
+
+    # Warning alerts - batch and send
+    - receiver: 'warning-alerts'
+      match:
+        severity: warning
+      group_wait: 30s
+      repeat_interval: 1h
+
+    # Info alerts - batch and send less frequently
+    - receiver: 'info-alerts'
+      match:
+        severity: info
+      group_wait: 5m
+      repeat_interval: 24h
+
+    # Legacy webhook for compatibility
+    - receiver: 'web.hook'
+      continue: true
 
 inhibit_rules:
+  # If all events are failing, suppress individual failure rate alerts
+  - source_match:
+      alertname: 'AllEventsFailingForType'
+    target_match:
+      alertname: 'HighEventTypeFailureRate'
+    equal: ['event_type']
+
+  # General: critical alerts suppress warnings for same issue
   - source_match:
       severity: 'critical'
     target_match:
       severity: 'warning'
-    equal: ['alertname', 'dev', 'instance']
+    equal: ['alertname', 'event_type', 'instance']
+
+receivers:
+  # Default receiver - logs to console
+  - name: 'default-receiver'
+    # Add your notification methods here
+
+  # Critical alerts receiver
+  - name: 'critical-alerts'
+    # Example: Slack integration (uncomment and configure)
+    # slack_configs:
+    #   - channel: '#critical-alerts'
+    #     title: 'CRITICAL: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+
+    # Example: PagerDuty integration (uncomment and configure)
+    # pagerduty_configs:
+    #   - service_key: 'YOUR_PAGERDUTY_SERVICE_KEY'
+    #     description: '{{ .GroupLabels.alertname }}: {{ .GroupLabels.event_type }}'
+
+  # Warning alerts receiver
+  - name: 'warning-alerts'
+    # slack_configs:
+    #   - channel: '#warnings'
+    #     title: 'WARNING: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+
+  # Info alerts receiver
+  - name: 'info-alerts'
+    # slack_configs:
+    #   - channel: '#monitoring'
+    #     title: 'INFO: {{ .GroupLabels.alertname }}'
+    #     text: '{{ range .Alerts }}{{ .Annotations.description }}{{ end }}'
+    #     send_resolved: true
+
+  # Legacy webhook receiver for compatibility
+  - name: 'web.hook'
+    webhook_configs:
+      - url: 'http://localhost:5001/'
+        send_resolved: true
