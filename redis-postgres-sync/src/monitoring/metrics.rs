@@ -355,6 +355,41 @@ impl Metrics {
         encoder.encode(&metric_families, &mut buffer)?;
         Ok(String::from_utf8(buffer)?)
     }
+
+    #[cfg(test)]
+    pub fn reset_for_tests() {
+        // Reset all simple counters
+        EVENTS_PROCESSED_COUNTER.reset();
+        EVENTS_FAILED_COUNTER.reset();
+        BATCHES_PROCESSED_COUNTER.reset();
+
+        // Reset event type-specific counters (Vec types)
+        EVENTS_PROCESSED_BY_TYPE_COUNTER.reset();
+        EVENTS_FAILED_BY_TYPE_COUNTER.reset();
+        DATABASE_OPERATIONS_COUNTER.reset();
+        CASCADE_FAILURES_COUNTER.reset();
+
+        // Reset stream metrics (Vec types)
+        STREAM_MESSAGES_CLAIMED_COUNTER.reset();
+        STREAM_MESSAGES_CONSUMED_COUNTER.reset();
+
+        // Reset histogram vectors
+        EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM.reset();
+        CASCADE_PROCESSING_DURATION_HISTOGRAM.reset();
+
+        // Reset simple gauges
+        EVENTS_PER_SECOND_GAUGE.set(0.0);
+        PEAK_EVENTS_PER_SECOND_GAUGE.set(0.0);
+        REDIS_HEALTHY_GAUGE.set(0.0);
+        POSTGRES_HEALTHY_GAUGE.set(0.0);
+        UPTIME_GAUGE.set(0.0);
+
+        // Reset stream gauge vectors
+        STREAM_LAG_GAUGE.reset();
+        STREAM_PENDING_MESSAGES_GAUGE.reset();
+        STREAM_BATCH_SIZE_GAUGE.reset();
+        STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.reset();
+    }
 }
 
 impl Default for Metrics {
@@ -380,11 +415,17 @@ pub struct MetricsSnapshot {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    // Mutex to ensure metrics tests run serially
+    static TEST_MUTEX: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_prometheus_metrics_format() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
-        
+
         // Record some test data
         metrics.record_event_success(100);
         metrics.record_event_failure(5);
@@ -406,6 +447,8 @@ mod tests {
 
     #[test]
     fn test_event_by_type_success() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
 
         // Record successful events by type
@@ -432,6 +475,8 @@ mod tests {
 
     #[test]
     fn test_event_by_type_failure() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
 
         // Record failed events by type
@@ -454,6 +499,8 @@ mod tests {
 
     #[test]
     fn test_event_processing_duration() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
 
         // Record processing durations for different event types
@@ -479,6 +526,8 @@ mod tests {
 
     #[test]
     fn test_cascade_duration() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
 
         // Record cascade durations
@@ -501,6 +550,8 @@ mod tests {
 
     #[test]
     fn test_database_operations() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
 
         // Record database operations
@@ -532,6 +583,8 @@ mod tests {
 
     #[test]
     fn test_cascade_failure() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
 
         // Record cascade failures
@@ -554,6 +607,8 @@ mod tests {
 
     #[test]
     fn test_multiple_event_types() {
+        let _guard = TEST_MUTEX.lock().unwrap_or_else(|e| e.into_inner());
+        Metrics::reset_for_tests();
         let metrics = Metrics::new();
 
         // Simulate processing multiple different event types

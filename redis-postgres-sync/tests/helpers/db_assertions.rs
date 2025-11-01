@@ -135,8 +135,12 @@ impl DbAssertions {
     ) -> Result<VaultRow> {
         let row = sqlx::query_as::<_, VaultRow>(
             r#"
-            SELECT term_id, curve_id, total_shares, current_share_price,
-                   total_assets, market_cap, position_count
+            SELECT term_id, curve_id,
+                   total_shares::TEXT as total_shares,
+                   current_share_price::TEXT as current_share_price,
+                   total_assets::TEXT as total_assets,
+                   market_cap::TEXT as market_cap,
+                   position_count
             FROM vault
             WHERE term_id = $1 AND curve_id = $2
             "#,
@@ -170,9 +174,10 @@ impl DbAssertions {
 
         let row = sqlx::query_as::<_, PositionRow>(
             r#"
-            SELECT account_id, term_id, curve_id, shares,
-                   total_deposit_assets_after_total_fees,
-                   total_redeem_assets_for_receiver
+            SELECT account_id, term_id, curve_id,
+                   shares::TEXT as shares,
+                   total_deposit_assets_after_total_fees::TEXT as total_deposit_assets_after_total_fees,
+                   total_redeem_assets_for_receiver::TEXT as total_redeem_assets_for_receiver
             FROM position
             WHERE account_id = $1 AND term_id = $2 AND curve_id = $3
             "#,

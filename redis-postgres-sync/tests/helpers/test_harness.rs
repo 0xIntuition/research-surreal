@@ -333,23 +333,9 @@ impl TestHarness {
     }
 }
 
-impl Drop for TestHarness {
-    fn drop(&mut self) {
-        // Close the pool if it exists
-        // Note: We use blocking operations here since Drop is synchronous
-        if let Some(pool) = self.pool.take() {
-            // Spawn a blocking task to close the pool
-            // This is acceptable in Drop since we're cleaning up test resources
-            let _ = std::thread::spawn(move || {
-                tokio::runtime::Runtime::new()
-                    .expect("Failed to create runtime for pool cleanup")
-                    .block_on(async move {
-                        pool.close().await;
-                    });
-            }).join();
-        }
-    }
-}
+// Drop implementation removed - PgPool closes automatically when dropped
+// The previous implementation was causing deadlocks by creating a new runtime
+// inside an existing tokio runtime context
 
 #[cfg(test)]
 mod tests {
