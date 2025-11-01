@@ -9,9 +9,8 @@ pub fn parse_hex_to_u64(hex_str: &str) -> Result<u64> {
         hex_str
     };
 
-    u64::from_str_radix(cleaned, 16).map_err(|e| {
-        SyncError::ParseError(format!("Failed to parse hex string '{hex_str}': {e}"))
-    })
+    u64::from_str_radix(cleaned, 16)
+        .map_err(|e| SyncError::ParseError(format!("Failed to parse hex string '{hex_str}': {e}")))
 }
 
 pub fn parse_hex_timestamp_to_datetime(hex_str: &str) -> Result<DateTime<Utc>> {
@@ -46,9 +45,8 @@ pub fn calculate_counter_term_id(term_id: &str) -> Result<String> {
     };
 
     // Decode hex string to bytes
-    let term_id_bytes = hex::decode(term_id_cleaned).map_err(|e| {
-        SyncError::ParseError(format!("Failed to decode term_id '{term_id}': {e}"))
-    })?;
+    let term_id_bytes = hex::decode(term_id_cleaned)
+        .map_err(|e| SyncError::ParseError(format!("Failed to decode term_id '{term_id}': {e}")))?;
 
     // Calculate COUNTER_SALT = keccak256("COUNTER_SALT")
     let counter_salt = keccak256(b"COUNTER_SALT");

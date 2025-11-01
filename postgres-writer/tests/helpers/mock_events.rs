@@ -17,9 +17,7 @@ pub const DEFAULT_NETWORK: &str = "base_sepolia";
 /// Validates that a string is a properly formatted Ethereum address
 fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
     if !addr.starts_with("0x") {
-        return Err(format!(
-            "{field_name} must start with '0x', got: {addr}"
-        ));
+        return Err(format!("{field_name} must start with '0x', got: {addr}"));
     }
     if addr.len() != 42 {
         return Err(format!(

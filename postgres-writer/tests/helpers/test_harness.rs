@@ -33,9 +33,7 @@ impl TestHarness {
 
         // Create unique database for this test
         let test_db_name = format!("test_{}", uuid::Uuid::new_v4().simple());
-        let database_url = format!(
-            "postgres://test:test@127.0.0.1:{postgres_port}/{test_db_name}"
-        );
+        let database_url = format!("postgres://test:test@127.0.0.1:{postgres_port}/{test_db_name}");
 
         let harness = Self {
             _redis_container: redis_container,

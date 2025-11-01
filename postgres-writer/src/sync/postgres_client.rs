@@ -56,9 +56,7 @@ impl PostgresClient {
                         );
                         sleep(Duration::from_millis(delay_ms)).await;
                     } else {
-                        error!(
-                            "Failed to run migrations after {MAX_RETRIES} attempts: {e}"
-                        );
+                        error!("Failed to run migrations after {MAX_RETRIES} attempts: {e}");
                         return Err(SyncError::Connection(format!(
                             "Failed to run migrations after {MAX_RETRIES} attempts: {e}"
                         )));
@@ -143,15 +141,18 @@ impl PostgresClient {
         // After event insert and triggers, run cascade updates in a separate transaction
         // to update aggregated tables (vault, term)
         let cascade_start = std::time::Instant::now();
-        let term_ids = self.run_cascade_after_event(event).await.inspect_err(|_e| {
-            // Record cascade failure - this is a specific edge case where event was already
-            // committed but cascade failed. This is tracked separately due to the TODO about
-            // transaction consistency at lines 105-108.
-            self.metrics.record_cascade_failure(event_type);
-            self.metrics.record_event_by_type_failure(event_type);
-            self.metrics
-                .record_event_processing_duration(event_type, event_start.elapsed());
-        })?;
+        let term_ids = self
+            .run_cascade_after_event(event)
+            .await
+            .inspect_err(|_e| {
+                // Record cascade failure - this is a specific edge case where event was already
+                // committed but cascade failed. This is tracked separately due to the TODO about
+                // transaction consistency at lines 105-108.
+                self.metrics.record_cascade_failure(event_type);
+                self.metrics.record_event_by_type_failure(event_type);
+                self.metrics
+                    .record_event_processing_duration(event_type, event_start.elapsed());
+            })?;
 
         // Record cascade processing duration
         // NOTE: This measures only the cascade update queries (vault/term aggregations).

@@ -80,8 +80,6 @@ pub async fn handle_triple_created(
         SyncError::from(e)
     })?;
 
-    debug!(
-        "Created TripleCreated record with counter_term_id: {counter_term_id}"
-    );
+    debug!("Created TripleCreated record with counter_term_id: {counter_term_id}");
     Ok(())
 }
