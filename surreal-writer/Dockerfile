@@ -44,10 +44,10 @@ COPY . .
 
 # Build the actual application - this layer rebuilds only when source code changes
 # Dependencies are already compiled and cached from the previous layer
-RUN cargo build --release --bin redis-surreal-sync
+RUN cargo build --release --bin surreal-writer
 
 # Verify binary works
-RUN ./target/release/redis-surreal-sync --version || echo "Binary verification skipped"
+RUN ./target/release/surreal-writer --version || echo "Binary verification skipped"
 
 # Runtime stage - Use Debian bookworm-slim for compatibility
 FROM debian:bookworm-slim
@@ -69,8 +69,8 @@ WORKDIR /app
 RUN chown sync:sync /app
 
 # Copy binary from builder stage with correct permissions
-COPY --from=builder --chown=sync:sync /app/target/release/redis-surreal-sync /usr/local/bin/redis-surreal-sync
-RUN chmod +x /usr/local/bin/redis-surreal-sync
+COPY --from=builder --chown=sync:sync /app/target/release/surreal-writer /usr/local/bin/surreal-writer
+RUN chmod +x /usr/local/bin/surreal-writer
 
 # Create log directory
 RUN mkdir -p /app/logs && chown sync:sync /app/logs
@@ -79,7 +79,7 @@ RUN mkdir -p /app/logs && chown sync:sync /app/logs
 USER sync
 
 # Set security-focused environment variables
-ENV RUST_LOG=redis_surreal_sync=info,tokio=warn
+ENV RUST_LOG=surreal_writer=info,tokio=warn
 ENV RUST_BACKTRACE=1
 ENV REDIS_URL=redis://redis:6379
 ENV SURREAL_URL=ws://surrealdb:8000
@@ -103,15 +103,15 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
 # ENTRYPOINT ["/usr/bin/tini", "--"]
 
 # Set default command with signal handling
-ENTRYPOINT ["redis-surreal-sync"]
+ENTRYPOINT ["surreal-writer"]
 CMD ["--redis-url", "${REDIS_URL}", "--surreal-url", "${SURREAL_URL}"]
 
 # Labels for metadata and security scanning
 LABEL maintainer="Simonas" \
       version="0.1.0" \
-      description="High-performance Redis to SurrealDB event synchronization pipeline" \
-      org.opencontainers.image.source="https://github.com/your-org/redis-surreal-sync" \
-      org.opencontainers.image.description="Production-ready Redis streams to SurrealDB synchronization service" \
+      description="High-performance SurrealDB event writer with Redis stream consumption" \
+      org.opencontainers.image.source="https://github.com/0xIntuition/research-surreal" \
+      org.opencontainers.image.description="Production-ready SurrealDB writer service" \
       org.opencontainers.image.version="0.1.0" \
       security.capabilities="NET_BIND_SERVICE" \
       security.non-root="true"

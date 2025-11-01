@@ -90,7 +90,7 @@
       },
       "targets": [
         {
-          "expr": "rate(redis_surreal_sync_events_processed_total[5m])",
+          "expr": "rate(surreal_writer_events_processed_total[5m])",
           "interval": "",
           "legendFormat": "Events/sec",
           "refId": "A"
@@ -147,7 +147,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "redis_surreal_sync_events_processed_total",
+          "expr": "surreal_writer_events_processed_total",
           "interval": "",
           "legendFormat": "Total Events",
           "refId": "A"
@@ -228,13 +228,13 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(redis_surreal_sync_processing_duration_seconds_bucket[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, rate(surreal_writer_processing_duration_seconds_bucket[5m])) * 1000",
           "interval": "",
           "legendFormat": "95th percentile",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.50, rate(redis_surreal_sync_processing_duration_seconds_bucket[5m])) * 1000",
+          "expr": "histogram_quantile(0.50, rate(surreal_writer_processing_duration_seconds_bucket[5m])) * 1000",
           "interval": "",
           "legendFormat": "50th percentile",
           "refId": "B"
@@ -315,7 +315,7 @@
       },
       "targets": [
         {
-          "expr": "rate(redis_surreal_sync_events_failed_total[5m])",
+          "expr": "rate(surreal_writer_events_failed_total[5m])",
           "interval": "",
           "legendFormat": "Failed Events/sec",
           "refId": "A"
@@ -420,7 +420,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Redis Surreal Sync Dashboard",
-  "uid": "redis-surreal-sync",
+  "title": "SurrealDB Writer Dashboard",
+  "uid": "surreal-writer",
   "version": 1
 }

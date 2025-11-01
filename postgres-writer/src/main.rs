@@ -1,4 +1,4 @@
-use redis_postgres_sync::{analytics, Config, EventProcessingPipeline, HttpServer};
+use postgres_writer::{analytics, Config, EventProcessingPipeline, HttpServer};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "redis_postgres_sync=info,warn".into()),
+                .unwrap_or_else(|_| "postgres_writer=info,warn".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

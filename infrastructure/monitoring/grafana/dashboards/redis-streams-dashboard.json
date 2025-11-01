@@ -90,7 +90,7 @@
       },
       "targets": [
         {
-          "expr": "rate(redis_postgres_sync_stream_messages_consumed_total[5m])",
+          "expr": "rate(postgres_writer_stream_messages_consumed_total[5m])",
           "interval": "",
           "legendFormat": "{{stream_name}}",
           "refId": "A"
@@ -152,7 +152,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "redis_postgres_sync_stream_lag",
+          "expr": "postgres_writer_stream_lag",
           "interval": "",
           "legendFormat": "{{stream_name}}",
           "refId": "A"
@@ -233,7 +233,7 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync_stream_pending_messages",
+          "expr": "postgres_writer_stream_pending_messages",
           "interval": "",
           "legendFormat": "{{stream_name}}",
           "refId": "A"
@@ -314,7 +314,7 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync_stream_batch_size",
+          "expr": "postgres_writer_stream_batch_size",
           "interval": "",
           "legendFormat": "{{stream_name}}",
           "refId": "A"
@@ -762,7 +762,7 @@
       },
       "targets": [
         {
-          "expr": "rate(redis_postgres_sync_stream_messages_claimed_total[5m])",
+          "expr": "rate(postgres_writer_stream_messages_claimed_total[5m])",
           "interval": "",
           "legendFormat": "{{stream_name}} claimed",
           "refId": "A"
@@ -843,7 +843,7 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync_stream_last_message_timestamp * 1000",
+          "expr": "postgres_writer_stream_last_message_timestamp * 1000",
           "interval": "",
           "legendFormat": "{{stream_name}}",
           "refId": "A"
@@ -868,7 +868,7 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Redis Streams Monitoring Dashboard",
-  "uid": "redis-streams-monitoring",
+  "title": "Redis Streams Monitoring",
+  "uid": "redis-streams",
   "version": 1
 }

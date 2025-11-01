@@ -43,7 +43,7 @@ This runbook addresses alerts related to high failure rates for specific event t
 1. **Check the specific event type failing**
    ```bash
    # View recent logs filtered by event type
-   docker logs redis-postgres-sync --tail 1000 | grep "event_type"
+   docker logs postgres-writer --tail 1000 | grep "event_type"
    ```
 
 2. **Check database connectivity and health**
@@ -58,13 +58,13 @@ This runbook addresses alerts related to high failure rates for specific event t
    ```
 
 3. **Review Prometheus metrics**
-   - Check `redis_postgres_sync_events_failed_by_type_total` for specific event type
-   - Review `redis_postgres_sync:failure_rate_percent:by_type`
-   - Look at `redis_postgres_sync_database_operations_total` for the event type
+   - Check `postgres_writer_events_failed_by_type_total` for specific event type
+   - Review `postgres_writer:failure_rate_percent:by_type`
+   - Look at `postgres_writer_database_operations_total` for the event type
 
 4. **Check application logs for stack traces**
    ```bash
-   docker logs redis-postgres-sync --tail 500 | grep -A 20 "Error\|ERROR\|panic"
+   docker logs postgres-writer --tail 500 | grep -A 20 "Error\|ERROR\|panic"
    ```
 
 5. **Verify event data format**

@@ -1,13 +1,13 @@
 [package]
-name = "redis-postgres-sync"
+name = "postgres-writer"
 version = "0.1.0"
 edition = "2021"
 authors = ["Simonas"]
-description = "High-performance Redis to PostgreSQL event synchronization pipeline"
+description = "High-performance PostgreSQL event writer with Redis stream consumption"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
-name = "redis-postgres-sync"
+name = "postgres-writer"
 path = "src/main.rs"
 
 [dependencies]

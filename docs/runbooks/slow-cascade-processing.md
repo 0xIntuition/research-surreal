@@ -61,22 +61,22 @@ Different event types trigger different cascade operations:
 1. **Check cascade latency metrics**
    ```promql
    # P95 cascade duration by event type
-   redis_postgres_sync:cascade_duration_seconds:p95:by_type
+   postgres_writer:cascade_duration_seconds:p95:by_type
 
    # Cascade overhead as percentage of total processing
-   redis_postgres_sync:cascade_overhead_percent:by_type
+   postgres_writer:cascade_overhead_percent:by_type
    ```
 
 2. **Identify slow cascade operations**
    ```bash
    # Check logs for cascade-specific timing
-   docker logs redis-postgres-sync --tail 1000 | grep -i "cascade"
+   docker logs postgres-writer --tail 1000 | grep -i "cascade"
    ```
 
 3. **Check database operation metrics**
    ```promql
    # Database operations rate by type and operation
-   redis_postgres_sync:database_operations_rate:by_type
+   postgres_writer:database_operations_rate:by_type
    ```
 
 4. **Analyze slow queries**
@@ -194,9 +194,9 @@ After applying fixes, monitor:
 
 Key metrics to watch:
 ```promql
-redis_postgres_sync:cascade_duration_seconds:p95:by_type < 2
-redis_postgres_sync:cascade_overhead_percent:by_type < 50
-rate(redis_postgres_sync_database_operations_total[5m])
+postgres_writer:cascade_duration_seconds:p95:by_type < 2
+postgres_writer:cascade_overhead_percent:by_type < 50
+rate(postgres_writer_database_operations_total[5m])
 ```
 
 ## Prevention

@@ -18,18 +18,18 @@ scrape_configs:
     static_configs:
       - targets: ['localhost:9090']
 
-  # Redis Surreal Sync application metrics
-  - job_name: 'redis-surreal-sync'
+  # SurrealDB Writer application metrics
+  - job_name: 'surreal-writer'
     static_configs:
-      - targets: ['redis-surreal-sync:18210']
+      - targets: ['surreal-writer:18210']
     scrape_interval: 5s
     metrics_path: /metrics
     scrape_timeout: 5s
 
-  # Redis Postgres Sync application metrics
-  - job_name: 'redis-postgres-sync'
+  # PostgreSQL Writer application metrics
+  - job_name: 'postgres-writer'
     static_configs:
-      - targets: ['redis-postgres-sync:18211']
+      - targets: ['postgres-writer:18211']
     scrape_interval: 5s
     metrics_path: /metrics
     scrape_timeout: 5s

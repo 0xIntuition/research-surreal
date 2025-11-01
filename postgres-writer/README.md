@@ -377,7 +377,7 @@ HTTP_PORT=8080
 ### Building
 
 ```bash
-cd redis-postgres-sync
+cd postgres-writer
 cargo build --release
 ```
 
@@ -389,14 +389,14 @@ export DATABASE_URL=postgresql://user:pass@localhost:5432/intuition
 export REDIS_URL=redis://localhost:6379
 
 # Run the service
-./target/release/redis-postgres-sync
+./target/release/postgres-writer
 ```
 
 ### Docker
 
 ```bash
-docker build -t redis-postgres-sync .
-docker run -e DATABASE_URL=... -e REDIS_URL=... redis-postgres-sync
+docker build -t postgres-writer .
+docker run -e DATABASE_URL=... -e REDIS_URL=... postgres-writer
 ```
 
 ### Health Check

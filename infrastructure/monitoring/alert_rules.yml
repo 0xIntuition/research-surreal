@@ -1,4 +1,4 @@
-## Alert Rules for Redis-PostgreSQL Sync Service
+## Alert Rules for PostgreSQL Writer Service
 ##
 ## Threshold Rationale:
 ## - SlowEventTypeProcessing (P95 > 5s): Based on expected database transaction times.
@@ -17,16 +17,16 @@
 ##   5% allows for transient issues while catching persistent problems early.
 ##
 groups:
-  - name: redis_postgres_sync_event_type_alerts
+  - name: postgres_writer_event_type_alerts
     interval: 15s
     rules:
       # Critical: Nearly all events of a specific type are failing
       - alert: AllEventsFailingForType
-        expr: redis_postgres_sync:failure_rate_percent:by_type > 95
+        expr: postgres_writer:failure_rate_percent:by_type > 95
         for: 2m
         labels:
           severity: critical
-          component: redis-postgres-sync
+          component: postgres-writer
         annotations:
           summary: "Nearly all {{ $labels.event_type }} events are failing"
           description: "{{ $labels.event_type }} events have a {{ $value | humanizePercentage }} failure rate for over 2 minutes. This indicates a critical issue with processing this event type."
@@ -34,11 +34,11 @@ groups:
 
       # Warning: Elevated failure rate for a specific event type
       - alert: HighEventTypeFailureRate
-        expr: redis_postgres_sync:failure_rate_percent:by_type > 5
+        expr: postgres_writer:failure_rate_percent:by_type > 5
         for: 5m
         labels:
           severity: warning
-          component: redis-postgres-sync
+          component: postgres-writer
         annotations:
           summary: "High failure rate for {{ $labels.event_type }} events"
           description: "{{ $labels.event_type }} events have a {{ $value | humanizePercentage }} failure rate for over 5 minutes. Normal failure rate should be near 0%."
@@ -46,11 +46,11 @@ groups:
 
       # Warning: Event type processing is slow
       - alert: SlowEventTypeProcessing
-        expr: redis_postgres_sync:event_processing_duration_seconds:p95:by_type > 5
+        expr: postgres_writer:event_processing_duration_seconds:p95:by_type > 5
         for: 5m
         labels:
           severity: warning
-          component: redis-postgres-sync
+          component: postgres-writer
         annotations:
           summary: "Slow processing for {{ $labels.event_type }} events"
           description: "95th percentile processing time for {{ $labels.event_type }} events is {{ $value | humanizeDuration }} (over 5 seconds) for the last 5 minutes."
@@ -58,11 +58,11 @@ groups:
 
       # Warning: Cascade processing is slow for a specific event type
       - alert: SlowCascadeProcessing
-        expr: redis_postgres_sync:cascade_duration_seconds:p95:by_type > 2
+        expr: postgres_writer:cascade_duration_seconds:p95:by_type > 2
         for: 5m
         labels:
           severity: warning
-          component: redis-postgres-sync
+          component: postgres-writer
         annotations:
           summary: "Slow cascade processing for {{ $labels.event_type }} events"
           description: "95th percentile cascade time for {{ $labels.event_type }} events is {{ $value | humanizeDuration }} (over 2 seconds) for the last 5 minutes. This may indicate database performance issues."
@@ -70,11 +70,11 @@ groups:
 
       # Info: No events of a specific type have been processed recently
       - alert: NoEventsProcessedForType
-        expr: rate(redis_postgres_sync_events_processed_by_type_total[10m]) == 0
+        expr: rate(postgres_writer_events_processed_by_type_total[10m]) == 0
         for: 10m
         labels:
           severity: info
-          component: redis-postgres-sync
+          component: postgres-writer
         annotations:
           summary: "No {{ $labels.event_type }} events processed recently"
           description: "No {{ $labels.event_type }} events have been processed in the last 10 minutes. This may be expected if this event type is rare."
@@ -83,13 +83,13 @@ groups:
       # Info: Unusual spike in database operations
       - alert: DatabaseOperationSpike
         expr: |
-          redis_postgres_sync:database_operations_rate:by_type
+          postgres_writer:database_operations_rate:by_type
           >
-          2 * avg_over_time(redis_postgres_sync:database_operations_rate:by_type[1h])
+          2 * avg_over_time(postgres_writer:database_operations_rate:by_type[1h])
         for: 5m
         labels:
           severity: info
-          component: redis-postgres-sync
+          component: postgres-writer
         annotations:
           summary: "Spike in {{ $labels.operation }} operations for {{ $labels.event_type }}"
           description: "Database operation rate for {{ $labels.operation }} ({{ $labels.event_type }}) is {{ $value | humanize }} ops/sec, which is 2x the 1-hour average."

@@ -36,7 +36,7 @@ Currently, all receivers are placeholders with no actual notification methods co
 Grafana provides visualization dashboards for metrics.
 
 **Dashboards:**
-- `grafana/dashboards/redis-postgres-sync-dashboard.json` - Main monitoring dashboard
+- `grafana/dashboards/postgres-writer-dashboard.json` - Main monitoring dashboard
 
 ## Alertmanager Receiver Configuration
 
@@ -264,21 +264,21 @@ See individual runbooks in `docs/runbooks/` for detailed information on each ale
 
 ### Event Type Metrics
 
-- `redis_postgres_sync_events_processed_by_type_total` - Events successfully processed
-- `redis_postgres_sync_events_failed_by_type_total` - Events that failed
-- `redis_postgres_sync_cascade_failures_total` - Cascade failures after successful event commit
-- `redis_postgres_sync_event_processing_duration_by_type_seconds` - Processing latency
-- `redis_postgres_sync_cascade_processing_duration_seconds` - Cascade latency
+- `postgres_writer_events_processed_by_type_total` - Events successfully processed
+- `postgres_writer_events_failed_by_type_total` - Events that failed
+- `postgres_writer_cascade_failures_total` - Cascade failures after successful event commit
+- `postgres_writer_event_processing_duration_by_type_seconds` - Processing latency
+- `postgres_writer_cascade_processing_duration_seconds` - Cascade latency
   - **Note**: Measures ONLY cascade update queries (vault/term aggregations), excludes Redis publishing
-- `redis_postgres_sync_database_operations_total` - Database operations by type and operation
+- `postgres_writer_database_operations_total` - Database operations by type and operation
 
 ### Recording Rules
 
 Pre-computed metrics for efficient querying:
-- `redis_postgres_sync:failure_rate_percent:by_type` - Failure rate percentage
-- `redis_postgres_sync:success_rate_percent:by_type` - Success rate percentage
-- `redis_postgres_sync:cascade_overhead_percent:by_type` - Cascade time as % of total
-- `redis_postgres_sync:event_processing_duration_seconds:p95:by_type` - P95 latency
+- `postgres_writer:failure_rate_percent:by_type` - Failure rate percentage
+- `postgres_writer:success_rate_percent:by_type` - Success rate percentage
+- `postgres_writer:cascade_overhead_percent:by_type` - Cascade time as % of total
+- `postgres_writer:event_processing_duration_seconds:p95:by_type` - P95 latency
 - And more...
 
 See `recording_rules.yml` for the complete list.
