@@ -413,3 +413,137 @@ async fn test_multiple_redeems_to_zero_out_of_order() {
     pipeline_handle.abort();
     let _ = pipeline.stop().await;
 }
+
+/// Test that verifies a position can be created by a redeem event arriving
+/// before any deposit events (edge case).
+///
+/// This edge case can occur when:
+/// - A user deposits through an external system/contract
+/// - The first on-chain event we capture is a redeem
+/// - Later, a deposit event arrives for that position
+///
+/// Scenario:
+/// 1. Redeem@1000 arrives first (creates position with shares=7000, representing external balance)
+/// 2. Deposit@1005 arrives second (updates to shares=9000) - should be final state
+///
+/// Expected behavior:
+/// - Position is created by the redeem event with shares=7000, total_deposits=0
+/// - When deposit arrives, it updates shares to 9000 and total_deposits=2000
+/// - Final state: shares from latest event (Deposit@1005)
+#[tokio::test]
+#[ignore]
+async fn test_redeem_before_deposit_edge_case() {
+    let mut harness = TestHarness::new().await.unwrap();
+
+    let term_id = "0x0000000000000000000000000000000000000000000000000000000000000001";
+    let account_id = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0";
+    let curve_id = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+    // Step 1: Create atom
+    let atom_event = EventBuilder::new()
+        .with_block(999)
+        .atom_created(term_id, account_id);
+
+    harness
+        .publish_events("rindexer_producer", vec![atom_event])
+        .await
+        .unwrap();
+
+    // Step 2: Publish redeem BEFORE deposit (edge case)
+    // Simulates: user deposited externally (off-chain or via different contract),
+    // then redeems 3000 shares on-chain, leaving 7000 shares,
+    // then deposits 2000 more shares on-chain
+    //
+    // Chronological order:
+    // Block 1000: Redeem 3000 shares → balance: 7000 (from external deposit)
+    // Block 1005: Deposit 2000 shares → balance: 9000 (7000 + 2000) <- LATEST
+    //
+    // Arrival order: 1000 (redeem first), 1005 (deposit second)
+    let events = vec![
+        // Redeem at block 1000 (arrives first, creates position)
+        EventBuilder::new()
+            .with_block(1000)
+            .with_log_index(0)
+            .redeemed_with_total(account_id, term_id, 3000, 3000, 7000), // -3000 → balance: 7000
+        // Deposit at block 1005 (arrives second, should be final state)
+        EventBuilder::new()
+            .with_block(1005)
+            .with_log_index(0)
+            .deposited_with_total(account_id, term_id, 2000, 2000, 9000), // +2000 → balance: 9000
+    ];
+
+    harness
+        .publish_events("rindexer_producer", events)
+        .await
+        .unwrap();
+
+    // Step 3: Start pipeline
+    let config = harness.default_config();
+    let pipeline = EventProcessingPipeline::new(config)
+        .await
+        .expect("Failed to create pipeline");
+    let pipeline_handle = tokio::spawn({
+        let pipeline = pipeline.clone();
+        async move { pipeline.start().await }
+    });
+
+    // Step 4: Wait for processing
+    harness
+        .wait_for_processing(3, 15) // 1 atom + 2 events
+        .await
+        .expect("Failed to process events");
+
+    harness
+        .wait_for_cascade(term_id, 5)
+        .await
+        .expect("Failed to complete cascade");
+
+    // Step 5: Assertions
+    let pool = harness
+        .get_pool()
+        .await
+        .expect("Failed to get database pool");
+
+    let position = DbAssertions::assert_position_exists(pool, account_id, term_id, curve_id)
+        .await
+        .expect("Position should exist (created by redeem)");
+
+    // CRITICAL: Position shares should be from Deposit@1005 (latest event)
+    // NOT from Redeem@1000 (the event that created the position)
+    assert_eq!(
+        position.shares, "9000",
+        "Position shares should be 9000 from Deposit@1005 (latest event)"
+    );
+
+    // Verify deposit total (only the on-chain deposit)
+    assert_eq!(
+        position.total_deposit_assets_after_total_fees, "2000",
+        "Total deposits should be 2000 (single deposit)"
+    );
+
+    // Verify redeem total (the initial redeem that created the position)
+    assert_eq!(
+        position.total_redeem_assets_for_receiver, "3000",
+        "Total redeems should be 3000 (single redeem)"
+    );
+
+    // Verify that the vault reflects this active position (shares > 0)
+    let position_count: Option<i64> = sqlx::query_scalar(
+        "SELECT position_count FROM vault WHERE term_id = $1 AND curve_id = $2"
+    )
+    .bind(term_id)
+    .bind(curve_id)
+    .fetch_one(pool)
+    .await
+    .expect("Failed to fetch vault");
+
+    assert_eq!(
+        position_count.unwrap_or(0),
+        1,
+        "Vault position_count should be 1 (position has non-zero shares)"
+    );
+
+    // Cleanup
+    pipeline_handle.abort();
+    let _ = pipeline.stop().await;
+}
