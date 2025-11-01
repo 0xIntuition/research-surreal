@@ -90,7 +90,7 @@
       },
       "targets": [
         {
-          "expr": "rate(redis_postgres_sync_events_processed_total[5m])",
+          "expr": "rate(postgres_writer_events_processed_total[5m])",
           "interval": "",
           "legendFormat": "Events/sec",
           "refId": "A"
@@ -151,7 +151,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "redis_postgres_sync_events_processed_total",
+          "expr": "postgres_writer_events_processed_total",
           "interval": "",
           "legendFormat": "Total Events",
           "refId": "A"
@@ -213,7 +213,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "redis_postgres_sync_batches_processed_total",
+          "expr": "postgres_writer_batches_processed_total",
           "interval": "",
           "legendFormat": "Total Batches",
           "refId": "A"
@@ -294,13 +294,13 @@
       },
       "targets": [
         {
-          "expr": "histogram_quantile(0.95, rate(redis_postgres_sync_processing_duration_seconds_bucket[5m])) * 1000",
+          "expr": "histogram_quantile(0.95, rate(postgres_writer_processing_duration_seconds_bucket[5m])) * 1000",
           "interval": "",
           "legendFormat": "95th percentile",
           "refId": "A"
         },
         {
-          "expr": "histogram_quantile(0.50, rate(redis_postgres_sync_processing_duration_seconds_bucket[5m])) * 1000",
+          "expr": "histogram_quantile(0.50, rate(postgres_writer_processing_duration_seconds_bucket[5m])) * 1000",
           "interval": "",
           "legendFormat": "50th percentile",
           "refId": "B"
@@ -381,7 +381,7 @@
       },
       "targets": [
         {
-          "expr": "rate(redis_postgres_sync_events_failed_total[5m])",
+          "expr": "rate(postgres_writer_events_failed_total[5m])",
           "interval": "",
           "legendFormat": "Failed Events/sec",
           "refId": "A"
@@ -462,13 +462,13 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync_events_per_second",
+          "expr": "postgres_writer_events_per_second",
           "interval": "",
           "legendFormat": "Current EPS",
           "refId": "A"
         },
         {
-          "expr": "redis_postgres_sync_peak_events_per_second",
+          "expr": "postgres_writer_peak_events_per_second",
           "interval": "",
           "legendFormat": "Peak EPS",
           "refId": "B"
@@ -541,7 +541,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "redis_postgres_sync_redis_healthy",
+          "expr": "postgres_writer_redis_healthy",
           "interval": "",
           "legendFormat": "Redis",
           "refId": "A"
@@ -614,7 +614,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "redis_postgres_sync_postgres_healthy",
+          "expr": "postgres_writer_postgres_healthy",
           "interval": "",
           "legendFormat": "PostgreSQL",
           "refId": "A"
@@ -676,7 +676,7 @@
       "pluginVersion": "8.0.0",
       "targets": [
         {
-          "expr": "redis_postgres_sync_uptime_seconds",
+          "expr": "postgres_writer_uptime_seconds",
           "interval": "",
           "legendFormat": "Uptime",
           "refId": "A"
@@ -753,7 +753,7 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync:events_processed_rate:by_type",
+          "expr": "postgres_writer:events_processed_rate:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }}",
           "refId": "A"
@@ -840,7 +840,7 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync:failure_rate_percent:by_type",
+          "expr": "postgres_writer:failure_rate_percent:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }}",
           "refId": "A"
@@ -917,13 +917,13 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync:event_processing_duration_seconds:p50:by_type",
+          "expr": "postgres_writer:event_processing_duration_seconds:p50:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }} (p50)",
           "refId": "A"
         },
         {
-          "expr": "redis_postgres_sync:event_processing_duration_seconds:p95:by_type",
+          "expr": "postgres_writer:event_processing_duration_seconds:p95:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }} (p95)",
           "refId": "B"
@@ -1000,7 +1000,7 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync:cascade_duration_seconds:p95:by_type",
+          "expr": "postgres_writer:cascade_duration_seconds:p95:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }} (p95)",
           "refId": "A"
@@ -1077,7 +1077,7 @@
       },
       "targets": [
         {
-          "expr": "redis_postgres_sync:database_operations_rate:by_operation",
+          "expr": "postgres_writer:database_operations_rate:by_operation",
           "interval": "",
           "legendFormat": "{{ operation }}",
           "refId": "A"
@@ -1131,7 +1131,7 @@
       },
       "targets": [
         {
-          "expr": "sum by (event_type) (increase(redis_postgres_sync_events_processed_by_type_total[1h]))",
+          "expr": "sum by (event_type) (increase(postgres_writer_events_processed_by_type_total[1h]))",
           "interval": "",
           "legendFormat": "{{ event_type }}",
           "refId": "A"
@@ -1155,8 +1155,8 @@
   },
   "timepicker": {},
   "timezone": "",
-  "title": "Redis Postgres Sync Dashboard",
-  "uid": "redis-postgres-sync",
+  "title": "PostgreSQL Writer Dashboard",
+  "uid": "postgres-writer",
   "version": 1,
   "refresh": "30s"
 }

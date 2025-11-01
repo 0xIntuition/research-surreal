@@ -2,14 +2,14 @@
 
 ## Overview
 
-This document describes the Redis Streams monitoring implementation for the redis-postgres-sync service using Prometheus and Grafana.
+This document describes the Redis Streams monitoring implementation for the postgres-writer service using Prometheus and Grafana.
 
 ## Architecture
 
 The monitoring stack consists of three layers:
 
 1. **Redis Exporter** - Collects Redis server and Streams metrics
-2. **Application Metrics** - Custom Prometheus metrics from redis-postgres-sync
+2. **Application Metrics** - Custom Prometheus metrics from postgres-writer
 3. **Grafana Dashboards** - Visualization and alerting
 
 ```
@@ -78,20 +78,20 @@ Added scrape job for redis-exporter:
 ### 3. Application-Level Metrics
 
 **Files Modified:**
-- `redis-postgres-sync/src/monitoring/metrics.rs` - Added new metrics
-- `redis-postgres-sync/src/core/pipeline.rs` - Metrics tracking
-- `redis-postgres-sync/src/consumer/redis_stream.rs` - Stream info queries
+- `postgres-writer/src/monitoring/metrics.rs` - Added new metrics
+- `postgres-writer/src/core/pipeline.rs` - Metrics tracking
+- `postgres-writer/src/consumer/redis_stream.rs` - Stream info queries
 
 **New Metrics Added:**
 
 | Metric Name | Type | Description | Labels |
 |------------|------|-------------|--------|
-| `redis_postgres_sync_stream_lag` | Gauge | Estimated lag between last read and stream end | `stream_name` |
-| `redis_postgres_sync_stream_pending_messages` | Gauge | Messages consumed but not ACKed | `stream_name` |
-| `redis_postgres_sync_stream_messages_claimed_total` | Counter | Idle messages claimed from other consumers | `stream_name` |
-| `redis_postgres_sync_stream_batch_size` | Gauge | Current batch size being processed | `stream_name` |
-| `redis_postgres_sync_stream_last_message_timestamp` | Gauge | Unix timestamp of last processed message | `stream_name` |
-| `redis_postgres_sync_stream_messages_consumed_total` | Counter | Total messages consumed | `stream_name` |
+| `postgres_writer_stream_lag` | Gauge | Estimated lag between last read and stream end | `stream_name` |
+| `postgres_writer_stream_pending_messages` | Gauge | Messages consumed but not ACKed | `stream_name` |
+| `postgres_writer_stream_messages_claimed_total` | Counter | Idle messages claimed from other consumers | `stream_name` |
+| `postgres_writer_stream_batch_size` | Gauge | Current batch size being processed | `stream_name` |
+| `postgres_writer_stream_last_message_timestamp` | Gauge | Unix timestamp of last processed message | `stream_name` |
+| `postgres_writer_stream_messages_consumed_total` | Counter | Total messages consumed | `stream_name` |
 
 **Implementation Details:**
 
@@ -154,27 +154,27 @@ Once `docker-compose up` is running:
 
 ### Performance Indicators
 
-1. **Consumer Lag** (`redis_postgres_sync_stream_lag`)
+1. **Consumer Lag** (`postgres_writer_stream_lag`)
    - **Good**: < 100 messages
    - **Warning**: 100-1000 messages
    - **Critical**: > 1000 messages
 
-2. **Pending Messages** (`redis_postgres_sync_stream_pending_messages`)
+2. **Pending Messages** (`postgres_writer_stream_pending_messages`)
    - **Good**: < 50 messages
    - **Warning**: 50-500 messages
    - **Critical**: > 500 messages (indicates processing issues)
 
-3. **Messages Per Second** (`rate(redis_postgres_sync_stream_messages_consumed_total[5m])`)
+3. **Messages Per Second** (`rate(postgres_writer_stream_messages_consumed_total[5m])`)
    - Track throughput per stream
    - Identify bottlenecks
 
 ### Health Indicators
 
-4. **Claimed Messages** (`rate(redis_postgres_sync_stream_messages_claimed_total[5m])`)
+4. **Claimed Messages** (`rate(postgres_writer_stream_messages_claimed_total[5m])`)
    - **Good**: 0 (no stale messages)
    - **Warning**: > 0 (indicates consumer failures or timeouts)
 
-5. **Last Message Timestamp** (`redis_postgres_sync_stream_last_message_timestamp`)
+5. **Last Message Timestamp** (`postgres_writer_stream_last_message_timestamp`)
    - Alerts if no messages processed recently
    - Indicates stream producer health
 
@@ -195,7 +195,7 @@ groups:
     rules:
       # High consumer lag
       - alert: HighConsumerLag
-        expr: redis_postgres_sync_stream_lag > 1000
+        expr: postgres_writer_stream_lag > 1000
         for: 5m
         annotations:
           summary: "High consumer lag on stream {{ $labels.stream_name }}"
@@ -203,7 +203,7 @@ groups:
 
       # Pending messages growing
       - alert: PendingMessagesGrowing
-        expr: redis_postgres_sync_stream_pending_messages > 500
+        expr: postgres_writer_stream_pending_messages > 500
         for: 10m
         annotations:
           summary: "High pending messages on {{ $labels.stream_name }}"
@@ -211,7 +211,7 @@ groups:
 
       # No messages processed recently
       - alert: StreamStale
-        expr: (time() - redis_postgres_sync_stream_last_message_timestamp) > 300
+        expr: (time() - postgres_writer_stream_last_message_timestamp) > 300
         for: 5m
         annotations:
           summary: "No messages on {{ $labels.stream_name }} for 5+ minutes"
@@ -228,7 +228,7 @@ groups:
 
 #### High Lag
 
-**Symptom**: `redis_postgres_sync_stream_lag` > 1000
+**Symptom**: `postgres_writer_stream_lag` > 1000
 
 **Possible Causes**:
 1. Consumer processing too slow
@@ -244,7 +244,7 @@ groups:
 
 #### Pending Messages Growing
 
-**Symptom**: `redis_postgres_sync_stream_pending_messages` increasing over time
+**Symptom**: `postgres_writer_stream_pending_messages` increasing over time
 
 **Possible Causes**:
 1. Consumer crashing before ACK
@@ -258,7 +258,7 @@ groups:
 
 #### Claimed Messages Increasing
 
-**Symptom**: `rate(redis_postgres_sync_stream_messages_claimed_total[5m])` > 0
+**Symptom**: `rate(postgres_writer_stream_messages_claimed_total[5m])` > 0
 
 **Possible Causes**:
 1. Consumer timeouts (messages idle > 1 minute)
@@ -310,7 +310,7 @@ PROCESSING_INTERVAL_MS=100 # Lower = more aggressive polling
 
 ### Upgrading
 
-When updating redis-postgres-sync:
+When updating postgres-writer:
 
 1. Metrics are backwards compatible
 2. Dashboard may need updates for new metrics

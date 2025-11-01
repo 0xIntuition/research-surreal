@@ -16,7 +16,7 @@ echo ""
 
 # Stop sync services first to ensure they get recreated
 echo "🛑 Stopping sync services..."
-docker compose stop redis-postgres-sync redis-surreal-sync
+docker compose stop postgres-writer surreal-writer
 
 echo ""
 # Stop and remove volumes for databases (postgres, surrealdb)
@@ -32,8 +32,8 @@ docker compose up -d postgres surrealdb
 echo ""
 echo "🔨 Building and starting sync applications..."
 # Force recreate sync apps with new consumer name by stopping and removing them first
-docker compose rm -f redis-postgres-sync redis-surreal-sync
-docker compose up -d redis-postgres-sync redis-surreal-sync --build
+docker compose rm -f postgres-writer surreal-writer
+docker compose up -d postgres-writer surreal-writer --build
 
 echo ""
 echo "✅ Sync services restarted successfully!"
@@ -43,4 +43,4 @@ echo "📊 Check service status with:"
 echo "   docker compose ps"
 echo ""
 echo "📝 View logs with:"
-echo "   docker compose logs -f redis-postgres-sync redis-surreal-sync"
+echo "   docker compose logs -f postgres-writer surreal-writer"

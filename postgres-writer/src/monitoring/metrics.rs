@@ -10,83 +10,83 @@ use std::time::Instant;
 lazy_static! {
     static ref REGISTRY: Registry = Registry::new();
     static ref EVENTS_PROCESSED_COUNTER: Counter = Counter::new(
-        "redis_postgres_sync_events_processed_total",
+        "postgres_writer_events_processed_total",
         "Total number of events processed"
     ).unwrap();
     static ref EVENTS_FAILED_COUNTER: Counter = Counter::new(
-        "redis_postgres_sync_events_failed_total",
+        "postgres_writer_events_failed_total",
         "Total number of events that failed to process"
     ).unwrap();
     static ref BATCHES_PROCESSED_COUNTER: Counter = Counter::new(
-        "redis_postgres_sync_batches_processed_total",
+        "postgres_writer_batches_processed_total",
         "Total number of batches processed"
     ).unwrap();
     static ref PROCESSING_DURATION_HISTOGRAM: Histogram = Histogram::with_opts(
         prometheus::HistogramOpts::new(
-            "redis_postgres_sync_processing_duration_seconds",
+            "postgres_writer_processing_duration_seconds",
             "Time spent processing events in seconds"
         ).buckets(vec![0.001, 0.01, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0])
     ).unwrap();
     static ref EVENTS_PER_SECOND_GAUGE: Gauge = Gauge::new(
-        "redis_postgres_sync_events_per_second",
+        "postgres_writer_events_per_second",
         "Current events processing rate per second"
     ).unwrap();
     static ref PEAK_EVENTS_PER_SECOND_GAUGE: Gauge = Gauge::new(
-        "redis_postgres_sync_peak_events_per_second",
+        "postgres_writer_peak_events_per_second",
         "Peak events processing rate per second"
     ).unwrap();
     static ref REDIS_HEALTHY_GAUGE: Gauge = Gauge::new(
-        "redis_postgres_sync_redis_healthy",
+        "postgres_writer_redis_healthy",
         "Redis connection health status (1=healthy, 0=unhealthy)"
     ).unwrap();
     static ref POSTGRES_HEALTHY_GAUGE: Gauge = Gauge::new(
-        "redis_postgres_sync_postgres_healthy",
+        "postgres_writer_postgres_healthy",
         "PostgreSQL connection health status (1=healthy, 0=unhealthy)"
     ).unwrap();
     static ref UPTIME_GAUGE: Gauge = Gauge::new(
-        "redis_postgres_sync_uptime_seconds",
+        "postgres_writer_uptime_seconds",
         "Application uptime in seconds"
     ).unwrap();
 
     // Redis Streams metrics
     static ref STREAM_LAG_GAUGE: IntGaugeVec = IntGaugeVec::new(
         Opts::new(
-            "redis_postgres_sync_stream_lag",
+            "postgres_writer_stream_lag",
             "Estimated lag between last read message and stream end per stream"
         ),
         &["stream_name"]
     ).unwrap();
     static ref STREAM_PENDING_MESSAGES_GAUGE: IntGaugeVec = IntGaugeVec::new(
         Opts::new(
-            "redis_postgres_sync_stream_pending_messages",
+            "postgres_writer_stream_pending_messages",
             "Number of pending messages (consumed but not ACKed) per stream"
         ),
         &["stream_name"]
     ).unwrap();
     static ref STREAM_MESSAGES_CLAIMED_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "redis_postgres_sync_stream_messages_claimed_total",
+            "postgres_writer_stream_messages_claimed_total",
             "Total number of idle messages claimed from other consumers"
         ),
         &["stream_name"]
     ).unwrap();
     static ref STREAM_BATCH_SIZE_GAUGE: GaugeVec = GaugeVec::new(
         Opts::new(
-            "redis_postgres_sync_stream_batch_size",
+            "postgres_writer_stream_batch_size",
             "Current batch size being processed per stream"
         ),
         &["stream_name"]
     ).unwrap();
     static ref STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE: GaugeVec = GaugeVec::new(
         Opts::new(
-            "redis_postgres_sync_stream_last_message_timestamp",
+            "postgres_writer_stream_last_message_timestamp",
             "Unix timestamp of last processed message per stream"
         ),
         &["stream_name"]
     ).unwrap();
     static ref STREAM_MESSAGES_CONSUMED_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "redis_postgres_sync_stream_messages_consumed_total",
+            "postgres_writer_stream_messages_consumed_total",
             "Total messages consumed from each stream"
         ),
         &["stream_name"]
@@ -107,42 +107,42 @@ lazy_static! {
     // dimension in metrics without risking unbounded cardinality growth.
     static ref EVENTS_PROCESSED_BY_TYPE_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "redis_postgres_sync_events_processed_by_type_total",
+            "postgres_writer_events_processed_by_type_total",
             "Total number of events processed by event type"
         ),
         &["event_type"]
     ).unwrap();
     static ref EVENTS_FAILED_BY_TYPE_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "redis_postgres_sync_events_failed_by_type_total",
+            "postgres_writer_events_failed_by_type_total",
             "Total number of events that failed to process by event type"
         ),
         &["event_type"]
     ).unwrap();
     static ref EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM: prometheus::HistogramVec = prometheus::HistogramVec::new(
         prometheus::HistogramOpts::new(
-            "redis_postgres_sync_event_processing_duration_by_type_seconds",
+            "postgres_writer_event_processing_duration_by_type_seconds",
             "Time spent processing individual events by type in seconds"
         ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
         &["event_type"]
     ).unwrap();
     static ref CASCADE_PROCESSING_DURATION_HISTOGRAM: prometheus::HistogramVec = prometheus::HistogramVec::new(
         prometheus::HistogramOpts::new(
-            "redis_postgres_sync_cascade_processing_duration_seconds",
+            "postgres_writer_cascade_processing_duration_seconds",
             "Time spent in cascade processing by event type in seconds"
         ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
         &["event_type"]
     ).unwrap();
     static ref DATABASE_OPERATIONS_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "redis_postgres_sync_database_operations_total",
+            "postgres_writer_database_operations_total",
             "Total database operations by event type and operation name"
         ),
         &["event_type", "operation"]
     ).unwrap();
     static ref CASCADE_FAILURES_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "redis_postgres_sync_cascade_failures_total",
+            "postgres_writer_cascade_failures_total",
             "Total cascade failures after successful event processing by event type"
         ),
         &["event_type"]
@@ -435,10 +435,10 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
         
         // Check that it contains expected metrics
-        assert!(output.contains("redis_postgres_sync_events_processed_total"));
-        assert!(output.contains("redis_postgres_sync_events_failed_total"));
-        assert!(output.contains("redis_postgres_sync_batches_processed_total"));
-        assert!(output.contains("redis_postgres_sync_processing_duration_seconds"));
+        assert!(output.contains("postgres_writer_events_processed_total"));
+        assert!(output.contains("postgres_writer_events_failed_total"));
+        assert!(output.contains("postgres_writer_batches_processed_total"));
+        assert!(output.contains("postgres_writer_processing_duration_seconds"));
         
         // Print for manual verification
         println!("Prometheus metrics output:");
@@ -460,14 +460,14 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
 
         // Verify event-type-specific metrics are present
-        assert!(output.contains("redis_postgres_sync_events_processed_by_type_total"));
+        assert!(output.contains("postgres_writer_events_processed_by_type_total"));
         assert!(output.contains("event_type=\"AtomCreated\""));
         assert!(output.contains("event_type=\"Deposited\""));
 
         // Verify counts are recorded (checking that the metric line exists)
         // Note: Exact formatting may vary, so we check for presence of event types
         let atom_created_lines: Vec<&str> = output.lines()
-            .filter(|line| line.contains("redis_postgres_sync_events_processed_by_type_total")
+            .filter(|line| line.contains("postgres_writer_events_processed_by_type_total")
                         && line.contains("event_type=\"AtomCreated\""))
             .collect();
         assert!(!atom_created_lines.is_empty(), "AtomCreated metrics should be present");
@@ -488,13 +488,13 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
 
         // Verify failure metrics are present
-        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total"));
+        assert!(output.contains("postgres_writer_events_failed_by_type_total"));
         assert!(output.contains("event_type=\"SharePriceChanged\""));
         assert!(output.contains("event_type=\"TripleCreated\""));
 
         // Verify counts
-        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total{event_type=\"SharePriceChanged\"} 2"));
-        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total{event_type=\"TripleCreated\"} 1"));
+        assert!(output.contains("postgres_writer_events_failed_by_type_total{event_type=\"SharePriceChanged\"} 2"));
+        assert!(output.contains("postgres_writer_events_failed_by_type_total{event_type=\"TripleCreated\"} 1"));
     }
 
     #[test]
@@ -512,13 +512,13 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
 
         // Verify histogram metrics are present
-        assert!(output.contains("redis_postgres_sync_event_processing_duration_by_type_seconds"));
+        assert!(output.contains("postgres_writer_event_processing_duration_by_type_seconds"));
         assert!(output.contains("event_type=\"AtomCreated\""));
         assert!(output.contains("event_type=\"Deposited\""));
 
         // Verify histogram has count (checking that the metric exists)
         let atom_created_count: Vec<&str> = output.lines()
-            .filter(|line| line.contains("redis_postgres_sync_event_processing_duration_by_type_seconds_count")
+            .filter(|line| line.contains("postgres_writer_event_processing_duration_by_type_seconds_count")
                         && line.contains("event_type=\"AtomCreated\""))
             .collect();
         assert!(!atom_created_count.is_empty(), "AtomCreated duration metrics should be present");
@@ -539,13 +539,13 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
 
         // Verify cascade metrics are present
-        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds"));
+        assert!(output.contains("postgres_writer_cascade_processing_duration_seconds"));
         assert!(output.contains("event_type=\"Deposited\""));
         assert!(output.contains("event_type=\"SharePriceChanged\""));
 
         // Verify histogram counts
-        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds_count{event_type=\"Deposited\"} 2"));
-        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds_count{event_type=\"SharePriceChanged\"} 1"));
+        assert!(output.contains("postgres_writer_cascade_processing_duration_seconds_count{event_type=\"Deposited\"} 2"));
+        assert!(output.contains("postgres_writer_cascade_processing_duration_seconds_count{event_type=\"SharePriceChanged\"} 1"));
     }
 
     #[test]
@@ -565,7 +565,7 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
 
         // Verify database operation metrics are present
-        assert!(output.contains("redis_postgres_sync_database_operations_total"));
+        assert!(output.contains("postgres_writer_database_operations_total"));
 
         // Verify different event types and operations
         assert!(output.contains("event_type=\"Deposited\""));
@@ -577,8 +577,8 @@ mod tests {
         assert!(output.contains("operation=\"term_initialization\""));
 
         // Verify counts
-        assert!(output.contains("redis_postgres_sync_database_operations_total{event_type=\"Deposited\",operation=\"position_update\"} 2"));
-        assert!(output.contains("redis_postgres_sync_database_operations_total{event_type=\"Deposited\",operation=\"vault_aggregation\"} 1"));
+        assert!(output.contains("postgres_writer_database_operations_total{event_type=\"Deposited\",operation=\"position_update\"} 2"));
+        assert!(output.contains("postgres_writer_database_operations_total{event_type=\"Deposited\",operation=\"vault_aggregation\"} 1"));
     }
 
     #[test]
@@ -596,13 +596,13 @@ mod tests {
         let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
 
         // Verify cascade failure metrics are present
-        assert!(output.contains("redis_postgres_sync_cascade_failures_total"));
+        assert!(output.contains("postgres_writer_cascade_failures_total"));
         assert!(output.contains("event_type=\"Deposited\""));
         assert!(output.contains("event_type=\"SharePriceChanged\""));
 
         // Verify counts
-        assert!(output.contains("redis_postgres_sync_cascade_failures_total{event_type=\"Deposited\"} 2"));
-        assert!(output.contains("redis_postgres_sync_cascade_failures_total{event_type=\"SharePriceChanged\"} 1"));
+        assert!(output.contains("postgres_writer_cascade_failures_total{event_type=\"Deposited\"} 2"));
+        assert!(output.contains("postgres_writer_cascade_failures_total{event_type=\"SharePriceChanged\"} 1"));
     }
 
     #[test]
@@ -635,10 +635,10 @@ mod tests {
         }
 
         // Verify different metric types
-        assert!(output.contains("redis_postgres_sync_events_processed_by_type_total"));
-        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total"));
-        assert!(output.contains("redis_postgres_sync_event_processing_duration_by_type_seconds"));
-        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds"));
-        assert!(output.contains("redis_postgres_sync_cascade_failures_total"));
+        assert!(output.contains("postgres_writer_events_processed_by_type_total"));
+        assert!(output.contains("postgres_writer_events_failed_by_type_total"));
+        assert!(output.contains("postgres_writer_event_processing_duration_by_type_seconds"));
+        assert!(output.contains("postgres_writer_cascade_processing_duration_seconds"));
+        assert!(output.contains("postgres_writer_cascade_failures_total"));
     }
 }

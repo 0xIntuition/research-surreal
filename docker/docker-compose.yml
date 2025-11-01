@@ -2,6 +2,7 @@ name: rindexer-surreal
 
 services:
   rindexer:
+    container_name: rindexer
     build:
       context: ../rindexer
       dockerfile: Dockerfile
@@ -20,11 +21,12 @@ services:
       - dokploy-network
 
   surrealdb:
+    container_name: surrealdb
     image: surrealdb/surrealdb:latest
     command: ["start", "--bind", "0.0.0.0:8000", "--user", "root", "--pass", "root", "--import-file", "/schema.surql", "rocksdb:/data/surreal.db"]
     volumes:
       - surrealdb_data:/data
-      - ../redis-surreal-sync/migrations/surrealdb-schema.surql:/schema.surql:ro
+      - ../surreal-writer/migrations/surrealdb-schema.surql:/schema.surql:ro
     environment:
       # Authentication and Security
       SURREAL_USER: "root"
@@ -93,12 +95,13 @@ services:
       - "traefik.http.routers.surrealdb-app.middlewares=surrealdb-ws,surrealdb-cors"
       - "traefik.http.services.surrealdb-app.loadbalancer.server.port=8000"
 
-  redis-surreal-sync:
+  surreal-writer:
+    container_name: surreal-writer
     build:
-      context: ../redis-surreal-sync
+      context: ../surreal-writer
       dockerfile: Dockerfile
     environment:
-      RUST_LOG: "redis_surreal_sync=info,tokio=warn"
+      RUST_LOG: "surreal_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
       REDIS_URL: ${REDIS_URL}
       SURREAL_URL: ${SURREAL_URL}
@@ -151,12 +154,13 @@ services:
     networks:
       - dokploy-network
 
-  redis-postgres-sync:
+  postgres-writer:
+    container_name: postgres-writer
     build:
-      context: ../redis-postgres-sync
+      context: ../postgres-writer
       dockerfile: Dockerfile
     environment:
-      RUST_LOG: "redis_postgres_sync=info,tokio=warn"
+      RUST_LOG: "postgres_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
       REDIS_URL: ${REDIS_URL}
       DATABASE_URL: ${DATABASE_URL}
@@ -188,6 +192,7 @@ services:
       retries: 3
 
   prometheus:
+    container_name: prometheus
     image: prom/prometheus:latest
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -215,6 +220,7 @@ services:
       - "traefik.http.services.prometheus-app.loadbalancer.server.port=9090"
 
   grafana:
+    container_name: grafana
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_USER: admin
@@ -240,6 +246,7 @@ services:
       - "traefik.http.services.grafana-app.loadbalancer.server.port=3000"
 
   example-web-app:
+    container_name: example-web-app
     build:
       context: ../example-web-app
       dockerfile: Dockerfile

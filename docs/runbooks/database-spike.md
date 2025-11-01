@@ -65,22 +65,22 @@ Different event types perform different database operations:
 1. **Check current operation rates**
    ```promql
    # Current rate vs baseline
-   redis_postgres_sync:database_operations_rate:by_type
+   postgres_writer:database_operations_rate:by_type
 
    # Historical comparison
-   avg_over_time(redis_postgres_sync:database_operations_rate:by_type[1h])
+   avg_over_time(postgres_writer:database_operations_rate:by_type[1h])
    ```
 
 2. **Identify affected event type and operation**
    ```bash
    # Check logs for the specific event type and operation
-   docker logs redis-postgres-sync --tail 500 | grep -i "<event_type>\|<operation>"
+   docker logs postgres-writer --tail 500 | grep -i "<event_type>\|<operation>"
    ```
 
 3. **Check event processing rate**
    ```promql
    # Event processing rate for the affected type
-   rate(redis_postgres_sync_events_processed_by_type_total{event_type="<TYPE>"}[5m])
+   rate(postgres_writer_events_processed_by_type_total{event_type="<TYPE>"}[5m])
    ```
 
 4. **Verify if it's proportional to event volume**
@@ -90,7 +90,7 @@ Different event types perform different database operations:
 5. **Check for errors or retries**
    ```bash
    # Look for retry patterns
-   docker logs redis-postgres-sync --tail 1000 | grep -i "retry\|error\|fail"
+   docker logs postgres-writer --tail 1000 | grep -i "retry\|error\|fail"
    ```
 
 6. **Review database performance impact**
@@ -112,7 +112,7 @@ Different event types perform different database operations:
 7. **Check for duplicate processing**
    ```bash
    # Look for duplicate event IDs in logs
-   docker logs redis-postgres-sync --tail 1000 | grep "event_id" | sort | uniq -d
+   docker logs postgres-writer --tail 1000 | grep "event_id" | sort | uniq -d
    ```
 
 ## Resolution Steps
@@ -187,7 +187,7 @@ After investigation/resolution, monitor:
 
 1. **Operation rate stabilization:**
    ```promql
-   redis_postgres_sync:database_operations_rate:by_type
+   postgres_writer:database_operations_rate:by_type
    ```
 
 2. **Database performance:**

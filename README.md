@@ -296,8 +296,8 @@ infrastructure/
 ### Environment Variables
 
 See `.env.example` files in:
-- `redis-surreal-sync/.env.example`
-- `redis-postgres-sync/.env.example`
+- `surreal-writer/.env.example`
+- `postgres-writer/.env.example`
 
 Key configuration:
 ```bash
@@ -317,12 +317,12 @@ Use `docker-compose.override.yml` for local development with port mappings in th
 
 **PostgreSQL migrations** (10 total):
 ```bash
-cd redis-postgres-sync
+cd postgres-writer
 sqlx migrate run
 ```
 
 **SurrealDB schema**:
-Located in `redis-surreal-sync/migrations/surrealdb-schema.surql`
+Located in `surreal-writer/migrations/surrealdb-schema.surql`
 
 ## License
 

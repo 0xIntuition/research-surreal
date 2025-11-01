@@ -1,13 +1,13 @@
 [package]
-name = "redis-surreal-sync"
+name = "surreal-writer"
 version = "0.1.0"
 edition = "2021"
 authors = ["Simonas"]
-description = "High-performance Redis to SurrealDB event synchronization pipeline"
+description = "High-performance SurrealDB event writer with Redis stream consumption"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
-name = "redis-surreal-sync"
+name = "surreal-writer"
 path = "src/main.rs"
 
 [dependencies]

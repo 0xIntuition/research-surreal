@@ -4,6 +4,7 @@ services:
 
   # Local Redis for development
   redis:
+    container_name: redis
     image: redis:7-alpine
     ports:
       - "18101:6379"
@@ -20,6 +21,7 @@ services:
       - rindexer-network
 
   redis-commander:
+    container_name: redis-commander
     image: ghcr.io/joeferner/redis-commander:latest
     ports:
       - '18400:8081'
@@ -34,8 +36,8 @@ services:
 
   # Redis Exporter for Prometheus metrics
   redis-exporter:
-    image: oliver006/redis_exporter:latest
     container_name: redis-exporter
+    image: oliver006/redis_exporter:latest
     ports:
       - "18401:9121"
     environment:
@@ -80,10 +82,10 @@ services:
     # Remove production labels for local development
     labels: []
 
-  # Override redis-surreal-sync for local development
-  redis-surreal-sync:
+  # Override surreal-writer for local development
+  surreal-writer:
     environment:
-      RUST_LOG: "redis_surreal_sync=info,tokio=warn"
+      RUST_LOG: "surreal_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
       REDIS_URL: redis://redis:6379
       SURREAL_URL: ws://surrealdb:8000/rpc
@@ -112,10 +114,10 @@ services:
     networks:
       - rindexer-network
 
-  # Override redis-postgres-sync for local development
-  redis-postgres-sync:
+  # Override postgres-writer for local development
+  postgres-writer:
     environment:
-      RUST_LOG: "redis_postgres_sync=info,tokio=warn"
+      RUST_LOG: "postgres_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
       REDIS_URL: redis://redis:6379
       DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
@@ -143,8 +145,8 @@ services:
 
 
   surrealist:
-    image: surrealdb/surrealist:latest
     container_name: surrealist
+    image: surrealdb/surrealist:latest
     ports:
       - "18301:8080"
     depends_on:
@@ -156,7 +158,6 @@ services:
   # Prometheus for metrics collection
   prometheus:
     image: prom/prometheus:latest
-    container_name: prometheus
     ports:
       - "18500:9090"
     volumes:
@@ -177,7 +178,6 @@ services:
   # Grafana for metrics visualization
   grafana:
     image: grafana/grafana:latest
-    container_name: grafana
     ports:
       - "18501:3000"
     volumes:

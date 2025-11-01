@@ -44,10 +44,10 @@ COPY . .
 
 # Build the binary - this layer rebuilds only when source code changes
 # Dependencies are already compiled and cached from the previous layer
-RUN cargo build --release --bin redis-postgres-sync
+RUN cargo build --release --bin postgres-writer
 
 # Verify binary works
-RUN ./target/release/redis-postgres-sync --version || echo "redis-postgres-sync binary verification skipped"
+RUN ./target/release/postgres-writer --version || echo "postgres-writer binary verification skipped"
 
 # Runtime stage - Use Debian bookworm-slim for compatibility
 FROM debian:bookworm-slim
@@ -69,8 +69,8 @@ WORKDIR /app
 RUN chown sync:sync /app
 
 # Copy binary from builder stage with correct permissions
-COPY --from=builder --chown=sync:sync /app/target/release/redis-postgres-sync /usr/local/bin/redis-postgres-sync
-RUN chmod +x /usr/local/bin/redis-postgres-sync
+COPY --from=builder --chown=sync:sync /app/target/release/postgres-writer /usr/local/bin/postgres-writer
+RUN chmod +x /usr/local/bin/postgres-writer
 
 # Copy migrations
 COPY --from=builder --chown=sync:sync /app/migrations /app/migrations
@@ -82,7 +82,7 @@ RUN mkdir -p /app/logs && chown sync:sync /app/logs
 USER sync
 
 # Set security-focused environment variables
-ENV RUST_LOG=redis_postgres_sync=info,tokio=warn
+ENV RUST_LOG=postgres_writer=info,tokio=warn
 ENV RUST_BACKTRACE=1
 ENV REDIS_URL=redis://redis:6379
 ENV DATABASE_URL=postgresql://postgres:postgres@postgres:5432/storage
@@ -102,14 +102,14 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=15s --retries=3 \
   CMD curl -f http://localhost:${HTTP_PORT:-8081}/health 2>/dev/null || exit 1
 
 # Set default command with signal handling
-ENTRYPOINT ["/usr/local/bin/redis-postgres-sync"]
+ENTRYPOINT ["/usr/local/bin/postgres-writer"]
 
 # Labels for metadata and security scanning
 LABEL maintainer="Simonas" \
       version="0.1.0" \
-      description="High-performance Redis to PostgreSQL event synchronization pipeline" \
-      org.opencontainers.image.source="https://github.com/your-org/redis-postgres-sync" \
-      org.opencontainers.image.description="Production-ready Redis streams to PostgreSQL synchronization service" \
+      description="High-performance PostgreSQL event writer with Redis stream consumption" \
+      org.opencontainers.image.source="https://github.com/0xIntuition/research-surreal" \
+      org.opencontainers.image.description="Production-ready PostgreSQL writer service" \
       org.opencontainers.image.version="0.1.0" \
       security.capabilities="NET_BIND_SERVICE" \
       security.non-root="true"

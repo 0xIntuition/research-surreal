@@ -1,8 +1,8 @@
-# Testing Proposal for redis-postgres-sync
+# Testing Proposal for postgres-writer
 
 ## Overview
 
-This document proposes a comprehensive integration testing solution for the redis-postgres-sync component that handles non-sequential blockchain events with database triggers and Rust cascade processors.
+This document proposes a comprehensive integration testing solution for the postgres-writer component that handles non-sequential blockchain events with database triggers and Rust cascade processors.
 
 ## Goals
 
@@ -24,7 +24,7 @@ This document proposes a comprehensive integration testing solution for the redi
 ├─────────────────────────────────────────────────────┤
 │  Test Fixtures & Helpers (tests/helpers/)           │
 ├─────────────────────────────────────────────────────┤
-│  redis-postgres-sync Application                    │
+│  postgres-writer Application                    │
 ├──────────────────┬──────────────────────────────────┤
 │  Testcontainers  │  Testcontainers                  │
 │  Redis           │  PostgreSQL                      │
@@ -57,7 +57,7 @@ similar-asserts = "1.5"  # Diff assertions for complex types
 ### Directory Layout
 
 ```
-redis-postgres-sync/
+postgres-writer/
 ├── tests/
 │   ├── integration/
 │   │   ├── mod.rs
@@ -961,7 +961,7 @@ async fn test_triple_lifecycle_updates_analytics_tables() {
 
 ```bash
 # Run all integration tests
-cd redis-postgres-sync
+cd postgres-writer
 cargo test --test '*' -- --test-threads=1
 
 # Run specific test
@@ -1046,10 +1046,10 @@ on:
   push:
     branches: [ main, develop ]
     paths:
-      - 'redis-postgres-sync/**'
+      - 'postgres-writer/**'
   pull_request:
     paths:
-      - 'redis-postgres-sync/**'
+      - 'postgres-writer/**'
 
 jobs:
   integration-tests:
@@ -1070,19 +1070,19 @@ jobs:
       - name: Cache cargo build
         uses: actions/cache@v4
         with:
-          path: redis-postgres-sync/target
+          path: postgres-writer/target
           key: ${{ runner.os }}-cargo-build-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Run integration tests
         run: |
-          cd redis-postgres-sync
+          cd postgres-writer
           cargo test --test '*' -- --test-threads=1
         env:
           RUST_LOG: info
 
       - name: Run performance benchmarks
         run: |
-          cd redis-postgres-sync
+          cd postgres-writer
           cargo test --test integration --ignored -- --nocapture
 ```
 
@@ -1110,4 +1110,4 @@ This testing solution provides:
 5. Document test patterns in TESTING.md
 6. Set up CI pipeline
 
-This approach ensures comprehensive testing of the redis-postgres-sync component while maintaining test isolation and reproducibility.
+This approach ensures comprehensive testing of the postgres-writer component while maintaining test isolation and reproducibility.

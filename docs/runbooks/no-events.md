@@ -53,7 +53,7 @@ Always verify if the event type *should* be occurring before treating this as an
    ```
    ```promql
    # Check event rate over last 24 hours
-   rate(redis_postgres_sync_events_processed_by_type_total{event_type="<TYPE>"}[24h])
+   rate(postgres_writer_events_processed_by_type_total{event_type="<TYPE>"}[24h])
    ```
 
 2. **Check if events are in Redis queue**
@@ -77,10 +77,10 @@ Always verify if the event type *should* be occurring before treating this as an
 4. **Check sync service status**
    ```bash
    # Verify sync service is running
-   docker ps | grep redis-postgres-sync
+   docker ps | grep postgres-writer
 
    # Check for errors in logs
-   docker logs redis-postgres-sync --tail 100 | grep -i "error\|fail"
+   docker logs postgres-writer --tail 100 | grep -i "error\|fail"
    ```
 
 5. **Check blockchain/event source connectivity**
@@ -94,7 +94,7 @@ Always verify if the event type *should* be occurring before treating this as an
 6. **Review failure metrics for this event type**
    ```promql
    # Check if events are failing instead of being processed
-   rate(redis_postgres_sync_events_failed_by_type_total{event_type="<TYPE>"}[10m])
+   rate(postgres_writer_events_failed_by_type_total{event_type="<TYPE>"}[10m])
    ```
 
 ## Resolution Steps
@@ -129,7 +129,7 @@ Always verify if the event type *should* be occurring before treating this as an
 
 2. **Restart sync service if needed:**
    ```bash
-   docker restart redis-postgres-sync
+   docker restart postgres-writer
    ```
 
 3. **Check for specific event type failures:**
@@ -154,7 +154,7 @@ After investigation/resolution:
 
 1. **Watch for event resumption:**
    ```promql
-   rate(redis_postgres_sync_events_processed_by_type_total{event_type="<TYPE>"}[5m])
+   rate(postgres_writer_events_processed_by_type_total{event_type="<TYPE>"}[5m])
    ```
 
 2. **Verify normal processing:**

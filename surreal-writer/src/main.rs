@@ -1,4 +1,4 @@
-use redis_surreal_sync::{Config, EventProcessingPipeline, HttpServer};
+use surreal_writer::{Config, EventProcessingPipeline, HttpServer};
 use std::sync::Arc;
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
@@ -9,7 +9,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::registry()
         .with(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "redis_surreal_sync=info,warn".into()),
+                .unwrap_or_else(|_| "surreal_writer=info,warn".into()),
         )
         .with(tracing_subscriber::fmt::layer())
         .init();

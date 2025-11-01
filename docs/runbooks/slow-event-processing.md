@@ -53,13 +53,13 @@ This runbook addresses the **SlowEventTypeProcessing** alert, which triggers whe
 1. **Check current processing latency**
    ```promql
    # Query Prometheus for P95 latency by event type
-   redis_postgres_sync:event_processing_duration_seconds:p95:by_type
+   postgres_writer:event_processing_duration_seconds:p95:by_type
    ```
 
 2. **Identify which event type is slow**
    ```bash
    # Check logs for slow operations
-   docker logs redis-postgres-sync --tail 1000 | grep -i "slow\|duration"
+   docker logs postgres-writer --tail 1000 | grep -i "slow\|duration"
    ```
 
 3. **Check database query performance**
@@ -84,14 +84,14 @@ This runbook addresses the **SlowEventTypeProcessing** alert, which triggers whe
 
 5. **Check application resource usage**
    ```bash
-   docker stats redis-postgres-sync --no-stream
+   docker stats postgres-writer --no-stream
    ```
 
 6. **Review cascade operation metrics**
    ```promql
    # Check if cascade processing is contributing to slowness
-   redis_postgres_sync:cascade_overhead_percent:by_type
-   redis_postgres_sync:cascade_duration_seconds:p95:by_type
+   postgres_writer:cascade_overhead_percent:by_type
+   postgres_writer:cascade_duration_seconds:p95:by_type
    ```
 
 ## Resolution Steps
@@ -137,7 +137,7 @@ This runbook addresses the **SlowEventTypeProcessing** alert, which triggers whe
 3. **Check for memory issues:**
    ```bash
    # Restart service if memory leak suspected
-   docker restart redis-postgres-sync
+   docker restart postgres-writer
    ```
 
 ### For Resource Contention
