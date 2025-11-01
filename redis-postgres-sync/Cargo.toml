@@ -58,3 +58,20 @@ hex = "0.4.3"
 
 # Ethereum utilities
 alloy-primitives = "0.8"
+
+[dev-dependencies]
+# Test containers for isolated environments
+testcontainers = "0.21"
+testcontainers-modules = { version = "0.9", features = ["redis", "postgres"] }
+
+# Test utilities
+tokio-test = "0.4"
+serial_test = "3.0"
+rstest = "0.22"
+
+# Mock data generation
+fake = { version = "2.9", features = ["derive", "chrono"] }
+
+# Better assertions
+assert2 = "0.3"
+similar-asserts = "1.5"
