@@ -857,7 +857,7 @@
   "style": "dark",
   "tags": [
     "redis-streams",
-    "redis-postgres-sync"
+    "postgres-writer"
   ],
   "templating": {
     "list": []

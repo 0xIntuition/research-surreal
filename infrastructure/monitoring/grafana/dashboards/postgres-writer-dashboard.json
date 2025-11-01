@@ -1144,7 +1144,7 @@
   "schemaVersion": 27,
   "style": "dark",
   "tags": [
-    "redis-postgres-sync"
+    "postgres-writer"
   ],
   "templating": {
     "list": []

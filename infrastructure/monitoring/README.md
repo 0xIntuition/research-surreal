@@ -1,6 +1,6 @@
 # Monitoring Infrastructure
 
-This directory contains the monitoring configuration for the Redis-PostgreSQL sync service using Prometheus, Alertmanager, and Grafana.
+This directory contains the monitoring configuration for the PostgreSQL writer service using Prometheus, Alertmanager, and Grafana.
 
 ## Overview
 
@@ -287,7 +287,7 @@ See `recording_rules.yml` for the complete list.
 
 Access Grafana at http://localhost:3000 (default credentials: admin/admin).
 
-### Main Dashboard: Redis-PostgreSQL Sync Monitoring
+### Main Dashboard: PostgreSQL Writer Monitoring
 
 The dashboard provides comprehensive visibility into event processing pipeline performance with the following panels:
 

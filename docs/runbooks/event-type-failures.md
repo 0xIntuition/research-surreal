@@ -2,7 +2,7 @@
 
 ## Overview
 
-This runbook addresses alerts related to high failure rates for specific event types in the Redis-PostgreSQL sync pipeline.
+This runbook addresses alerts related to high failure rates for specific event types in the PostgreSQL writer pipeline.
 
 ## Related Alerts
 

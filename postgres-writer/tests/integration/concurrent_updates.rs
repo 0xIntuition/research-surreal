@@ -1,5 +1,5 @@
 use crate::helpers::{DbAssertions, EventBuilder, TestHarness};
-use redis_postgres_sync::core::pipeline::EventProcessingPipeline;
+use postgres_writer::core::pipeline::EventProcessingPipeline;
 
 #[tokio::test]
 #[ignore] // Run with --ignored flag since it requires containers

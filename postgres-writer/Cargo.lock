@@ -2403,6 +2403,42 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 
 [[package]]
+name = "postgres-writer"
+version = "0.1.0"
+dependencies = [
+ "alloy-primitives",
+ "anyhow",
+ "assert2",
+ "chrono",
+ "clap",
+ "dashmap",
+ "fake",
+ "futures",
+ "hex",
+ "lazy_static",
+ "num_cpus",
+ "prometheus",
+ "redis",
+ "rstest",
+ "serde",
+ "serde_json",
+ "serial_test",
+ "similar-asserts",
+ "sqlx",
+ "testcontainers",
+ "testcontainers-modules",
+ "thiserror 1.0.69",
+ "tokio",
+ "tokio-stream",
+ "tokio-test",
+ "tokio-util",
+ "tracing",
+ "tracing-subscriber",
+ "uuid",
+ "warp",
+]
+
+[[package]]
 name = "potential_utf"
 version = "0.1.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -2637,42 +2673,6 @@ dependencies = [
  "tokio",
  "tokio-util",
  "url",
-]
-
-[[package]]
-name = "redis-postgres-sync"
-version = "0.1.0"
-dependencies = [
- "alloy-primitives",
- "anyhow",
- "assert2",
- "chrono",
- "clap",
- "dashmap",
- "fake",
- "futures",
- "hex",
- "lazy_static",
- "num_cpus",
- "prometheus",
- "redis",
- "rstest",
- "serde",
- "serde_json",
- "serial_test",
- "similar-asserts",
- "sqlx",
- "testcontainers",
- "testcontainers-modules",
- "thiserror 1.0.69",
- "tokio",
- "tokio-stream",
- "tokio-test",
- "tokio-util",
- "tracing",
- "tracing-subscriber",
- "uuid",
- "warp",
 ]
 
 [[package]]

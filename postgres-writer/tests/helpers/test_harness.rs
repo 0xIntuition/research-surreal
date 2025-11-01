@@ -1,6 +1,6 @@
 use anyhow::Result;
 use redis::aio::MultiplexedConnection;
-use redis_postgres_sync::core::types::RindexerEvent;
+use postgres_writer::core::types::RindexerEvent;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use testcontainers::{ContainerAsync, runners::AsyncRunner};
 use testcontainers_modules::{postgres::Postgres, redis::Redis};
@@ -262,8 +262,8 @@ impl TestHarness {
     }
 
     /// Creates a default Config for testing
-    pub fn default_config(&self) -> redis_postgres_sync::config::Config {
-        redis_postgres_sync::config::Config {
+    pub fn default_config(&self) -> postgres_writer::config::Config {
+        postgres_writer::config::Config {
             redis_url: self.redis_url().to_string(),
             database_url: self.database_url().to_string(),
             stream_names: vec!["rindexer_producer".to_string()],
@@ -283,7 +283,7 @@ impl TestHarness {
     }
 
     /// Creates a Config with specified number of workers
-    pub fn config_with_workers(&self, workers: usize) -> redis_postgres_sync::config::Config {
+    pub fn config_with_workers(&self, workers: usize) -> postgres_writer::config::Config {
         let mut config = self.default_config();
         config.workers = workers;
         config

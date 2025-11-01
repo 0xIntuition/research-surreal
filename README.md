@@ -25,8 +25,8 @@ This project provides a complete data pipeline solution that:
                          ┌───────────────┴───────────────┐
                          ▼                               ▼
               ┌──────────────────┐          ┌──────────────────┐
-              │Redis-SurrealDB   │          │Redis-PostgreSQL  │
-              │     Sync         │          │     Sync         │
+              │  SurrealDB       │          │   PostgreSQL     │
+              │    Writer        │          │     Writer       │
               └────────┬─────────┘          └────────┬─────────┘
                        ▼                             ▼
               ┌─────────────┐              ┌──────────────────┐
@@ -67,7 +67,7 @@ This project provides a complete data pipeline solution that:
 - **Start Block**: 8092570
 - **Port**: 18200 (GraphQL endpoint)
 
-### 2. Redis-SurrealDB Sync (Rust)
+### 2. SurrealDB Writer (Rust)
 - **Purpose**: High-performance event processor for NoSQL storage
 - **Features**:
   - Multi-stream Redis consumer with batching (size: 20, interval: 100ms)
@@ -79,10 +79,10 @@ This project provides a complete data pipeline solution that:
 - **Performance**: Tokio async runtime with 4 configurable worker threads
 - **Port**: 18210 (HTTP health/metrics)
 
-### 3. Redis-PostgreSQL Sync (Rust)
+### 3. PostgreSQL Writer (Rust)
 - **Purpose**: High-performance event processor for relational analytics
 - **Features**:
-  - Identical architecture to Redis-SurrealDB sync
+  - Identical architecture to SurrealDB writer
   - Async PostgreSQL integration via sqlx
   - Database migration management
   - Prometheus metrics integration
@@ -138,8 +138,8 @@ This project provides a complete data pipeline solution that:
 - **Prometheus**: Metrics collection (15s scrape interval) on port 18500
   - Configuration: `infrastructure/monitoring/prometheus.yml`
 - **Grafana**: Dashboard visualization with pre-configured panels on port 18501
-  - Redis-SurrealDB sync dashboard
-  - Redis-PostgreSQL sync dashboard
+  - SurrealDB writer dashboard
+  - PostgreSQL writer dashboard
   - Automatic data source provisioning
   - Configuration: `infrastructure/monitoring/grafana/`
 - **Alertmanager**: Alert management (minimal configuration)
@@ -177,8 +177,8 @@ docker compose up -d
 | **Prometheus** | http://localhost:18500/ | Metrics storage |
 | **Rindexer** | http://localhost:18200/ | GraphQL API for indexed events |
 | **SurrealDB API** | http://localhost:18102/ | Direct database access |
-| **Redis-SurrealDB Sync Health** | http://localhost:18210/health | Health check endpoint |
-| **Redis-PostgreSQL Sync Health** | http://localhost:18211/health | Health check endpoint |
+| **SurrealDB Writer Health** | http://localhost:18210/health | Health check endpoint |
+| **PostgreSQL Writer Health** | http://localhost:18211/health | Health check endpoint |
 
 ## Port Allocation Strategy
 
@@ -187,7 +187,7 @@ This project uses a structured port numbering scheme in the **18000-18999 range*
 | Port Range | Service Type | Services |
 |------------|--------------|----------|
 | **18100-18199** | Databases | PostgreSQL (18100), Redis (18101), SurrealDB (18102) |
-| **18200-18299** | Backend APIs | Rindexer (18200), Redis-Surreal Sync (18210), Redis-Postgres Sync (18211) |
+| **18200-18299** | Backend APIs | Rindexer (18200), SurrealDB Writer (18210), PostgreSQL Writer (18211) |
 | **18300-18399** | Frontend/UI | Web Dashboard (18300), Surrealist (18301) |
 | **18400-18499** | Admin Tools | RedisInsight (18400) |
 | **18500-18599** | Monitoring | Prometheus (18500), Grafana (18501) |
@@ -207,7 +207,7 @@ This scheme:
 - System resource utilization
 
 ### Grafana Dashboards
-- Pre-configured Redis-SurrealDB sync dashboard
+- Pre-configured SurrealDB writer dashboard
 - Automatic Prometheus data source provisioning
 - Custom panels for pipeline monitoring
 
@@ -227,8 +227,8 @@ This scheme:
    - `intuition_testnet_redeemed`
    - `intuition_testnet_share_price_changed`
 4. **Dual-Path Processing**:
-   - **Redis-SurrealDB Sync**: Consumes and batches events (20/batch, 100ms interval) → SurrealDB
-   - **Redis-PostgreSQL Sync**: Consumes and batches events (100/batch, 500ms interval) → PostgreSQL
+   - **SurrealDB Writer**: Consumes and batches events (20/batch, 100ms interval) → SurrealDB
+   - **PostgreSQL Writer**: Consumes and batches events (100/batch, 500ms interval) → PostgreSQL
 5. **Analytics Processing**: PostgreSQL materialized views compute aggregations and relationships
 6. **Data Storage**:
    - SurrealDB stores events in flexible NoSQL format

@@ -1,6 +1,6 @@
 use anyhow::Result;
 use sqlx::PgPool;
-use redis_postgres_sync::sync::utils::to_eip55_address;
+use postgres_writer::sync::utils::to_eip55_address;
 
 #[derive(Debug, sqlx::FromRow, PartialEq)]
 pub struct AtomRow {

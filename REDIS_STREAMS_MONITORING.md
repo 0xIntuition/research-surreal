@@ -2,7 +2,7 @@
 
 ## Overview
 
-This document describes the Redis Streams monitoring implementation for the postgres-writer service using Prometheus and Grafana.
+This document describes the Redis Streams monitoring implementation for the PostgreSQL writer service using Prometheus and Grafana.
 
 ## Architecture
 
@@ -22,8 +22,8 @@ The monitoring stack consists of three layers:
          │                      │
          ↓                      ↓
 ┌─────────────────┐    ┌──────────────────┐
-│ Redis Exporter  │    │ redis-postgres-  │
-│   (oliver006)   │    │      sync        │
+│ Redis Exporter  │    │ postgres-writer  │
+│   (oliver006)   │    │                  │
 └────────┬────────┘    └────────┬─────────┘
          │                      │
          │    Prometheus        │

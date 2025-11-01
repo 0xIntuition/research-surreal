@@ -1,4 +1,4 @@
--- Initial schema for redis-postgres-sync
+-- Initial schema for postgres-writer
 -- Creates all event tables with transaction information embedded
 
 -- Atom Created Events

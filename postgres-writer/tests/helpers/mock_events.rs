@@ -1,6 +1,6 @@
 use chrono::Utc;
 use fake::{Fake, Faker};
-use redis_postgres_sync::core::types::RindexerEvent;
+use postgres_writer::core::types::RindexerEvent;
 use serde_json::json;
 
 // Common test constants
