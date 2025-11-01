@@ -30,7 +30,7 @@ pub struct VaultRow {
     pub current_share_price: String,
     pub total_assets: String,
     pub market_cap: String,
-    pub position_count: i32,
+    pub position_count: i64,
 }
 
 #[derive(Debug, sqlx::FromRow, PartialEq)]
@@ -131,7 +131,7 @@ impl DbAssertions {
         pool: &PgPool,
         term_id: &str,
         curve_id: &str,
-        expected_position_count: i32,
+        expected_position_count: i64,
     ) -> Result<VaultRow> {
         let row = sqlx::query_as::<_, VaultRow>(
             r#"
@@ -320,12 +320,16 @@ impl DbAssertions {
         term_id: &str,
         curve_id: &str,
     ) -> Result<(i64, i64)> {
+        // Convert account address to EIP-55 format for lookup
+        let account_eip55 = to_eip55_address(account_id)
+            .map_err(|e| anyhow::anyhow!("Invalid account address: {}", e))?;
+
         let row: (i64, i64) = sqlx::query_as(
             "SELECT last_deposit_block, last_deposit_log_index
              FROM position
              WHERE account_id = $1 AND term_id = $2 AND curve_id = $3",
         )
-        .bind(account_id)
+        .bind(&account_eip55)
         .bind(term_id)
         .bind(curve_id)
         .fetch_one(pool)

@@ -186,7 +186,7 @@ BEGIN
             NEW.receiver,
             NEW.term_id,
             NEW.curve_id,
-            NEW.total_shares::NUMERIC(78, 0),
+            NEW.shares::NUMERIC(78, 0),
             NEW.assets_after_fees::NUMERIC(78, 0),
             0,
             NEW.block_number,
@@ -194,18 +194,30 @@ BEGIN
             NEW.block_timestamp,
             NEW.block_timestamp
         );
-    ELSIF is_event_newer(NEW.block_number, NEW.log_index, current_deposit_block, current_deposit_log_index) THEN
-        -- Update existing position with newer deposit event
-        UPDATE position SET
-            shares = NEW.total_shares::NUMERIC(78, 0),
-            total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
-            last_deposit_block = NEW.block_number,
-            last_deposit_log_index = NEW.log_index,
-            updated_at = NEW.block_timestamp
-        WHERE
-            account_id = NEW.receiver
-            AND term_id = NEW.term_id
-            AND curve_id = NEW.curve_id;
+    ELSE
+        -- Position exists: always accumulate deposits, but only update shares if newer
+        IF is_event_newer(NEW.block_number, NEW.log_index, current_deposit_block, current_deposit_log_index) THEN
+            -- This is a newer event: update both shares and accumulated total
+            UPDATE position SET
+                shares = NEW.shares::NUMERIC(78, 0),
+                total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
+                last_deposit_block = NEW.block_number,
+                last_deposit_log_index = NEW.log_index,
+                updated_at = NEW.block_timestamp
+            WHERE
+                account_id = NEW.receiver
+                AND term_id = NEW.term_id
+                AND curve_id = NEW.curve_id;
+        ELSE
+            -- This is an older event: only accumulate the deposit total, don't change shares
+            UPDATE position SET
+                total_deposit_assets_after_total_fees = current_deposit_total + NEW.assets_after_fees::NUMERIC(78, 0),
+                updated_at = NEW.block_timestamp
+            WHERE
+                account_id = NEW.receiver
+                AND term_id = NEW.term_id
+                AND curve_id = NEW.curve_id;
+        END IF;
     END IF;
 
     RETURN NEW;
@@ -216,6 +228,53 @@ CREATE TRIGGER trigger_update_position_deposit
     AFTER INSERT ON deposited_events
     FOR EACH ROW
     EXECUTE FUNCTION update_position_on_deposit();
+
+-- ====================
+-- Vault Triggers (Deposits) - Create vault if it doesn't exist
+-- ====================
+
+CREATE OR REPLACE FUNCTION create_vault_on_deposit()
+RETURNS TRIGGER AS $$
+BEGIN
+    -- Insert vault if it doesn't exist yet (from first deposit to this vault)
+    -- This ensures vault exists before cascade processor runs
+    INSERT INTO vault (
+        term_id,
+        curve_id,
+        total_shares,
+        current_share_price,
+        total_assets,
+        market_cap,
+        position_count,
+        vault_type,
+        last_price_event_block,
+        last_price_event_log_index,
+        created_at,
+        updated_at
+    ) VALUES (
+        NEW.term_id,
+        NEW.curve_id,
+        0,  -- Will be updated by cascade processor
+        0,  -- Will be updated when SharePriceChanged event arrives
+        0,  -- Will be updated by cascade processor
+        0,  -- Will be calculated by cascade processor
+        0,  -- Will be updated by cascade processor
+        NEW.vault_type,
+        0,  -- Will be updated when SharePriceChanged event arrives
+        0,  -- Will be updated when SharePriceChanged event arrives
+        NEW.block_timestamp,
+        NEW.block_timestamp
+    )
+    ON CONFLICT (term_id, curve_id) DO NOTHING;  -- Vault already exists, no need to update
+
+    RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_create_vault_deposit
+    AFTER INSERT ON deposited_events
+    FOR EACH ROW
+    EXECUTE FUNCTION create_vault_on_deposit();
 
 -- ====================
 -- Position Triggers (Redemptions)
@@ -264,7 +323,7 @@ BEGIN
             NEW.receiver,
             NEW.term_id,
             NEW.curve_id,
-            NEW.total_shares::NUMERIC(78, 0),
+            NEW.shares::NUMERIC(78, 0),
             0,
             NEW.assets::NUMERIC(78, 0),
             NEW.block_number,
@@ -272,18 +331,30 @@ BEGIN
             NEW.block_timestamp,
             NEW.block_timestamp
         );
-    ELSIF is_event_newer(NEW.block_number, NEW.log_index, current_redeem_block, current_redeem_log_index) THEN
-        -- Update existing position with newer redeem event
-        UPDATE position SET
-            shares = NEW.total_shares::NUMERIC(78, 0),
-            total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
-            last_redeem_block = NEW.block_number,
-            last_redeem_log_index = NEW.log_index,
-            updated_at = NEW.block_timestamp
-        WHERE
-            account_id = NEW.receiver
-            AND term_id = NEW.term_id
-            AND curve_id = NEW.curve_id;
+    ELSE
+        -- Position exists: always accumulate redeems, but only update shares if newer
+        IF is_event_newer(NEW.block_number, NEW.log_index, current_redeem_block, current_redeem_log_index) THEN
+            -- This is a newer event: update both shares and accumulated total
+            UPDATE position SET
+                shares = NEW.shares::NUMERIC(78, 0),
+                total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
+                last_redeem_block = NEW.block_number,
+                last_redeem_log_index = NEW.log_index,
+                updated_at = NEW.block_timestamp
+            WHERE
+                account_id = NEW.receiver
+                AND term_id = NEW.term_id
+                AND curve_id = NEW.curve_id;
+        ELSE
+            -- This is an older event: only accumulate the redeem total, don't change shares
+            UPDATE position SET
+                total_redeem_assets_for_receiver = current_redeem_total + NEW.assets::NUMERIC(78, 0),
+                updated_at = NEW.block_timestamp
+            WHERE
+                account_id = NEW.receiver
+                AND term_id = NEW.term_id
+                AND curve_id = NEW.curve_id;
+        END IF;
     END IF;
 
     RETURN NEW;
