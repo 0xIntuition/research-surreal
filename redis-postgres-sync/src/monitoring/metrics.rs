@@ -91,6 +91,62 @@ lazy_static! {
         ),
         &["stream_name"]
     ).unwrap();
+
+    // Event type-specific metrics
+    //
+    // IMPORTANT: Event types are bounded to prevent cardinality explosion in Prometheus.
+    // The valid event types are defined by the blockchain contract and are:
+    // - AtomCreated
+    // - TripleCreated
+    // - Deposited
+    // - Redeemed
+    // - SharePriceChanged
+    //
+    // These event types are hardcoded in the smart contract and cannot change without
+    // a contract upgrade. This bounded set ensures safe usage of event_type as a label
+    // dimension in metrics without risking unbounded cardinality growth.
+    static ref EVENTS_PROCESSED_BY_TYPE_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_events_processed_by_type_total",
+            "Total number of events processed by event type"
+        ),
+        &["event_type"]
+    ).unwrap();
+    static ref EVENTS_FAILED_BY_TYPE_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_events_failed_by_type_total",
+            "Total number of events that failed to process by event type"
+        ),
+        &["event_type"]
+    ).unwrap();
+    static ref EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM: prometheus::HistogramVec = prometheus::HistogramVec::new(
+        prometheus::HistogramOpts::new(
+            "redis_postgres_sync_event_processing_duration_by_type_seconds",
+            "Time spent processing individual events by type in seconds"
+        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
+        &["event_type"]
+    ).unwrap();
+    static ref CASCADE_PROCESSING_DURATION_HISTOGRAM: prometheus::HistogramVec = prometheus::HistogramVec::new(
+        prometheus::HistogramOpts::new(
+            "redis_postgres_sync_cascade_processing_duration_seconds",
+            "Time spent in cascade processing by event type in seconds"
+        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
+        &["event_type"]
+    ).unwrap();
+    static ref DATABASE_OPERATIONS_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_database_operations_total",
+            "Total database operations by event type and operation name"
+        ),
+        &["event_type", "operation"]
+    ).unwrap();
+    static ref CASCADE_FAILURES_COUNTER: CounterVec = CounterVec::new(
+        Opts::new(
+            "redis_postgres_sync_cascade_failures_total",
+            "Total cascade failures after successful event processing by event type"
+        ),
+        &["event_type"]
+    ).unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -131,6 +187,14 @@ impl Metrics {
         REGISTRY.register(Box::new(STREAM_BATCH_SIZE_GAUGE.clone())).ok();
         REGISTRY.register(Box::new(STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.clone())).ok();
         REGISTRY.register(Box::new(STREAM_MESSAGES_CONSUMED_COUNTER.clone())).ok();
+
+        // Register event type-specific metrics
+        REGISTRY.register(Box::new(EVENTS_PROCESSED_BY_TYPE_COUNTER.clone())).ok();
+        REGISTRY.register(Box::new(EVENTS_FAILED_BY_TYPE_COUNTER.clone())).ok();
+        REGISTRY.register(Box::new(EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM.clone())).ok();
+        REGISTRY.register(Box::new(CASCADE_PROCESSING_DURATION_HISTOGRAM.clone())).ok();
+        REGISTRY.register(Box::new(DATABASE_OPERATIONS_COUNTER.clone())).ok();
+        REGISTRY.register(Box::new(CASCADE_FAILURES_COUNTER.clone())).ok();
 
         Self {
             events_processed: Arc::new(AtomicU64::new(0)),
@@ -237,6 +301,35 @@ impl Metrics {
         STREAM_MESSAGES_CONSUMED_COUNTER.with_label_values(&[stream_name]).inc_by(count as f64);
     }
 
+    // Event type-specific metrics methods
+    pub fn record_event_by_type_success(&self, event_type: &str) {
+        EVENTS_PROCESSED_BY_TYPE_COUNTER.with_label_values(&[event_type]).inc();
+    }
+
+    pub fn record_event_by_type_failure(&self, event_type: &str) {
+        EVENTS_FAILED_BY_TYPE_COUNTER.with_label_values(&[event_type]).inc();
+    }
+
+    pub fn record_event_processing_duration(&self, event_type: &str, duration: std::time::Duration) {
+        EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM
+            .with_label_values(&[event_type])
+            .observe(duration.as_secs_f64());
+    }
+
+    pub fn record_cascade_duration(&self, event_type: &str, duration: std::time::Duration) {
+        CASCADE_PROCESSING_DURATION_HISTOGRAM
+            .with_label_values(&[event_type])
+            .observe(duration.as_secs_f64());
+    }
+
+    pub fn record_database_operation(&self, event_type: &str, operation: &str) {
+        DATABASE_OPERATIONS_COUNTER.with_label_values(&[event_type, operation]).inc();
+    }
+
+    pub fn record_cascade_failure(&self, event_type: &str) {
+        CASCADE_FAILURES_COUNTER.with_label_values(&[event_type]).inc();
+    }
+
     pub async fn get_snapshot(&self) -> MetricsSnapshot {
         let uptime = (Utc::now() - self.start_time).num_seconds() as u64;
         UPTIME_GAUGE.set(uptime as f64);
@@ -309,5 +402,188 @@ mod tests {
         // Print for manual verification
         println!("Prometheus metrics output:");
         println!("{}", output);
+    }
+
+    #[test]
+    fn test_event_by_type_success() {
+        let metrics = Metrics::new();
+
+        // Record successful events by type
+        metrics.record_event_by_type_success("AtomCreated");
+        metrics.record_event_by_type_success("AtomCreated");
+        metrics.record_event_by_type_success("Deposited");
+
+        // Get Prometheus output
+        let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
+
+        // Verify event-type-specific metrics are present
+        assert!(output.contains("redis_postgres_sync_events_processed_by_type_total"));
+        assert!(output.contains("event_type=\"AtomCreated\""));
+        assert!(output.contains("event_type=\"Deposited\""));
+
+        // Verify counts are recorded (checking that the metric line exists)
+        // Note: Exact formatting may vary, so we check for presence of event types
+        let atom_created_lines: Vec<&str> = output.lines()
+            .filter(|line| line.contains("redis_postgres_sync_events_processed_by_type_total")
+                        && line.contains("event_type=\"AtomCreated\""))
+            .collect();
+        assert!(!atom_created_lines.is_empty(), "AtomCreated metrics should be present");
+    }
+
+    #[test]
+    fn test_event_by_type_failure() {
+        let metrics = Metrics::new();
+
+        // Record failed events by type
+        metrics.record_event_by_type_failure("SharePriceChanged");
+        metrics.record_event_by_type_failure("SharePriceChanged");
+        metrics.record_event_by_type_failure("TripleCreated");
+
+        // Get Prometheus output
+        let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
+
+        // Verify failure metrics are present
+        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total"));
+        assert!(output.contains("event_type=\"SharePriceChanged\""));
+        assert!(output.contains("event_type=\"TripleCreated\""));
+
+        // Verify counts
+        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total{event_type=\"SharePriceChanged\"} 2"));
+        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total{event_type=\"TripleCreated\"} 1"));
+    }
+
+    #[test]
+    fn test_event_processing_duration() {
+        let metrics = Metrics::new();
+
+        // Record processing durations for different event types
+        metrics.record_event_processing_duration("AtomCreated", std::time::Duration::from_millis(100));
+        metrics.record_event_processing_duration("AtomCreated", std::time::Duration::from_millis(150));
+        metrics.record_event_processing_duration("Deposited", std::time::Duration::from_millis(200));
+
+        // Get Prometheus output
+        let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
+
+        // Verify histogram metrics are present
+        assert!(output.contains("redis_postgres_sync_event_processing_duration_by_type_seconds"));
+        assert!(output.contains("event_type=\"AtomCreated\""));
+        assert!(output.contains("event_type=\"Deposited\""));
+
+        // Verify histogram has count (checking that the metric exists)
+        let atom_created_count: Vec<&str> = output.lines()
+            .filter(|line| line.contains("redis_postgres_sync_event_processing_duration_by_type_seconds_count")
+                        && line.contains("event_type=\"AtomCreated\""))
+            .collect();
+        assert!(!atom_created_count.is_empty(), "AtomCreated duration metrics should be present");
+    }
+
+    #[test]
+    fn test_cascade_duration() {
+        let metrics = Metrics::new();
+
+        // Record cascade durations
+        metrics.record_cascade_duration("Deposited", std::time::Duration::from_millis(50));
+        metrics.record_cascade_duration("Deposited", std::time::Duration::from_millis(75));
+        metrics.record_cascade_duration("SharePriceChanged", std::time::Duration::from_millis(30));
+
+        // Get Prometheus output
+        let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
+
+        // Verify cascade metrics are present
+        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds"));
+        assert!(output.contains("event_type=\"Deposited\""));
+        assert!(output.contains("event_type=\"SharePriceChanged\""));
+
+        // Verify histogram counts
+        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds_count{event_type=\"Deposited\"} 2"));
+        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds_count{event_type=\"SharePriceChanged\"} 1"));
+    }
+
+    #[test]
+    fn test_database_operations() {
+        let metrics = Metrics::new();
+
+        // Record database operations
+        metrics.record_database_operation("Deposited", "position_update");
+        metrics.record_database_operation("Deposited", "position_update");
+        metrics.record_database_operation("Deposited", "vault_aggregation");
+        metrics.record_database_operation("SharePriceChanged", "vault_update");
+        metrics.record_database_operation("AtomCreated", "term_initialization");
+
+        // Get Prometheus output
+        let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
+
+        // Verify database operation metrics are present
+        assert!(output.contains("redis_postgres_sync_database_operations_total"));
+
+        // Verify different event types and operations
+        assert!(output.contains("event_type=\"Deposited\""));
+        assert!(output.contains("operation=\"position_update\""));
+        assert!(output.contains("operation=\"vault_aggregation\""));
+        assert!(output.contains("event_type=\"SharePriceChanged\""));
+        assert!(output.contains("operation=\"vault_update\""));
+        assert!(output.contains("event_type=\"AtomCreated\""));
+        assert!(output.contains("operation=\"term_initialization\""));
+
+        // Verify counts
+        assert!(output.contains("redis_postgres_sync_database_operations_total{event_type=\"Deposited\",operation=\"position_update\"} 2"));
+        assert!(output.contains("redis_postgres_sync_database_operations_total{event_type=\"Deposited\",operation=\"vault_aggregation\"} 1"));
+    }
+
+    #[test]
+    fn test_cascade_failure() {
+        let metrics = Metrics::new();
+
+        // Record cascade failures
+        metrics.record_cascade_failure("Deposited");
+        metrics.record_cascade_failure("Deposited");
+        metrics.record_cascade_failure("SharePriceChanged");
+
+        // Get Prometheus output
+        let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
+
+        // Verify cascade failure metrics are present
+        assert!(output.contains("redis_postgres_sync_cascade_failures_total"));
+        assert!(output.contains("event_type=\"Deposited\""));
+        assert!(output.contains("event_type=\"SharePriceChanged\""));
+
+        // Verify counts
+        assert!(output.contains("redis_postgres_sync_cascade_failures_total{event_type=\"Deposited\"} 2"));
+        assert!(output.contains("redis_postgres_sync_cascade_failures_total{event_type=\"SharePriceChanged\"} 1"));
+    }
+
+    #[test]
+    fn test_multiple_event_types() {
+        let metrics = Metrics::new();
+
+        // Simulate processing multiple different event types
+        let event_types = vec!["AtomCreated", "Deposited", "SharePriceChanged", "TripleCreated", "Redeemed"];
+
+        for event_type in &event_types {
+            metrics.record_event_by_type_success(event_type);
+            metrics.record_event_processing_duration(event_type, std::time::Duration::from_millis(100));
+            metrics.record_cascade_duration(event_type, std::time::Duration::from_millis(25));
+        }
+
+        // Add one failure
+        metrics.record_event_by_type_failure("Deposited");
+
+        // Add cascade failure
+        metrics.record_cascade_failure("SharePriceChanged");
+
+        // Get Prometheus output
+        let output = Metrics::get_prometheus_metrics().expect("Should generate metrics");
+
+        // Verify all event types are present in metrics
+        for event_type in &event_types {
+            assert!(output.contains(&format!("event_type=\"{}\"", event_type)));
+        }
+
+        // Verify different metric types
+        assert!(output.contains("redis_postgres_sync_events_processed_by_type_total"));
+        assert!(output.contains("redis_postgres_sync_events_failed_by_type_total"));
+        assert!(output.contains("redis_postgres_sync_event_processing_duration_by_type_seconds"));
+        assert!(output.contains("redis_postgres_sync_cascade_processing_duration_seconds"));
+        assert!(output.contains("redis_postgres_sync_cascade_failures_total"));
     }
 }

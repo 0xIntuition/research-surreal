@@ -34,11 +34,15 @@ impl EventProcessingPipeline {
                 .await?
         );
 
+        // Create metrics before PostgresClient so we can pass it
+        let metrics = Arc::new(Metrics::new());
+
         let postgres_client = Arc::new(
             PostgresClient::new(
                 &config.database_url,
                 Some(&config.redis_url),
                 config.analytics_stream_name.clone(),
+                (*metrics).clone(),
             )
             .await?
         );
@@ -46,8 +50,6 @@ impl EventProcessingPipeline {
         let circuit_breaker = Arc::new(
             CircuitBreaker::new(config.circuit_breaker_threshold, config.circuit_breaker_timeout_ms)
         );
-
-        let metrics = Arc::new(Metrics::new());
 
         let (shutdown_sender, _) = broadcast::channel(1);
         let cancellation_token = CancellationToken::new();
