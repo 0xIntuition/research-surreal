@@ -45,7 +45,8 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
     // Wait for processing (11 events: 1 atom + 10 deposits)
     harness.wait_for_processing(11, 20).await
         .expect("Failed to process 11 events within 20 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await
@@ -160,7 +161,8 @@ async fn test_concurrent_deposits_and_redeems_maintain_consistency() {
     // Wait for processing
     harness.wait_for_processing(6, 20).await
         .expect("Failed to process 6 events within 20 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await
@@ -253,7 +255,8 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
     // Wait for processing
     harness.wait_for_processing(8, 20).await
         .expect("Failed to process 8 events within 20 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await

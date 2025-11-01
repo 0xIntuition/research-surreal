@@ -32,7 +32,8 @@ async fn test_atom_creation_initializes_term() {
     // Wait for processing
     harness.wait_for_processing(1, 10).await
         .expect("Failed to process 1 event within 10 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await
@@ -123,7 +124,8 @@ async fn test_triple_creation_initializes_terms() {
     // Wait for processing
     harness.wait_for_processing(4, 15).await
         .expect("Failed to process 4 events within 15 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(triple_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await
@@ -200,7 +202,8 @@ async fn test_deposits_update_term_aggregations() {
     // Wait for processing
     harness.wait_for_processing(2, 15).await
         .expect("Failed to process 2 events within 15 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await
@@ -270,7 +273,8 @@ async fn test_share_price_changes_update_term_market_cap() {
     // Wait for processing
     harness.wait_for_processing(3, 15).await
         .expect("Failed to process 3 events within 15 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await

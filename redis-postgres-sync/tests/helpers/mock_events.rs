@@ -3,6 +3,64 @@ use fake::{Fake, Faker};
 use redis_postgres_sync::core::types::RindexerEvent;
 use serde_json::json;
 
+// Common test constants
+/// Default curve ID used in tests (linear bonding curve)
+pub const DEFAULT_CURVE_ID: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+
+/// Default starting block number for tests
+pub const DEFAULT_BLOCK_START: u64 = 1000;
+
+/// Default test network
+pub const DEFAULT_NETWORK: &str = "base_sepolia";
+
+/// Validates that a string is a properly formatted Ethereum address
+fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
+    if !addr.starts_with("0x") {
+        return Err(format!(
+            "{} must start with '0x', got: {}",
+            field_name, addr
+        ));
+    }
+    if addr.len() != 42 {
+        return Err(format!(
+            "{} must be 42 characters (0x + 40 hex digits), got length: {}",
+            field_name,
+            addr.len()
+        ));
+    }
+    if !addr[2..].chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "{} must contain only hex digits after '0x', got: {}",
+            field_name, addr
+        ));
+    }
+    Ok(())
+}
+
+/// Validates that a string is a properly formatted term ID (bytes32)
+fn validate_term_id(id: &str, field_name: &str) -> Result<(), String> {
+    if !id.starts_with("0x") {
+        return Err(format!(
+            "{} must start with '0x', got: {}",
+            field_name, id
+        ));
+    }
+    if id.len() != 66 {
+        return Err(format!(
+            "{} must be 66 characters (0x + 64 hex digits), got length: {}",
+            field_name,
+            id.len()
+        ));
+    }
+    if !id[2..].chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "{} must contain only hex digits after '0x', got: {}",
+            field_name, id
+        ));
+    }
+    Ok(())
+}
+
 #[derive(Clone)]
 pub struct EventBuilder {
     block_number: u64,
@@ -15,10 +73,10 @@ pub struct EventBuilder {
 impl EventBuilder {
     pub fn new() -> Self {
         Self {
-            block_number: 1000,
+            block_number: DEFAULT_BLOCK_START,
             log_index: 0,
             transaction_hash: format!("0x{}", hex::encode(Faker.fake::<[u8; 32]>())),
-            network: "base_sepolia".to_string(),
+            network: DEFAULT_NETWORK.to_string(),
             address: format!("0x{}", hex::encode(Faker.fake::<[u8; 20]>())),
         }
     }
@@ -40,6 +98,12 @@ impl EventBuilder {
 
     /// Creates AtomCreated event
     pub fn atom_created(&self, term_id: &str, creator: &str) -> RindexerEvent {
+        // Validate inputs to catch errors early
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in atom_created");
+        validate_address(creator, "creator")
+            .expect("Invalid creator address in atom_created");
+
         let wallet_id = format!("0x{}", hex::encode(Faker.fake::<[u8; 20]>()));
 
         let event_data = json!({
@@ -66,6 +130,16 @@ impl EventBuilder {
         predicate_id: &str,
         object_id: &str,
     ) -> RindexerEvent {
+        // Validate inputs to catch errors early
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in triple_created");
+        validate_term_id(subject_id, "subject_id")
+            .expect("Invalid subject_id in triple_created");
+        validate_term_id(predicate_id, "predicate_id")
+            .expect("Invalid predicate_id in triple_created");
+        validate_term_id(object_id, "object_id")
+            .expect("Invalid object_id in triple_created");
+
         let creator = format!("0x{}", hex::encode(Faker.fake::<[u8; 20]>()));
 
         let event_data = json!({
@@ -93,13 +167,17 @@ impl EventBuilder {
         assets: u64,
         shares: u64,
     ) -> RindexerEvent {
-        let curve_id = "0x0000000000000000000000000000000000000000000000000000000000000000";
+        // Validate inputs to catch errors early
+        validate_address(account_id, "account_id")
+            .expect("Invalid account_id in deposited");
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in deposited");
 
         let event_data = json!({
             "sender": account_id,
             "receiver": account_id,
             "termId": term_id,
-            "curveId": curve_id,
+            "curveId": DEFAULT_CURVE_ID,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
             "totalShares": (shares * 2).to_string(),
@@ -124,13 +202,17 @@ impl EventBuilder {
         shares: u64,
         assets: u64,
     ) -> RindexerEvent {
-        let curve_id = "0x0000000000000000000000000000000000000000000000000000000000000000";
+        // Validate inputs to catch errors early
+        validate_address(account_id, "account_id")
+            .expect("Invalid account_id in redeemed");
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in redeemed");
 
         let event_data = json!({
             "sender": account_id,
             "receiver": account_id,
             "termId": term_id,
-            "curveId": curve_id,
+            "curveId": DEFAULT_CURVE_ID,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
             "totalShares": "0",
@@ -149,11 +231,13 @@ impl EventBuilder {
 
     /// Creates SharePriceChanged event
     pub fn share_price_changed(&self, term_id: &str, new_price: u64) -> RindexerEvent {
-        let curve_id = "0x0000000000000000000000000000000000000000000000000000000000000000";
+        // Validate inputs to catch errors early
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in share_price_changed");
 
         let event_data = json!({
             "termId": term_id,
-            "curveId": curve_id,
+            "curveId": DEFAULT_CURVE_ID,
             "sharePrice": new_price.to_string(),
             "totalAssets": "1000000000000000000",
             "totalShares": "1000000000000000000",
@@ -208,25 +292,25 @@ impl NonSequentialScenario {
     pub fn add_scrambled_deposits(mut self, account: &str, term_id: &str) -> Self {
         let builder = EventBuilder::new();
 
-        // Add deposits out of order: block 1005, then 1001, then 1003
+        // Add deposits out of order: block DEFAULT_BLOCK_START+5, then +1, then +3
         self.events.push(
             builder
                 .clone()
-                .with_block(1005)
+                .with_block(DEFAULT_BLOCK_START + 5)
                 .with_log_index(0)
                 .deposited(account, term_id, 5000, 5000),
         );
         self.events.push(
             builder
                 .clone()
-                .with_block(1001)
+                .with_block(DEFAULT_BLOCK_START + 1)
                 .with_log_index(0)
                 .deposited(account, term_id, 1000, 1000),
         );
         self.events.push(
             builder
                 .clone()
-                .with_block(1003)
+                .with_block(DEFAULT_BLOCK_START + 3)
                 .with_log_index(0)
                 .deposited(account, term_id, 3000, 3000),
         );
@@ -238,25 +322,25 @@ impl NonSequentialScenario {
     pub fn add_scrambled_price_changes(mut self, term_id: &str) -> Self {
         let builder = EventBuilder::new();
 
-        // Add price changes: block 1008, then 1002, then 1005
+        // Add price changes: block DEFAULT_BLOCK_START+8, then +2, then +5
         self.events.push(
             builder
                 .clone()
-                .with_block(1008)
+                .with_block(DEFAULT_BLOCK_START + 8)
                 .with_log_index(0)
                 .share_price_changed(term_id, 2000000000000000000), // 2.0 ETH
         );
         self.events.push(
             builder
                 .clone()
-                .with_block(1002)
+                .with_block(DEFAULT_BLOCK_START + 2)
                 .with_log_index(0)
                 .share_price_changed(term_id, 1200000000000000000), // 1.2 ETH
         );
         self.events.push(
             builder
                 .clone()
-                .with_block(1005)
+                .with_block(DEFAULT_BLOCK_START + 5)
                 .with_log_index(0)
                 .share_price_changed(term_id, 1500000000000000000), // 1.5 ETH
         );

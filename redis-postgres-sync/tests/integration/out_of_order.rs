@@ -59,8 +59,9 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
     harness.wait_for_processing(4, 15).await
         .expect("Failed to process 4 events within 15 seconds");
 
-    // Give it a bit more time to ensure cascade processing completes
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    // Wait for cascade processing to complete
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Step 5: Assertions
     let pool = harness.get_pool().await
@@ -178,7 +179,8 @@ async fn test_share_price_changes_use_latest_block() {
     // Wait for processing
     harness.wait_for_processing(5, 15).await
         .expect("Failed to process 5 events within 15 seconds");
-    tokio::time::sleep(tokio::time::Duration::from_secs(2)).await;
+    harness.wait_for_cascade(term_id, 5).await
+        .expect("Failed to complete cascade processing within 5 seconds");
 
     // Assertions
     let pool = harness.get_pool().await

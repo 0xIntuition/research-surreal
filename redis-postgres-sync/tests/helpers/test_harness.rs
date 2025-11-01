@@ -55,6 +55,16 @@ impl TestHarness {
 
     /// Sets up database schema and runs migrations
     async fn setup_database(&self) -> Result<()> {
+        // Validate database name to prevent SQL injection
+        // UUIDs are safe, but we validate format anyway for defense in depth
+        if !self.test_db_name.starts_with("test_") ||
+           !self.test_db_name[5..].chars().all(|c| c.is_ascii_alphanumeric()) {
+            return Err(anyhow::anyhow!(
+                "Invalid database name format: {}. Expected 'test_' followed by alphanumeric characters",
+                self.test_db_name
+            ));
+        }
+
         // Connect to default postgres database
         let admin_url = self.database_url.replace(&self.test_db_name, "test");
         let admin_pool = PgPoolOptions::new()
@@ -62,7 +72,7 @@ impl TestHarness {
             .connect(&admin_url)
             .await?;
 
-        // Create test database
+        // Create test database (now safe after validation)
         sqlx::query(&format!("CREATE DATABASE \"{}\"", self.test_db_name))
             .execute(&admin_pool)
             .await?;
@@ -91,58 +101,32 @@ impl TestHarness {
         // Delete all streams
         redis::cmd("FLUSHDB").query_async::<()>(&mut con).await?;
 
-        // Clear PostgreSQL tables in dependency order
+        // Clear PostgreSQL tables efficiently in a single transaction
+        // Using CASCADE handles all foreign key constraints automatically
         let pool = self.get_pool().await?;
 
-        // Analytics tables first
-        sqlx::query("TRUNCATE TABLE predicate_object CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE subject_predicate CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE triple_term CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE triple_vault CASCADE")
-            .execute(pool)
-            .await?;
-
-        // Aggregated tables
-        sqlx::query("TRUNCATE TABLE term CASCADE")
-            .execute(pool)
-            .await?;
-
-        // Base tables
-        sqlx::query("TRUNCATE TABLE vault CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE position CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE triple CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE atom CASCADE")
-            .execute(pool)
-            .await?;
-
-        // Event tables
-        sqlx::query("TRUNCATE TABLE share_price_changed_events CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE redeemed_events CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE deposited_events CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE triple_created_events CASCADE")
-            .execute(pool)
-            .await?;
-        sqlx::query("TRUNCATE TABLE atom_created_events CASCADE")
-            .execute(pool)
-            .await?;
+        // Use a single transaction to truncate all tables efficiently
+        // Start with base tables and CASCADE will handle dependent tables
+        sqlx::query(
+            "TRUNCATE TABLE
+                atom,
+                triple,
+                position,
+                vault,
+                term,
+                triple_vault,
+                triple_term,
+                subject_predicate,
+                predicate_object,
+                atom_created_events,
+                triple_created_events,
+                deposited_events,
+                redeemed_events,
+                share_price_changed_events
+            CASCADE"
+        )
+        .execute(pool)
+        .await?;
 
         Ok(())
     }
@@ -168,20 +152,25 @@ impl TestHarness {
             .map_err(Into::into)
     }
 
-    /// Publishes events to Redis stream
+    /// Publishes events to Redis stream using pipelining for better performance
     pub async fn publish_events(&self, stream: &str, events: Vec<RindexerEvent>) -> Result<()> {
         let mut con = self.get_redis_connection().await?;
 
+        // Use Redis pipeline to batch all XADD commands into a single round trip
+        // This is much faster than sending each command individually
+        let mut pipe = redis::pipe();
+
         for event in events {
             let json = serde_json::to_string(&event)?;
-            redis::cmd("XADD")
+            pipe.cmd("XADD")
                 .arg(stream)
                 .arg("*") // Auto-generate ID
                 .arg("data")
-                .arg(json)
-                .query_async::<()>(&mut con)
-                .await?;
+                .arg(json);
         }
+
+        // Execute all commands at once
+        pipe.query_async::<()>(&mut con).await?;
 
         Ok(())
     }
@@ -265,6 +254,48 @@ impl TestHarness {
         Ok(())
     }
 
+    /// Waits for cascade processing to complete by checking that all vault aggregations are updated
+    /// This is more reliable than fixed sleep durations
+    pub async fn wait_for_cascade(&mut self, term_id: &str, timeout_secs: u64) -> Result<()> {
+        let start = std::time::Instant::now();
+        let pool = self.get_pool().await?;
+
+        loop {
+            // Check if term aggregation has been updated (indicates cascade processing is complete)
+            let exists: bool = sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM term WHERE id = $1)"
+            )
+            .bind(term_id)
+            .fetch_one(pool)
+            .await?;
+
+            if exists {
+                // Additional check: ensure the term has non-zero updated_at timestamp
+                let is_updated: bool = sqlx::query_scalar(
+                    "SELECT EXISTS(SELECT 1 FROM term WHERE id = $1 AND updated_at IS NOT NULL)"
+                )
+                .bind(term_id)
+                .fetch_one(pool)
+                .await?;
+
+                if is_updated {
+                    break;
+                }
+            }
+
+            if start.elapsed().as_secs() > timeout_secs {
+                return Err(anyhow::anyhow!(
+                    "Timeout waiting for cascade processing for term: {}",
+                    term_id
+                ));
+            }
+
+            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+        }
+
+        Ok(())
+    }
+
     pub fn redis_url(&self) -> &str {
         &self.redis_url
     }
@@ -299,6 +330,24 @@ impl TestHarness {
         let mut config = self.default_config();
         config.workers = workers;
         config
+    }
+}
+
+impl Drop for TestHarness {
+    fn drop(&mut self) {
+        // Close the pool if it exists
+        // Note: We use blocking operations here since Drop is synchronous
+        if let Some(pool) = self.pool.take() {
+            // Spawn a blocking task to close the pool
+            // This is acceptable in Drop since we're cleaning up test resources
+            let _ = std::thread::spawn(move || {
+                tokio::runtime::Runtime::new()
+                    .expect("Failed to create runtime for pool cleanup")
+                    .block_on(async move {
+                        pool.close().await;
+                    });
+            }).join();
+        }
     }
 }
 
