@@ -5,7 +5,8 @@ use serde_json::json;
 
 // Common test constants
 /// Default curve ID used in tests (linear bonding curve)
-pub const DEFAULT_CURVE_ID: &str = "0x0000000000000000000000000000000000000000000000000000000000000000";
+pub const DEFAULT_CURVE_ID: &str =
+    "0x0000000000000000000000000000000000000000000000000000000000000000";
 
 /// Default starting block number for tests
 pub const DEFAULT_BLOCK_START: u64 = 1000;
@@ -40,10 +41,7 @@ fn validate_address(addr: &str, field_name: &str) -> Result<(), String> {
 /// Validates that a string is a properly formatted term ID (bytes32)
 fn validate_term_id(id: &str, field_name: &str) -> Result<(), String> {
     if !id.starts_with("0x") {
-        return Err(format!(
-            "{} must start with '0x', got: {}",
-            field_name, id
-        ));
+        return Err(format!("{} must start with '0x', got: {}", field_name, id));
     }
     if id.len() != 66 {
         return Err(format!(
@@ -94,10 +92,8 @@ impl EventBuilder {
     /// Creates AtomCreated event
     pub fn atom_created(&self, term_id: &str, creator: &str) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in atom_created");
-        validate_address(creator, "creator")
-            .expect("Invalid creator address in atom_created");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in atom_created");
+        validate_address(creator, "creator").expect("Invalid creator address in atom_created");
 
         let wallet_id = format!("0x{}", hex::encode(Faker.fake::<[u8; 20]>()));
 
@@ -126,14 +122,11 @@ impl EventBuilder {
         object_id: &str,
     ) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in triple_created");
-        validate_term_id(subject_id, "subject_id")
-            .expect("Invalid subject_id in triple_created");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in triple_created");
+        validate_term_id(subject_id, "subject_id").expect("Invalid subject_id in triple_created");
         validate_term_id(predicate_id, "predicate_id")
             .expect("Invalid predicate_id in triple_created");
-        validate_term_id(object_id, "object_id")
-            .expect("Invalid object_id in triple_created");
+        validate_term_id(object_id, "object_id").expect("Invalid object_id in triple_created");
 
         let creator = format!("0x{}", hex::encode(Faker.fake::<[u8; 20]>()));
 
@@ -163,10 +156,8 @@ impl EventBuilder {
         shares: u64,
     ) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_address(account_id, "account_id")
-            .expect("Invalid account_id in deposited");
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in deposited");
+        validate_address(account_id, "account_id").expect("Invalid account_id in deposited");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in deposited");
 
         let event_data = json!({
             "sender": account_id,
@@ -206,8 +197,7 @@ impl EventBuilder {
     ) -> RindexerEvent {
         validate_address(account_id, "account_id")
             .expect("Invalid account_id in deposited_with_total");
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in deposited_with_total");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in deposited_with_total");
 
         let event_data = json!({
             "sender": account_id,
@@ -239,10 +229,8 @@ impl EventBuilder {
         assets: u64,
     ) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_address(account_id, "account_id")
-            .expect("Invalid account_id in redeemed");
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in redeemed");
+        validate_address(account_id, "account_id").expect("Invalid account_id in redeemed");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in redeemed");
 
         let event_data = json!({
             "sender": account_id,
@@ -282,8 +270,7 @@ impl EventBuilder {
     ) -> RindexerEvent {
         validate_address(account_id, "account_id")
             .expect("Invalid account_id in redeemed_with_total");
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in redeemed_with_total");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in redeemed_with_total");
 
         let event_data = json!({
             "sender": account_id,
@@ -309,8 +296,7 @@ impl EventBuilder {
     /// Creates SharePriceChanged event
     pub fn share_price_changed(&self, term_id: &str, new_price: u64) -> RindexerEvent {
         // Validate inputs to catch errors early
-        validate_term_id(term_id, "term_id")
-            .expect("Invalid term_id in share_price_changed");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in share_price_changed");
 
         let event_data = json!({
             "termId": term_id,
@@ -439,10 +425,7 @@ mod tests {
         assert_eq!(event.event_name, "Deposited");
         let tx_info = event.event_data.get("transaction_information").unwrap();
         assert_eq!(tx_info.get("block_number").unwrap().as_u64().unwrap(), 2000);
-        assert_eq!(
-            tx_info.get("log_index").unwrap().as_str().unwrap(),
-            "0x5"
-        );
+        assert_eq!(tx_info.get("log_index").unwrap().as_str().unwrap(), "0x5");
     }
 
     #[test]

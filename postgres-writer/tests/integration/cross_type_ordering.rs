@@ -113,11 +113,8 @@ async fn test_interleaved_deposits_and_redeems_out_of_order() {
     );
 
     // Cleanup
-    let stop_result = tokio::time::timeout(
-        std::time::Duration::from_secs(5),
-        pipeline.stop()
-    )
-    .await;
+    let stop_result =
+        tokio::time::timeout(std::time::Duration::from_secs(5), pipeline.stop()).await;
 
     pipeline_handle.abort();
 
@@ -394,14 +391,13 @@ async fn test_multiple_redeems_to_zero_out_of_order() {
     );
 
     // Verify vault position_count correctly excludes zero-share positions
-    let position_count: Option<i64> = sqlx::query_scalar(
-        "SELECT position_count FROM vault WHERE term_id = $1 AND curve_id = $2"
-    )
-    .bind(term_id)
-    .bind(curve_id)
-    .fetch_one(pool)
-    .await
-    .expect("Failed to fetch vault");
+    let position_count: Option<i64> =
+        sqlx::query_scalar("SELECT position_count FROM vault WHERE term_id = $1 AND curve_id = $2")
+            .bind(term_id)
+            .bind(curve_id)
+            .fetch_one(pool)
+            .await
+            .expect("Failed to fetch vault");
 
     assert_eq!(
         position_count.unwrap_or(0),
@@ -528,14 +524,13 @@ async fn test_redeem_before_deposit_edge_case() {
     );
 
     // Verify that the vault reflects this active position (shares > 0)
-    let position_count: Option<i64> = sqlx::query_scalar(
-        "SELECT position_count FROM vault WHERE term_id = $1 AND curve_id = $2"
-    )
-    .bind(term_id)
-    .bind(curve_id)
-    .fetch_one(pool)
-    .await
-    .expect("Failed to fetch vault");
+    let position_count: Option<i64> =
+        sqlx::query_scalar("SELECT position_count FROM vault WHERE term_id = $1 AND curve_id = $2")
+            .bind(term_id)
+            .bind(curve_id)
+            .fetch_one(pool)
+            .await
+            .expect("Failed to fetch vault");
 
     assert_eq!(
         position_count.unwrap_or(0),

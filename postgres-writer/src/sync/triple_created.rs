@@ -1,9 +1,10 @@
-
 use serde::{Deserialize, Serialize};
 use sqlx::PgPool;
 use tracing::{debug, error};
 
-use super::utils::{calculate_counter_term_id, ensure_hex_prefix, parse_hex_to_u64, to_eip55_address};
+use super::utils::{
+    calculate_counter_term_id, ensure_hex_prefix, parse_hex_to_u64, to_eip55_address,
+};
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
 
@@ -79,6 +80,9 @@ pub async fn handle_triple_created(
         SyncError::from(e)
     })?;
 
-    debug!("Created TripleCreated record with counter_term_id: {}", counter_term_id);
+    debug!(
+        "Created TripleCreated record with counter_term_id: {}",
+        counter_term_id
+    );
     Ok(())
 }

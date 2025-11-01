@@ -16,22 +16,22 @@
 
 pub mod analytics;
 pub mod config;
-pub mod core;
 pub mod consumer;
-pub mod sync;
-pub mod monitoring;
+pub mod core;
 pub mod error;
 pub mod http_server;
+pub mod monitoring;
 pub mod processors;
+pub mod sync;
 
 // Re-export main types for convenience
 pub use config::Config;
-pub use core::types::{RindexerEvent, TransactionInformation, StreamMessage, PipelineHealth};
-pub use core::pipeline::EventProcessingPipeline;
 pub use core::circuit_breaker::CircuitBreaker;
-pub use monitoring::metrics::{Metrics, MetricsSnapshot};
-pub use error::{SyncError, Result};
+pub use core::pipeline::EventProcessingPipeline;
+pub use core::types::{PipelineHealth, RindexerEvent, StreamMessage, TransactionInformation};
+pub use error::{Result, SyncError};
 pub use http_server::HttpServer;
+pub use monitoring::metrics::{Metrics, MetricsSnapshot};
 
 /// Current version of the library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");

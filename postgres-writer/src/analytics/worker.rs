@@ -2,7 +2,11 @@
 // Consumes term update messages from Redis and updates analytics tables
 
 use super::processor::update_analytics_tables;
-use crate::{consumer::TermUpdateMessage, error::{Result, SyncError}, Config};
+use crate::{
+    consumer::TermUpdateMessage,
+    error::{Result, SyncError},
+    Config,
+};
 use redis::{aio::MultiplexedConnection, Client};
 use sqlx::PgPool;
 use std::collections::HashMap;
@@ -65,7 +69,10 @@ pub async fn start_analytics_worker(
     // Log initial stream state
     match get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await {
         Ok(pending) => {
-            info!("Analytics worker started, {} pending messages in stream", pending);
+            info!(
+                "Analytics worker started, {} pending messages in stream",
+                pending
+            );
         }
         Err(e) => {
             info!("Analytics worker started, processing messages...");
@@ -253,7 +260,10 @@ async fn process_batch(
         return Ok(0);
     }
 
-    let first_msg_id = messages.first().map(|(id, _)| id.as_str()).unwrap_or("none");
+    let first_msg_id = messages
+        .first()
+        .map(|(id, _)| id.as_str())
+        .unwrap_or("none");
     let last_msg_id = messages.last().map(|(id, _)| id.as_str()).unwrap_or("none");
 
     debug!(
@@ -272,7 +282,10 @@ async fn process_batch(
     for (message_id, term_update) in &messages {
         match update_analytics_tables(pool, term_update).await {
             Ok(_) => {
-                debug!("Successfully updated analytics for term {}", term_update.term_id);
+                debug!(
+                    "Successfully updated analytics for term {}",
+                    term_update.term_id
+                );
                 messages_to_ack.push(message_id);
                 successful += 1;
             }

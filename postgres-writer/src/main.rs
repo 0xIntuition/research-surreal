@@ -31,7 +31,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Redis URL: {}", config.redis_url);
     info!("Database URL: {}", config.database_url);
     info!("Streams: {:?}", config.stream_names);
-    info!("Batch size: {}, Workers: {}", config.batch_size, config.workers);
+    info!(
+        "Batch size: {}, Workers: {}",
+        config.batch_size, config.workers
+    );
 
     // Create pipeline
     let pipeline = Arc::new(
@@ -40,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|e| {
                 error!("Failed to create pipeline: {}", e);
                 e
-            })?
+            })?,
     );
 
     // Start analytics worker
@@ -49,7 +52,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let analytics_token = pipeline.get_cancellation_token();
     let analytics_handle = tokio::spawn(async move {
         info!("Spawning analytics worker");
-        if let Err(e) = analytics::start_analytics_worker(analytics_config, analytics_pool, analytics_token).await {
+        if let Err(e) =
+            analytics::start_analytics_worker(analytics_config, analytics_pool, analytics_token)
+                .await
+        {
             error!("Analytics worker error: {}", e);
         } else {
             info!("Analytics worker stopped gracefully");

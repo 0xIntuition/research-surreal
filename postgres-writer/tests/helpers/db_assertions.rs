@@ -1,6 +1,6 @@
 use anyhow::Result;
-use sqlx::PgPool;
 use postgres_writer::sync::utils::to_eip55_address;
+use sqlx::PgPool;
 
 #[derive(Debug, sqlx::FromRow, PartialEq)]
 pub struct AtomRow {
@@ -154,8 +154,7 @@ impl DbAssertions {
         assert_eq!(
             row.position_count, expected_position_count,
             "Position count mismatch for vault {} / {}",
-            term_id,
-            curve_id
+            term_id, curve_id
         );
 
         Ok(row)
@@ -239,7 +238,6 @@ impl DbAssertions {
 
         Ok(())
     }
-
 
     /// Gets the latest block and log index from a position
     pub async fn get_position_last_deposit_info(

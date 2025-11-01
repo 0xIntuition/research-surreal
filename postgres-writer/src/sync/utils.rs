@@ -1,6 +1,6 @@
-use chrono::{DateTime, Utc};
 use crate::error::{Result, SyncError};
 use alloy_primitives::keccak256;
+use chrono::{DateTime, Utc};
 
 pub fn parse_hex_to_u64(hex_str: &str) -> Result<u64> {
     let cleaned = if hex_str.starts_with("0x") || hex_str.starts_with("0X") {
@@ -17,13 +17,12 @@ pub fn parse_hex_to_u64(hex_str: &str) -> Result<u64> {
 pub fn parse_hex_timestamp_to_datetime(hex_str: &str) -> Result<DateTime<Utc>> {
     let timestamp_u64 = parse_hex_to_u64(hex_str)?;
 
-    DateTime::from_timestamp(timestamp_u64 as i64, 0)
-        .ok_or_else(|| {
-            SyncError::ParseError(format!(
-                "Failed to convert timestamp '{}' to datetime",
-                timestamp_u64
-            ))
-        })
+    DateTime::from_timestamp(timestamp_u64 as i64, 0).ok_or_else(|| {
+        SyncError::ParseError(format!(
+            "Failed to convert timestamp '{}' to datetime",
+            timestamp_u64
+        ))
+    })
 }
 
 /// Calculate the counter triple ID for a given triple term ID
@@ -48,8 +47,9 @@ pub fn calculate_counter_term_id(term_id: &str) -> Result<String> {
     };
 
     // Decode hex string to bytes
-    let term_id_bytes = hex::decode(term_id_cleaned)
-        .map_err(|e| SyncError::ParseError(format!("Failed to decode term_id '{}': {}", term_id, e)))?;
+    let term_id_bytes = hex::decode(term_id_cleaned).map_err(|e| {
+        SyncError::ParseError(format!("Failed to decode term_id '{}': {}", term_id, e))
+    })?;
 
     // Calculate COUNTER_SALT = keccak256("COUNTER_SALT")
     let counter_salt = keccak256(b"COUNTER_SALT");
@@ -220,7 +220,10 @@ mod tests {
         // Test with 0x prefix
         let address_with_prefix = "0x5aaeb6053f3e94c9b9a09f33669435e7ef1beaed";
         let result_with_prefix = to_eip55_address(address_with_prefix).unwrap();
-        assert_eq!(result_with_prefix, "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed");
+        assert_eq!(
+            result_with_prefix,
+            "0x5aAeb6053F3E94C9b9A09f33669435E7Ef1BeAed"
+        );
 
         // Test another known EIP-55 address
         // Address: 0xfB6916095ca1df60bB79Ce92cE3Ea74c37c5d359
@@ -239,4 +242,3 @@ mod tests {
         assert!(to_eip55_address(invalid_address).is_err());
     }
 }
-

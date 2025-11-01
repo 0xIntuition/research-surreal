@@ -1,8 +1,8 @@
 use anyhow::Result;
-use redis::aio::MultiplexedConnection;
 use postgres_writer::core::types::RindexerEvent;
+use redis::aio::MultiplexedConnection;
 use sqlx::{postgres::PgPoolOptions, PgPool};
-use testcontainers::{ContainerAsync, runners::AsyncRunner};
+use testcontainers::{runners::AsyncRunner, ContainerAsync};
 use testcontainers_modules::{postgres::Postgres, redis::Redis};
 
 pub struct TestHarness {
@@ -57,8 +57,11 @@ impl TestHarness {
     async fn setup_database(&self) -> Result<()> {
         // Validate database name to prevent SQL injection
         // UUIDs are safe, but we validate format anyway for defense in depth
-        if !self.test_db_name.starts_with("test_") ||
-           !self.test_db_name[5..].chars().all(|c| c.is_ascii_alphanumeric()) {
+        if !self.test_db_name.starts_with("test_")
+            || !self.test_db_name[5..]
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric())
+        {
             return Err(anyhow::anyhow!(
                 "Invalid database name format: {}. Expected 'test_' followed by alphanumeric characters",
                 self.test_db_name
@@ -123,7 +126,7 @@ impl TestHarness {
                 deposited_events,
                 redeemed_events,
                 share_price_changed_events
-            CASCADE"
+            CASCADE",
         )
         .execute(pool)
         .await?;
@@ -176,7 +179,11 @@ impl TestHarness {
     }
 
     /// Waits for events to be processed
-    pub async fn wait_for_processing(&mut self, expected_count: usize, timeout_secs: u64) -> Result<()> {
+    pub async fn wait_for_processing(
+        &mut self,
+        expected_count: usize,
+        timeout_secs: u64,
+    ) -> Result<()> {
         let start = std::time::Instant::now();
         let pool = self.get_pool().await?;
 
@@ -219,17 +226,16 @@ impl TestHarness {
 
         loop {
             // Check if term aggregation has been updated (indicates cascade processing is complete)
-            let exists: bool = sqlx::query_scalar(
-                "SELECT EXISTS(SELECT 1 FROM term WHERE id = $1)"
-            )
-            .bind(term_id)
-            .fetch_one(pool)
-            .await?;
+            let exists: bool =
+                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM term WHERE id = $1)")
+                    .bind(term_id)
+                    .fetch_one(pool)
+                    .await?;
 
             if exists {
                 // Additional check: ensure the term has non-zero updated_at timestamp
                 let is_updated: bool = sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM term WHERE id = $1 AND updated_at IS NOT NULL)"
+                    "SELECT EXISTS(SELECT 1 FROM term WHERE id = $1 AND updated_at IS NOT NULL)",
                 )
                 .bind(term_id)
                 .fetch_one(pool)

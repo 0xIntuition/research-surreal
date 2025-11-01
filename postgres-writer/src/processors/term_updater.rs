@@ -39,11 +39,13 @@ impl TermUpdater {
         .await
         .map_err(|e| SyncError::Sqlx(e))?;
 
-        let (total_assets, total_market_cap) = aggregate.unwrap_or_else(|| {
-            ("0".to_string(), "0".to_string())
-        });
+        let (total_assets, total_market_cap) =
+            aggregate.unwrap_or_else(|| ("0".to_string(), "0".to_string()));
 
-        debug!("Aggregated vault data: assets={}, market_cap={}", total_assets, total_market_cap);
+        debug!(
+            "Aggregated vault data: assets={}, market_cap={}",
+            total_assets, total_market_cap
+        );
 
         // Update or insert term
         let rows_affected = sqlx::query(

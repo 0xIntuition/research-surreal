@@ -1,6 +1,6 @@
+use crate::error::{Result, SyncError};
 use serde::{Deserialize, Serialize};
 use std::env;
-use crate::error::{Result, SyncError};
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
@@ -113,15 +113,21 @@ impl Config {
 
     pub fn validate(&self) -> Result<()> {
         if self.stream_names.is_empty() {
-            return Err(SyncError::Config("At least one stream name is required".to_string()));
+            return Err(SyncError::Config(
+                "At least one stream name is required".to_string(),
+            ));
         }
 
         if self.batch_size == 0 {
-            return Err(SyncError::Config("Batch size must be greater than 0".to_string()));
+            return Err(SyncError::Config(
+                "Batch size must be greater than 0".to_string(),
+            ));
         }
 
         if self.workers == 0 {
-            return Err(SyncError::Config("Number of workers must be greater than 0".to_string()));
+            return Err(SyncError::Config(
+                "Number of workers must be greater than 0".to_string(),
+            ));
         }
 
         Ok(())
