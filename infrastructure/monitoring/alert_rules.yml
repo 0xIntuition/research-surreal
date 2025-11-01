@@ -1,3 +1,21 @@
+## Alert Rules for Redis-PostgreSQL Sync Service
+##
+## Threshold Rationale:
+## - SlowEventTypeProcessing (P95 > 5s): Based on expected database transaction times.
+##   Blockchain events should process quickly (<1s typical). 5s threshold allows for
+##   occasional database contention while catching sustained performance degradation.
+##
+## - SlowCascadeProcessing (P95 > 2s): Cascade updates involve multiple aggregation
+##   queries. 2s threshold is chosen as cascade operations should be faster than full
+##   event processing, while accounting for complex triple/vault aggregations.
+##
+## - DatabaseOperationSpike (2x 1-hour average): Detects unusual activity patterns
+##   that might indicate runaway cascades, retry loops, or unexpected event volumes.
+##   2x multiplier reduces false positives from normal traffic fluctuations.
+##
+## - HighEventTypeFailureRate (>5%): Normal operation should have near-zero failures.
+##   5% allows for transient issues while catching persistent problems early.
+##
 groups:
   - name: redis_postgres_sync_event_type_alerts
     interval: 15s

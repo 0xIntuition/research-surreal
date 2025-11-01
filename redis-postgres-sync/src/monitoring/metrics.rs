@@ -93,6 +93,18 @@ lazy_static! {
     ).unwrap();
 
     // Event type-specific metrics
+    //
+    // IMPORTANT: Event types are bounded to prevent cardinality explosion in Prometheus.
+    // The valid event types are defined by the blockchain contract and are:
+    // - AtomCreated
+    // - TripleCreated
+    // - Deposited
+    // - Redeemed
+    // - SharePriceChanged
+    //
+    // These event types are hardcoded in the smart contract and cannot change without
+    // a contract upgrade. This bounded set ensures safe usage of event_type as a label
+    // dimension in metrics without risking unbounded cardinality growth.
     static ref EVENTS_PROCESSED_BY_TYPE_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
             "redis_postgres_sync_events_processed_by_type_total",
@@ -111,14 +123,14 @@ lazy_static! {
         prometheus::HistogramOpts::new(
             "redis_postgres_sync_event_processing_duration_by_type_seconds",
             "Time spent processing individual events by type in seconds"
-        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
+        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
         &["event_type"]
     ).unwrap();
     static ref CASCADE_PROCESSING_DURATION_HISTOGRAM: prometheus::HistogramVec = prometheus::HistogramVec::new(
         prometheus::HistogramOpts::new(
             "redis_postgres_sync_cascade_processing_duration_seconds",
             "Time spent in cascade processing by event type in seconds"
-        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0]),
+        ).buckets(vec![0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0]),
         &["event_type"]
     ).unwrap();
     static ref DATABASE_OPERATIONS_COUNTER: CounterVec = CounterVec::new(

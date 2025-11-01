@@ -42,7 +42,7 @@ impl EventProcessingPipeline {
                 &config.database_url,
                 Some(&config.redis_url),
                 config.analytics_stream_name.clone(),
-                metrics.as_ref().clone(),
+                (*metrics).clone(),
             )
             .await?
         );

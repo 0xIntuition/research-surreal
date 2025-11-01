@@ -1,3 +1,26 @@
+## Recording Rules for Redis-PostgreSQL Sync Service
+##
+## Division-by-Zero Protection Strategy:
+##
+## Many rules use a dual-protection approach against division by zero:
+##
+## 1. The "> 0" check in the denominator:
+##    Example: (rate(...) + rate(...) > 0)
+##    - Returns the sum only if it's greater than zero
+##    - If sum is zero, the entire expression returns no value (empty result)
+##    - This prevents actual division by zero errors
+##
+## 2. The "OR" fallback:
+##    Example: OR on(event_type) (0 * redis_postgres_sync_events_processed_by_type_total)
+##    - Activates when the main expression returns no value
+##    - Returns 0 for each event_type that exists in the metrics
+##    - Ensures we always have a value to display (either the calculated rate or 0)
+##
+## Why both are needed:
+## - "> 0" protects against division errors
+## - "OR" ensures metrics exist even when no events have been processed yet
+## - Together, they provide graceful handling during startup and low-traffic periods
+##
 groups:
   - name: redis_postgres_sync_event_type_recording_rules
     interval: 15s

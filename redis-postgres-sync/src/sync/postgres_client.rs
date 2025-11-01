@@ -141,26 +141,34 @@ impl PostgresClient {
         })?;
 
         // Record cascade processing duration
+        // NOTE: This measures only the cascade update queries (vault/term aggregations).
+        // Redis publishing operations below are NOT included in this metric, as they
+        // occur after cascade completion. This keeps cascade_duration focused on
+        // database performance monitoring.
         self.metrics.record_cascade_duration(event_type, cascade_start.elapsed());
 
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher_mutex) = &self.redis_publisher {
             // Collect all data needed for publishing BEFORE acquiring the lock
-            // Use a single transaction for all counter_term_id lookups instead of N separate transactions
+            // Use batched transactions for counter_term_id lookups to prevent long-running
+            // transactions that could cause lock contention on high term_id counts
+            const MAX_BATCH_SIZE: usize = 50;
             let term_updater = TermUpdater::new();
             let mut term_data = Vec::new();
 
-            // Begin a single transaction for all lookups
-            let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
+            // Process term_ids in chunks to avoid long-running transactions
+            for chunk in term_ids.chunks(MAX_BATCH_SIZE) {
+                let mut tx = self.pool.begin().await.map_err(|e| SyncError::Sqlx(e))?;
 
-            for term_id in term_ids {
-                // Get counter_term_id for triples using the shared transaction
-                let counter_term_id = term_updater.get_counter_term_id(&mut tx, &term_id).await?;
-                term_data.push((term_id, counter_term_id));
+                for term_id in chunk {
+                    // Get counter_term_id for triples using the shared transaction
+                    let counter_term_id = term_updater.get_counter_term_id(&mut tx, term_id).await?;
+                    term_data.push((term_id.clone(), counter_term_id));
+                }
+
+                // Commit after each chunk
+                tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
             }
-
-            // Commit once after all lookups
-            tx.commit().await.map_err(|e| SyncError::Sqlx(e))?;
 
             // Now acquire the lock and publish all messages quickly
             let mut publisher = publisher_mutex.lock().await;

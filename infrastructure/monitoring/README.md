@@ -269,6 +269,7 @@ See individual runbooks in `docs/runbooks/` for detailed information on each ale
 - `redis_postgres_sync_cascade_failures_total` - Cascade failures after successful event commit
 - `redis_postgres_sync_event_processing_duration_by_type_seconds` - Processing latency
 - `redis_postgres_sync_cascade_processing_duration_seconds` - Cascade latency
+  - **Note**: Measures ONLY cascade update queries (vault/term aggregations), excludes Redis publishing
 - `redis_postgres_sync_database_operations_total` - Database operations by type and operation
 
 ### Recording Rules
@@ -286,13 +287,38 @@ See `recording_rules.yml` for the complete list.
 
 Access Grafana at http://localhost:3000 (default credentials: admin/admin).
 
-The main dashboard includes:
-- Event processing rates by type
-- Failure rates and error metrics
-- Processing latency (P50, P95, P99)
-- Cascade performance metrics
-- Database operation rates
-- Event distribution pie chart
+### Main Dashboard: Redis-PostgreSQL Sync Monitoring
+
+The dashboard provides comprehensive visibility into event processing pipeline performance with the following panels:
+
+**Event Processing Overview:**
+- **Event Processing Rate by Type** - Real-time throughput for each blockchain event type (AtomCreated, TripleCreated, Deposited, Redeemed, SharePriceChanged)
+- **Success vs Failure Rates** - Side-by-side comparison showing healthy processing vs errors
+- **Event Distribution** - Pie chart showing the breakdown of event types being processed
+
+**Performance Metrics:**
+- **Event Processing Duration (P50, P95, P99)** - Latency percentiles by event type
+  - P50: Median processing time (typical case)
+  - P95: 95th percentile (catches slower outliers)
+  - P99: 99th percentile (catches worst-case scenarios)
+- **Cascade Processing Duration** - Time spent in database aggregation updates
+  - Note: Excludes Redis publishing, focuses on database performance
+
+**Database Operations:**
+- **Database Operations Rate by Type** - Operations per second for each event type and operation
+- **Operations Breakdown** - Shows distribution across position_update, vault_aggregation, term_aggregation, etc.
+
+**Health Indicators:**
+- **Failure Rate Percentage** - Calculated failure rate with threshold indicators
+- **Cascade Overhead Percentage** - Shows how much of total processing time is spent in cascade updates
+- **Cascade Failures** - Tracks failures that occur after successful event commits
+
+**Additional Features:**
+- Auto-refresh every 5 seconds for real-time monitoring
+- Time range selector (default: last 1 hour)
+- Event type filtering on all panels
+- Hover tooltips with exact values
+- Alert status indicators linked to Prometheus alerts
 
 ## Troubleshooting
 
