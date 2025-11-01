@@ -25,6 +25,21 @@ pub struct EventProcessingPipeline {
     cancellation_token: CancellationToken,
 }
 
+impl Clone for EventProcessingPipeline {
+    fn clone(&self) -> Self {
+        Self {
+            config: self.config.clone(),
+            redis_consumer: self.redis_consumer.clone(),
+            postgres_client: self.postgres_client.clone(),
+            circuit_breaker: self.circuit_breaker.clone(),
+            metrics: self.metrics.clone(),
+            is_running: self.is_running.clone(),
+            shutdown_sender: self.shutdown_sender.clone(),
+            cancellation_token: self.cancellation_token.clone(),
+        }
+    }
+}
+
 impl EventProcessingPipeline {
     pub async fn new(config: Config) -> Result<Self> {
         info!("Initializing event processing pipeline");

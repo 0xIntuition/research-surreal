@@ -14,6 +14,7 @@ impl VaultUpdater {
     /// Update vault metrics from position table
     /// Calculates:
     /// - position_count: count of positions with shares > 0
+    /// - total_assets: calculated from total_shares * current_share_price, or from position deposits if no price data
     /// - market_cap: recalculated from current_share_price * total_shares
     pub async fn update_vault_from_positions(
         &self,
@@ -23,14 +24,17 @@ impl VaultUpdater {
     ) -> Result<()> {
         debug!("Updating vault from positions: term={}, curve={}", term_id, curve_id);
 
-        // Count active positions for this vault
-        let position_count: i64 = sqlx::query_scalar(
+        // Get position aggregates for this vault in a single query
+        let (position_count, position_net_assets): (i64, Option<String>) = sqlx::query_as(
             r#"
-            SELECT COUNT(*)
+            SELECT
+                COUNT(*) FILTER (WHERE shares > 0) as position_count,
+                COALESCE(
+                    SUM(total_deposit_assets_after_total_fees - total_redeem_assets_for_receiver),
+                    0
+                )::text as position_net_assets
             FROM position
-            WHERE term_id = $1
-              AND curve_id = $2
-              AND shares > 0
+            WHERE term_id = $1 AND curve_id = $2
             "#,
         )
         .bind(term_id)
@@ -39,14 +43,26 @@ impl VaultUpdater {
         .await
         .map_err(|e| SyncError::Sqlx(e))?;
 
-        debug!("Found {} active positions for vault", position_count);
+        let position_net_assets = position_net_assets.unwrap_or_else(|| "0".to_string());
 
-        // Update vault with new position count and recalculate market_cap
-        // Use CASE to detect overflow and set to NULL if it occurs
+        debug!("Found {} active positions for vault, net assets from positions: {}",
+               position_count, position_net_assets);
+
+        // Update vault with new metrics
+        // For total_assets:
+        // - If we have price data (from SharePriceChanged events), use total_shares * current_share_price / 1e18
+        // - If we don't have price data yet (only deposits), use sum of position deposits as a fallback
         let rows_affected = sqlx::query(
             r#"
             UPDATE vault
             SET position_count = $1,
+                total_assets = CASE
+                    -- If we have valid price data, calculate from shares and price
+                    WHEN current_share_price > 0 AND total_shares IS NOT NULL THEN
+                        (total_shares * current_share_price) / 1000000000000000000
+                    -- Otherwise, use pre-calculated sum of deposits from positions
+                    ELSE $4::numeric(78,0)
+                END,
                 market_cap = CASE
                     WHEN total_shares IS NULL OR current_share_price IS NULL THEN NULL
                     WHEN total_shares = 0 OR current_share_price = 0 THEN 0
@@ -63,6 +79,7 @@ impl VaultUpdater {
         .bind(position_count)
         .bind(term_id)
         .bind(curve_id)
+        .bind(&position_net_assets)
         .execute(&mut **tx)
         .await
         .map_err(|e| SyncError::Sqlx(e))?
