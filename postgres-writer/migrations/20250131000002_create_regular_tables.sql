@@ -61,6 +61,10 @@ CREATE TABLE position (
     total_deposit_assets_after_total_fees NUMERIC(78, 0) NOT NULL DEFAULT 0,
     total_redeem_assets_for_receiver NUMERIC(78, 0) NOT NULL DEFAULT 0,
     -- Ordering fields - track last processed event for this position
+    -- Unified tracking for shares (compares across deposits AND redeems)
+    last_shares_event_block BIGINT,
+    last_shares_event_log_index BIGINT,
+    -- Separate tracking for deposit/redeem accumulation totals
     last_deposit_block BIGINT,
     last_deposit_log_index BIGINT,
     last_redeem_block BIGINT,

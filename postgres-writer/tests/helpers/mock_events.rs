@@ -175,7 +175,48 @@ impl EventBuilder {
             "curveId": DEFAULT_CURVE_ID,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
-            "totalShares": (shares * 2).to_string(),
+            // In real events, totalShares represents user's balance after deposit
+            // For test simplicity, we use shares value as the final balance
+            "totalShares": shares.to_string(),
+            "assetsAfterFees": assets.to_string(),
+            "vaultType": 0,
+            "transaction_information": self.transaction_info(),
+        });
+
+        RindexerEvent {
+            event_name: "Deposited".to_string(),
+            event_signature_hash: "0x789abcdef123456".to_string(),
+            event_data,
+            network: self.network.clone(),
+        }
+    }
+
+    /// Creates Deposited event with explicit totalShares
+    ///
+    /// # Parameters
+    /// - `shares_delta`: The shares minted in this transaction (delta)
+    /// - `total_shares`: The user's total share balance after the deposit (cumulative)
+    pub fn deposited_with_total(
+        &self,
+        account_id: &str,
+        term_id: &str,
+        assets: u64,
+        shares_delta: u64,
+        total_shares: u64,
+    ) -> RindexerEvent {
+        validate_address(account_id, "account_id")
+            .expect("Invalid account_id in deposited_with_total");
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in deposited_with_total");
+
+        let event_data = json!({
+            "sender": account_id,
+            "receiver": account_id,
+            "termId": term_id,
+            "curveId": DEFAULT_CURVE_ID,
+            "assets": assets.to_string(),
+            "shares": shares_delta.to_string(),
+            "totalShares": total_shares.to_string(),
             "assetsAfterFees": assets.to_string(),
             "vaultType": 0,
             "transaction_information": self.transaction_info(),
@@ -210,7 +251,48 @@ impl EventBuilder {
             "curveId": DEFAULT_CURVE_ID,
             "assets": assets.to_string(),
             "shares": shares.to_string(),
-            "totalShares": "0",
+            // In real events, totalShares represents user's balance after redemption
+            // For test simplicity, we use shares value as the final balance
+            "totalShares": shares.to_string(),
+            "fees": "0",
+            "vaultType": 0,
+            "transaction_information": self.transaction_info(),
+        });
+
+        RindexerEvent {
+            event_name: "Redeemed".to_string(),
+            event_signature_hash: "0xabcdef123456789".to_string(),
+            event_data,
+            network: self.network.clone(),
+        }
+    }
+
+    /// Creates Redeemed event with explicit totalShares
+    ///
+    /// # Parameters
+    /// - `shares_delta`: The shares redeemed in this transaction (delta)
+    /// - `total_shares`: The user's total share balance after the redemption (cumulative)
+    pub fn redeemed_with_total(
+        &self,
+        account_id: &str,
+        term_id: &str,
+        shares_delta: u64,
+        assets: u64,
+        total_shares: u64,
+    ) -> RindexerEvent {
+        validate_address(account_id, "account_id")
+            .expect("Invalid account_id in redeemed_with_total");
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in redeemed_with_total");
+
+        let event_data = json!({
+            "sender": account_id,
+            "receiver": account_id,
+            "termId": term_id,
+            "curveId": DEFAULT_CURVE_ID,
+            "assets": assets.to_string(),
+            "shares": shares_delta.to_string(),
+            "totalShares": total_shares.to_string(),
             "fees": "0",
             "vaultType": 0,
             "transaction_information": self.transaction_info(),
