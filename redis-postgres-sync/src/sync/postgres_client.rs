@@ -41,7 +41,6 @@ impl PostgresClient {
         const MAX_RETRIES: u32 = 5;
         const INITIAL_DELAY_MS: u64 = 1000;
 
-        let mut last_error = None;
         for attempt in 1..=MAX_RETRIES {
             match sqlx::migrate!("./migrations").run(&pool).await {
                 Ok(_) => {
@@ -49,19 +48,18 @@ impl PostgresClient {
                     break;
                 }
                 Err(e) => {
-                    last_error = Some(e);
                     if attempt < MAX_RETRIES {
                         let delay_ms = INITIAL_DELAY_MS * 2_u64.pow(attempt - 1);
                         warn!(
                             "Migration attempt {}/{} failed, retrying in {}ms: {}",
-                            attempt, MAX_RETRIES, delay_ms, last_error.as_ref().unwrap()
+                            attempt, MAX_RETRIES, delay_ms, e
                         );
                         sleep(Duration::from_millis(delay_ms)).await;
                     } else {
-                        error!("Failed to run migrations after {} attempts: {}", MAX_RETRIES, last_error.as_ref().unwrap());
+                        error!("Failed to run migrations after {} attempts: {}", MAX_RETRIES, e);
                         return Err(SyncError::Connection(format!(
                             "Failed to run migrations after {} attempts: {}",
-                            MAX_RETRIES, last_error.unwrap()
+                            MAX_RETRIES, e
                         )));
                     }
                 }

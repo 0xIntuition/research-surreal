@@ -38,7 +38,7 @@ impl TestHarness {
             postgres_port, test_db_name
         );
 
-        let mut harness = Self {
+        let harness = Self {
             _redis_container: redis_container,
             _postgres_container: postgres_container,
             redis_url,
@@ -202,49 +202,6 @@ impl TestHarness {
                     "Timeout waiting for events. Expected: {}, Got: {}",
                     expected_count,
                     count
-                ));
-            }
-
-            tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
-        }
-
-        Ok(())
-    }
-
-    /// Waits for analytics to be processed (separate from event processing)
-    pub async fn wait_for_analytics(
-        &mut self,
-        term_id: &str,
-        counter_term_id: Option<&str>,
-        timeout_secs: u64,
-    ) -> Result<()> {
-        let start = std::time::Instant::now();
-        let pool = self.get_pool().await?;
-
-        loop {
-            let exists: bool = if let Some(counter) = counter_term_id {
-                sqlx::query_scalar(
-                    "SELECT EXISTS(SELECT 1 FROM triple_term WHERE term_id = $1 AND counter_term_id = $2)",
-                )
-                .bind(term_id)
-                .bind(counter)
-                .fetch_one(pool)
-                .await?
-            } else {
-                sqlx::query_scalar("SELECT EXISTS(SELECT 1 FROM term WHERE id = $1)")
-                    .bind(term_id)
-                    .fetch_one(pool)
-                    .await?
-            };
-
-            if exists {
-                break;
-            }
-
-            if start.elapsed().as_secs() > timeout_secs {
-                return Err(anyhow::anyhow!(
-                    "Timeout waiting for analytics for term: {}",
-                    term_id
                 ));
             }
 

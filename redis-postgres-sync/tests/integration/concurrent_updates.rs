@@ -53,7 +53,7 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
         .expect("Failed to get database pool");
 
     // Vault should have exactly 10 positions (advisory locks should prevent race conditions)
-    let vault = DbAssertions::assert_vault_state(pool, term_id, curve_id, 10)
+    let _vault = DbAssertions::assert_vault_state(pool, term_id, curve_id, 10)
         .await
         .expect("Failed to verify vault state");
 

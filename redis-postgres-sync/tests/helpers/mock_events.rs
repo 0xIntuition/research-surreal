@@ -91,11 +91,6 @@ impl EventBuilder {
         self
     }
 
-    pub fn with_network(mut self, network: &str) -> Self {
-        self.network = network.to_string();
-        self
-    }
-
     /// Creates AtomCreated event
     pub fn atom_created(&self, term_id: &str, creator: &str) -> RindexerEvent {
         // Validate inputs to catch errors early
@@ -320,36 +315,6 @@ impl NonSequentialScenario {
         self
     }
 
-    /// Adds price changes out of order
-    pub fn add_scrambled_price_changes(mut self, term_id: &str) -> Self {
-        let builder = EventBuilder::new();
-
-        // Add price changes: block DEFAULT_BLOCK_START+8, then +2, then +5
-        self.events.push(
-            builder
-                .clone()
-                .with_block(DEFAULT_BLOCK_START + 8)
-                .with_log_index(0)
-                .share_price_changed(term_id, 2000000000000000000), // 2.0 ETH
-        );
-        self.events.push(
-            builder
-                .clone()
-                .with_block(DEFAULT_BLOCK_START + 2)
-                .with_log_index(0)
-                .share_price_changed(term_id, 1200000000000000000), // 1.2 ETH
-        );
-        self.events.push(
-            builder
-                .clone()
-                .with_block(DEFAULT_BLOCK_START + 5)
-                .with_log_index(0)
-                .share_price_changed(term_id, 1500000000000000000), // 1.5 ETH
-        );
-
-        self
-    }
-
     pub fn build(self) -> Vec<RindexerEvent> {
         self.events
     }
@@ -394,7 +359,7 @@ mod tests {
         assert_eq!(tx_info.get("block_number").unwrap().as_u64().unwrap(), 2000);
         assert_eq!(
             tx_info.get("log_index").unwrap().as_str().unwrap(),
-            "5"
+            "0x5"
         );
     }
 

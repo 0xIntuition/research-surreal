@@ -127,48 +127,6 @@ impl RedisStreamConsumer {
         })
     }
 
-    async fn read_pending_messages(&self, batch_size: usize) -> Result<Vec<StreamMessage>> {
-        debug!("Building XREADGROUP command: GROUP {} {} COUNT {} STREAMS", 
-               self.consumer_group, self.consumer_name, batch_size);
-        debug!("Stream names: {:?}", self.stream_names);
-        
-        let mut cmd = redis::cmd("XREADGROUP");
-        cmd.arg("GROUP")
-            .arg(&self.consumer_group)
-            .arg(&self.consumer_name)
-            .arg("COUNT")
-            .arg(batch_size)
-            .arg("STREAMS");
-
-        // Add stream names
-        for stream_name in &self.stream_names {
-            cmd.arg(stream_name);
-        }
-
-        // Add "0-0" for each stream to read pending messages
-        for _ in &self.stream_names {
-            cmd.arg("0-0");
-        }
-
-        debug!("Executing Redis command for pending messages");
-        
-        // Let's also check what XINFO CONSUMERS shows for debugging
-        let info_result: redis::Value = redis::cmd("XINFO")
-            .arg("CONSUMERS")
-            .arg(&self.stream_names[0])  // Check first stream
-            .arg(&self.consumer_group)
-            .query_async(&mut self.connection.clone()).await
-            .map_err(SyncError::Redis)?;
-        debug!("XINFO CONSUMERS result: {:?}", info_result);
-        
-        let result: redis::Value = cmd.query_async(&mut self.connection.clone()).await
-            .map_err(SyncError::Redis)?;
-
-        let messages = self.parse_redis_response(result)?;
-        debug!("Pending messages query returned {} messages", messages.len());
-        Ok(messages)
-    }
-
     async fn claim_idle_messages_for_stream(&self, stream_name: &str, count: usize) -> Result<Vec<StreamMessage>> {
         // Use XPENDING to get pending message IDs for this consumer specifically
         let pending_result: redis::Value = redis::cmd("XPENDING")
