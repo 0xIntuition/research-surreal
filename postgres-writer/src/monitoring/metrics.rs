@@ -9,6 +9,7 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
 use tokio::sync::RwLock;
+use tracing::warn;
 
 lazy_static! {
     static ref REGISTRY: Registry = Registry::new();
@@ -215,99 +216,150 @@ pub struct Metrics {
 impl Metrics {
     pub fn new() -> Self {
         // Register metrics with Prometheus registry
+        // Note: Registration failures are logged but not fatal, allowing the service to continue
         REGISTRY
             .register(Box::new(EVENTS_PROCESSED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register EVENTS_PROCESSED_COUNTER: {}", e));
         REGISTRY
             .register(Box::new(EVENTS_FAILED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register EVENTS_FAILED_COUNTER: {}", e));
         REGISTRY
             .register(Box::new(BATCHES_PROCESSED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register BATCHES_PROCESSED_COUNTER: {}", e));
         REGISTRY
             .register(Box::new(PROCESSING_DURATION_HISTOGRAM.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register PROCESSING_DURATION_HISTOGRAM: {}", e));
         REGISTRY
             .register(Box::new(EVENTS_PER_SECOND_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register EVENTS_PER_SECOND_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(PEAK_EVENTS_PER_SECOND_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register PEAK_EVENTS_PER_SECOND_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(REDIS_HEALTHY_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register REDIS_HEALTHY_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(POSTGRES_HEALTHY_GAUGE.clone()))
-            .ok();
-        REGISTRY.register(Box::new(UPTIME_GAUGE.clone())).ok();
+            .unwrap_or_else(|e| warn!("Failed to register POSTGRES_HEALTHY_GAUGE: {}", e));
+        REGISTRY
+            .register(Box::new(UPTIME_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register UPTIME_GAUGE: {}", e));
 
         // Register Redis Streams metrics
-        REGISTRY.register(Box::new(STREAM_LAG_GAUGE.clone())).ok();
+        REGISTRY
+            .register(Box::new(STREAM_LAG_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register STREAM_LAG_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(STREAM_PENDING_MESSAGES_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register STREAM_PENDING_MESSAGES_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(STREAM_MESSAGES_CLAIMED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register STREAM_MESSAGES_CLAIMED_COUNTER: {}", e));
         REGISTRY
             .register(Box::new(STREAM_BATCH_SIZE_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register STREAM_BATCH_SIZE_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE: {}",
+                    e
+                )
+            });
         REGISTRY
             .register(Box::new(STREAM_MESSAGES_CONSUMED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!("Failed to register STREAM_MESSAGES_CONSUMED_COUNTER: {}", e)
+            });
 
         // Register event type-specific metrics
         REGISTRY
             .register(Box::new(EVENTS_PROCESSED_BY_TYPE_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!("Failed to register EVENTS_PROCESSED_BY_TYPE_COUNTER: {}", e)
+            });
         REGISTRY
             .register(Box::new(EVENTS_FAILED_BY_TYPE_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register EVENTS_FAILED_BY_TYPE_COUNTER: {}", e));
         REGISTRY
             .register(Box::new(
                 EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM.clone(),
             ))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM: {}",
+                    e
+                )
+            });
         REGISTRY
             .register(Box::new(CASCADE_PROCESSING_DURATION_HISTOGRAM.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register CASCADE_PROCESSING_DURATION_HISTOGRAM: {}",
+                    e
+                )
+            });
         REGISTRY
             .register(Box::new(DATABASE_OPERATIONS_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register DATABASE_OPERATIONS_COUNTER: {}", e));
         REGISTRY
             .register(Box::new(CASCADE_FAILURES_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register CASCADE_FAILURES_COUNTER: {}", e));
 
         // Register analytics worker metrics
         REGISTRY
             .register(Box::new(ANALYTICS_MESSAGES_CONSUMED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register ANALYTICS_MESSAGES_CONSUMED_COUNTER: {}",
+                    e
+                )
+            });
         REGISTRY
             .register(Box::new(ANALYTICS_MESSAGES_PENDING_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!("Failed to register ANALYTICS_MESSAGES_PENDING_GAUGE: {}", e)
+            });
         REGISTRY
             .register(Box::new(ANALYTICS_PROCESSING_DURATION_HISTOGRAM.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register ANALYTICS_PROCESSING_DURATION_HISTOGRAM: {}",
+                    e
+                )
+            });
         REGISTRY
             .register(Box::new(ANALYTICS_BATCH_SIZE_GAUGE.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register ANALYTICS_BATCH_SIZE_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM: {}",
+                    e
+                )
+            });
         REGISTRY
             .register(Box::new(ANALYTICS_MESSAGES_FAILED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register ANALYTICS_MESSAGES_FAILED_COUNTER: {}",
+                    e
+                )
+            });
 
         // Register term updates publishing metrics
         REGISTRY
             .register(Box::new(TERM_UPDATES_PUBLISHED_COUNTER.clone()))
-            .ok();
+            .unwrap_or_else(|e| warn!("Failed to register TERM_UPDATES_PUBLISHED_COUNTER: {}", e));
         REGISTRY
             .register(Box::new(TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM.clone()))
-            .ok();
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM: {}",
+                    e
+                )
+            });
 
         Self {
             events_processed: Arc::new(AtomicU64::new(0)),

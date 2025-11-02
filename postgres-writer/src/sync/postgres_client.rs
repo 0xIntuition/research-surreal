@@ -15,6 +15,23 @@ use crate::processors::CascadeProcessor;
 pub struct PostgresClient {
     pool: PgPool,
     cascade_processor: CascadeProcessor,
+    // TODO: Redis Publisher Lock Contention Issue
+    // PERFORMANCE BOTTLENECK: The Mutex wrapper around RedisPublisher creates a serialization
+    // point that impacts throughput under high load. All concurrent cascade operations must
+    // wait to acquire this lock when publishing term updates, reducing parallelism.
+    //
+    // Impact: Under high event throughput, multiple event handlers may process simultaneously
+    // but then queue at this single lock point, limiting overall system throughput.
+    //
+    // Recommended solutions:
+    // 1. MPSC Channel Approach: Create a dedicated publisher task that receives messages via
+    //    an unbounded/bounded channel. This provides better isolation and eliminates lock
+    //    contention entirely. Event handlers send term updates via channel.send() which is
+    //    lock-free.
+    // 2. DashMap Approach: Replace Mutex with DashMap<(), RedisPublisher> or similar
+    //    concurrent data structure for lock-free access patterns.
+    //
+    // Reference: PR #11 review comment (2025-11-02)
     redis_publisher: Option<Mutex<RedisPublisher>>,
     metrics: Metrics,
 }

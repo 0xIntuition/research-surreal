@@ -94,8 +94,12 @@ pub async fn start_analytics_worker(
     const INITIAL_BACKOFF_SECS: u64 = 1;
     const MAX_CONSECUTIVE_FAILURES: u32 = 10;
 
-    // Rate limiting: max messages per second
-    // This prevents overwhelming the system during message floods
+    // Rate limiting configuration
+    // Strategy: Enforce a minimum delay between batches to respect both:
+    // 1. Configured minimum batch interval (prevents too-frequent batches)
+    // 2. Maximum messages per second rate limit (prevents system overload)
+    //
+    // The actual delay used is the maximum of these two constraints.
     let max_messages_per_second = config.max_messages_per_second;
     let min_batch_interval_ms = config.min_batch_interval_ms;
 
@@ -152,20 +156,29 @@ pub async fn start_analytics_worker(
                                 last_summary_time = std::time::Instant::now();
                             }
 
-                            // Rate limiting: enforce minimum interval between batches
-                            let batch_elapsed = last_batch_time.elapsed();
-                            if batch_elapsed.as_millis() < min_batch_interval_ms as u128 {
-                                let sleep_ms = min_batch_interval_ms - batch_elapsed.as_millis() as u64;
-                                tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
-                            }
+                            // Rate limiting: enforce delay based on both batch interval and rate limit
+                            // Calculate required delay to respect rate limit for this batch
+                            let rate_limit_delay_ms = if max_messages_per_second > 0 {
+                                // Calculate minimum ms per message based on rate limit
+                                let ms_per_message = 1000.0 / max_messages_per_second as f64;
+                                // For this batch size, we need to ensure adequate spacing
+                                (ms_per_message * processed_count as f64) as u64
+                            } else {
+                                0 // No rate limiting if set to 0
+                            };
 
-                            // Check if we're exceeding rate limit
-                            if rate > max_messages_per_second as f64 {
-                                warn!(
-                                    "Processing rate ({:.2} msg/s) exceeds limit ({} msg/s), throttling...",
-                                    rate, max_messages_per_second
+                            // Use the maximum of configured minimum interval and rate-based delay
+                            let required_delay_ms = std::cmp::max(min_batch_interval_ms, rate_limit_delay_ms);
+
+                            // Enforce the delay if needed
+                            let batch_elapsed = last_batch_time.elapsed();
+                            if batch_elapsed.as_millis() < required_delay_ms as u128 {
+                                let sleep_ms = required_delay_ms - batch_elapsed.as_millis() as u64;
+                                debug!(
+                                    "Rate limiting: sleeping {}ms (batch_interval={}, rate_limit_delay={}, actual={})",
+                                    sleep_ms, min_batch_interval_ms, rate_limit_delay_ms, required_delay_ms
                                 );
-                                tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
+                                tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
                             }
 
                             last_batch_time = std::time::Instant::now();
