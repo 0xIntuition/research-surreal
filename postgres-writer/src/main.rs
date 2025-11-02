@@ -49,12 +49,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Start analytics worker
     let analytics_config = config.clone();
     let analytics_pool = pipeline.get_pool().clone();
+    let analytics_metrics = pipeline.metrics.clone();
     let analytics_token = pipeline.get_cancellation_token();
     let analytics_handle = tokio::spawn(async move {
         info!("Spawning analytics worker");
-        if let Err(e) =
-            analytics::start_analytics_worker(analytics_config, analytics_pool, analytics_token)
-                .await
+        if let Err(e) = analytics::start_analytics_worker(
+            analytics_config,
+            analytics_pool,
+            analytics_metrics,
+            analytics_token,
+        )
+        .await
         {
             error!("Analytics worker error: {e}");
         } else {

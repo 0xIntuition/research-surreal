@@ -4,9 +4,11 @@
 use crate::{
     consumer::TermUpdateMessage,
     error::{Result, SyncError},
+    monitoring::metrics::Metrics,
 };
 use alloy_primitives::keccak256;
 use sqlx::PgPool;
+use std::sync::Arc;
 use tracing::debug;
 
 const TRIPLE_BATCH_SIZE: i64 = 100;
@@ -42,7 +44,11 @@ async fn acquire_triple_lock(
     Ok(())
 }
 
-pub async fn update_analytics_tables(pool: &PgPool, term_update: &TermUpdateMessage) -> Result<()> {
+pub async fn update_analytics_tables(
+    pool: &PgPool,
+    metrics: &Arc<Metrics>,
+    term_update: &TermUpdateMessage,
+) -> Result<()> {
     // Process triples in batches to avoid loading too many into memory at once
     let mut offset = 0i64;
     let mut total_processed = 0usize;
@@ -170,6 +176,9 @@ pub async fn update_analytics_tables(pool: &PgPool, term_update: &TermUpdateMess
             total_processed, term_update.term_id
         );
     }
+
+    // Record how many triples were affected by this term update
+    metrics.record_analytics_affected_triples(total_processed);
 
     Ok(())
 }

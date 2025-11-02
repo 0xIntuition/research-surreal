@@ -1,4 +1,5 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
@@ -9,13 +10,30 @@ use crate::consumer::RedisPublisher;
 use crate::core::types::{RindexerEvent, TransactionInformation};
 use crate::error::{Result, SyncError};
 use crate::monitoring::Metrics;
-use crate::processors::{CascadeProcessor, TermUpdater};
+use crate::processors::CascadeProcessor;
 
 pub struct PostgresClient {
     pool: PgPool,
     cascade_processor: CascadeProcessor,
+    // TODO: Redis Publisher Lock Contention Issue
+    // PERFORMANCE BOTTLENECK: The Mutex wrapper around RedisPublisher creates a serialization
+    // point that impacts throughput under high load. All concurrent cascade operations must
+    // wait to acquire this lock when publishing term updates, reducing parallelism.
+    //
+    // Impact: Under high event throughput, multiple event handlers may process simultaneously
+    // but then queue at this single lock point, limiting overall system throughput.
+    //
+    // Recommended solutions:
+    // 1. MPSC Channel Approach: Create a dedicated publisher task that receives messages via
+    //    an unbounded/bounded channel. This provides better isolation and eliminates lock
+    //    contention entirely. Event handlers send term updates via channel.send() which is
+    //    lock-free.
+    // 2. DashMap Approach: Replace Mutex with DashMap<(), RedisPublisher> or similar
+    //    concurrent data structure for lock-free access patterns.
+    //
+    // Reference: PR #11 review comment (2025-11-02)
     redis_publisher: Option<Mutex<RedisPublisher>>,
-    metrics: Metrics,
+    metrics: Arc<Metrics>,
 }
 
 impl PostgresClient {
@@ -24,7 +42,7 @@ impl PostgresClient {
         pool_size: u32,
         redis_url: Option<&str>,
         analytics_stream_name: String,
-        metrics: Metrics,
+        metrics: Arc<Metrics>,
     ) -> Result<Self> {
         // Create connection pool
         let pool = PgPoolOptions::new()
@@ -68,7 +86,7 @@ impl PostgresClient {
 
         // Initialize Redis publisher if URL provided
         let redis_publisher = if let Some(url) = redis_url {
-            match RedisPublisher::new(url, analytics_stream_name).await {
+            match RedisPublisher::new(url, analytics_stream_name, metrics.clone()).await {
                 Ok(publisher) => Some(Mutex::new(publisher)),
                 Err(e) => {
                     warn!("Failed to initialize Redis publisher: {}. Analytics updates will be disabled.", e);
@@ -164,35 +182,11 @@ impl PostgresClient {
 
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher_mutex) = &self.redis_publisher {
-            // Collect all data needed for publishing BEFORE acquiring the lock
-            // Use batched transactions for counter_term_id lookups to prevent long-running
-            // transactions that could cause lock contention on high term_id counts
-            const MAX_BATCH_SIZE: usize = 50;
-            let term_updater = TermUpdater::new();
-            let mut term_data = Vec::new();
-
-            // Process term_ids in chunks to avoid long-running transactions
-            for chunk in term_ids.chunks(MAX_BATCH_SIZE) {
-                let mut tx = self.pool.begin().await.map_err(SyncError::Sqlx)?;
-
-                for term_id in chunk {
-                    // Get counter_term_id for triples using the shared transaction
-                    let counter_term_id =
-                        term_updater.get_counter_term_id(&mut tx, term_id).await?;
-                    term_data.push((term_id.clone(), counter_term_id));
-                }
-
-                // Commit after each chunk
-                tx.commit().await.map_err(SyncError::Sqlx)?;
-            }
-
-            // Now acquire the lock and publish all messages quickly
+            // Acquire lock and publish term updates
+            // No database queries needed - analytics worker will query for affected triples
             let mut publisher = publisher_mutex.lock().await;
-            for (term_id, counter_term_id) in term_data {
-                if let Err(e) = publisher
-                    .publish_term_update(&term_id, counter_term_id.as_deref())
-                    .await
-                {
+            for term_id in &term_ids {
+                if let Err(e) = publisher.publish_term_update(term_id).await {
                     warn!("Failed to publish term update to Redis: {}", e);
                     // Don't fail the whole operation if Redis publish fails
                 }

@@ -63,7 +63,7 @@ impl EventProcessingPipeline {
                 config.database_pool_size as u32,
                 Some(&config.redis_url),
                 config.analytics_stream_name.clone(),
-                (*metrics).clone(),
+                metrics.clone(),
             )
             .await?,
         );
