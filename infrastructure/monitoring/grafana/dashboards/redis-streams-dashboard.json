@@ -397,7 +397,7 @@
         {
           "expr": "redis_stream_length",
           "interval": "",
-          "legendFormat": "{{key}} length",
+          "legendFormat": "{{stream}}",
           "refId": "A"
         }
       ],
