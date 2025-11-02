@@ -3,7 +3,10 @@ use serde::{Deserialize, Serialize};
 use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::{error::{Result, SyncError}, monitoring::metrics::Metrics};
+use crate::{
+    error::{Result, SyncError},
+    monitoring::metrics::Metrics,
+};
 
 /// Redis publisher for analytics updates
 /// Used to notify the analytics worker of term updates
@@ -41,10 +44,7 @@ impl RedisPublisher {
     }
 
     /// Publish a term update to the analytics stream
-    pub async fn publish_term_update(
-        &mut self,
-        term_id: &str,
-    ) -> Result<()> {
+    pub async fn publish_term_update(&mut self, term_id: &str) -> Result<()> {
         let start_time = std::time::Instant::now();
 
         let message = TermUpdateMessage {
@@ -66,7 +66,8 @@ impl RedisPublisher {
 
         // Record metrics
         self.metrics.record_term_update_published();
-        self.metrics.record_term_updates_publish_duration(start_time.elapsed());
+        self.metrics
+            .record_term_updates_publish_duration(start_time.elapsed());
 
         debug!(
             "Published to stream '{}': term={}, message_id={}",
@@ -76,10 +77,7 @@ impl RedisPublisher {
     }
 
     /// Publish multiple term updates in a single pipeline for efficiency
-    pub async fn publish_term_updates_batch(
-        &mut self,
-        term_ids: &[String],
-    ) -> Result<()> {
+    pub async fn publish_term_updates_batch(&mut self, term_ids: &[String]) -> Result<()> {
         if term_ids.is_empty() {
             return Ok(());
         }
@@ -118,7 +116,8 @@ impl RedisPublisher {
         for _ in 0..term_ids.len() {
             self.metrics.record_term_update_published();
         }
-        self.metrics.record_term_updates_publish_duration(start_time.elapsed());
+        self.metrics
+            .record_term_updates_publish_duration(start_time.elapsed());
 
         let first_id = message_ids.first().map(|s| s.as_str()).unwrap_or("none");
         let last_id = message_ids.last().map(|s| s.as_str()).unwrap_or("none");

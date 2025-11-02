@@ -107,6 +107,14 @@ git add .
 git commit -m "message"
 ```
 
+**Before Pushing to GitHub:**
+ALWAYS run these commands before pushing any Rust code changes:
+```bash
+cargo fmt
+cargo clippy -- -D warnings
+```
+This ensures code formatting consistency and catches common issues before they reach the repository.
+
 **Work with PRs:**
 ```bash
 gh pr list
