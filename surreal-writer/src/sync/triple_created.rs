@@ -82,4 +82,3 @@ pub async fn handle_triple_created(
     debug!("Created TripleCreated record");
     Ok(())
 }
-

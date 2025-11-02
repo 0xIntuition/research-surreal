@@ -86,7 +86,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         // Wait for tasks to complete gracefully with timeout
         let shutdown_duration = std::time::Duration::from_secs(shutdown_timeout);
-        info!("Waiting up to {}s for tasks to complete...", shutdown_timeout);
+        info!(
+            "Waiting up to {}s for tasks to complete...",
+            shutdown_timeout
+        );
 
         // Wait for analytics worker
         match tokio::time::timeout(shutdown_duration, analytics_handle).await {

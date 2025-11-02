@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use surrealdb::Surreal;
 use tracing::{debug, error};
 
+use super::utils::parse_hex_to_u64;
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
-use super::utils::parse_hex_to_u64;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct DepositedEvent {
@@ -84,16 +84,11 @@ pub async fn handle_deposited(
         },
     };
 
-    let _: Option<DepositedRecord> =
-        db.create("deposited")
-            .content(record)
-            .await
-            .map_err(|e| {
-                error!("Failed to create Deposited record: {}", e);
-                SyncError::from(e)
-            })?;
+    let _: Option<DepositedRecord> = db.create("deposited").content(record).await.map_err(|e| {
+        error!("Failed to create Deposited record: {}", e);
+        SyncError::from(e)
+    })?;
 
     debug!("Created Deposited record");
     Ok(())
 }
-

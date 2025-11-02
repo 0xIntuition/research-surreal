@@ -9,27 +9,27 @@
 //! - **Config**: Single configuration module for all settings
 //! - **Core**: Core types, pipeline orchestration, and circuit breaker
 //! - **Consumer**: Redis stream consumer with message parsing
-//! - **Sync**: SurrealDB synchronization 
+//! - **Sync**: SurrealDB synchronization
 //! - **Monitoring**: Simplified metrics collection
 //! - **Error**: Centralized error handling
 //! - **HTTP Server**: Health checks and metrics endpoints
 
 pub mod config;
-pub mod core;
 pub mod consumer;
-pub mod sync;
-pub mod monitoring;
+pub mod core;
 pub mod error;
 pub mod http_server;
+pub mod monitoring;
+pub mod sync;
 
 // Re-export main types for convenience
 pub use config::Config;
-pub use core::types::{RindexerEvent, TransactionInformation, StreamMessage, PipelineHealth};
-pub use core::pipeline::EventProcessingPipeline;
 pub use core::circuit_breaker::CircuitBreaker;
-pub use monitoring::metrics::{Metrics, MetricsSnapshot};
-pub use error::{SyncError, Result};
+pub use core::pipeline::EventProcessingPipeline;
+pub use core::types::{PipelineHealth, RindexerEvent, StreamMessage, TransactionInformation};
+pub use error::{Result, SyncError};
 pub use http_server::HttpServer;
+pub use monitoring::metrics::{Metrics, MetricsSnapshot};
 
 /// Current version of the library
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
