@@ -562,14 +562,15 @@ impl Metrics {
         // Reset analytics worker metrics
         ANALYTICS_MESSAGES_CONSUMED_COUNTER.reset();
         ANALYTICS_MESSAGES_PENDING_GAUGE.set(0.0);
-        ANALYTICS_PROCESSING_DURATION_HISTOGRAM.reset();
+        // Note: Histogram types don't support reset()
+        // ANALYTICS_PROCESSING_DURATION_HISTOGRAM.reset();
         ANALYTICS_BATCH_SIZE_GAUGE.set(0.0);
-        ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM.reset();
+        // ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM.reset();
         ANALYTICS_MESSAGES_FAILED_COUNTER.reset();
 
         // Reset term updates publishing metrics
         TERM_UPDATES_PUBLISHED_COUNTER.reset();
-        TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM.reset();
+        // TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM.reset();
     }
 }
 

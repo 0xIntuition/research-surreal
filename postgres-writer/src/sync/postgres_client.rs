@@ -10,7 +10,7 @@ use crate::consumer::RedisPublisher;
 use crate::core::types::{RindexerEvent, TransactionInformation};
 use crate::error::{Result, SyncError};
 use crate::monitoring::Metrics;
-use crate::processors::{CascadeProcessor, TermUpdater};
+use crate::processors::CascadeProcessor;
 
 pub struct PostgresClient {
     pool: PgPool,
@@ -165,35 +165,11 @@ impl PostgresClient {
 
         // After successful commit, publish to Redis for analytics worker
         if let Some(publisher_mutex) = &self.redis_publisher {
-            // Collect all data needed for publishing BEFORE acquiring the lock
-            // Use batched transactions for counter_term_id lookups to prevent long-running
-            // transactions that could cause lock contention on high term_id counts
-            const MAX_BATCH_SIZE: usize = 50;
-            let term_updater = TermUpdater::new();
-            let mut term_data = Vec::new();
-
-            // Process term_ids in chunks to avoid long-running transactions
-            for chunk in term_ids.chunks(MAX_BATCH_SIZE) {
-                let mut tx = self.pool.begin().await.map_err(SyncError::Sqlx)?;
-
-                for term_id in chunk {
-                    // Get counter_term_id for triples using the shared transaction
-                    let counter_term_id =
-                        term_updater.get_counter_term_id(&mut tx, term_id).await?;
-                    term_data.push((term_id.clone(), counter_term_id));
-                }
-
-                // Commit after each chunk
-                tx.commit().await.map_err(SyncError::Sqlx)?;
-            }
-
-            // Now acquire the lock and publish all messages quickly
+            // Acquire lock and publish term updates
+            // No database queries needed - analytics worker will query for affected triples
             let mut publisher = publisher_mutex.lock().await;
-            for (term_id, counter_term_id) in term_data {
-                if let Err(e) = publisher
-                    .publish_term_update(&term_id, counter_term_id.as_deref())
-                    .await
-                {
+            for term_id in &term_ids {
+                if let Err(e) = publisher.publish_term_update(term_id).await {
                     warn!("Failed to publish term update to Redis: {}", e);
                     // Don't fail the whole operation if Redis publish fails
                 }

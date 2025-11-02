@@ -141,28 +141,6 @@ impl TermUpdater {
         debug!("Initialized triple term");
         Ok(())
     }
-
-    /// Get counter_term_id for a triple term (if it exists)
-    /// Returns None if the term is not a triple or doesn't exist
-    pub async fn get_counter_term_id(
-        &self,
-        tx: &mut Transaction<'_, Postgres>,
-        term_id: &str,
-    ) -> Result<Option<String>> {
-        let counter_term: Option<(String,)> = sqlx::query_as(
-            r#"
-            SELECT counter_term_id::text
-            FROM triple
-            WHERE term_id = $1
-            "#,
-        )
-        .bind(term_id)
-        .fetch_optional(&mut **tx)
-        .await
-        .map_err(SyncError::Sqlx)?;
-
-        Ok(counter_term.map(|(id,)| id))
-    }
 }
 
 impl Default for TermUpdater {

@@ -17,7 +17,6 @@ pub struct RedisPublisher {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TermUpdateMessage {
     pub term_id: String,
-    pub counter_term_id: Option<String>,
     pub timestamp: i64,
 }
 
@@ -45,13 +44,11 @@ impl RedisPublisher {
     pub async fn publish_term_update(
         &mut self,
         term_id: &str,
-        counter_term_id: Option<&str>,
     ) -> Result<()> {
         let start_time = std::time::Instant::now();
 
         let message = TermUpdateMessage {
             term_id: term_id.to_string(),
-            counter_term_id: counter_term_id.map(|s| s.to_string()),
             timestamp: chrono::Utc::now().timestamp(),
         };
 
@@ -81,9 +78,9 @@ impl RedisPublisher {
     /// Publish multiple term updates in a single pipeline for efficiency
     pub async fn publish_term_updates_batch(
         &mut self,
-        updates: &[(String, Option<String>)],
+        term_ids: &[String],
     ) -> Result<()> {
-        if updates.is_empty() {
+        if term_ids.is_empty() {
             return Ok(());
         }
 
@@ -91,16 +88,15 @@ impl RedisPublisher {
 
         debug!(
             "Publishing batch of {} term updates to stream '{}'",
-            updates.len(),
+            term_ids.len(),
             self.stream_name
         );
 
         let mut pipe = redis::pipe();
 
-        for (term_id, counter_term_id) in updates {
+        for term_id in term_ids {
             let message = TermUpdateMessage {
                 term_id: term_id.clone(),
-                counter_term_id: counter_term_id.clone(),
                 timestamp: chrono::Utc::now().timestamp(),
             };
 
@@ -119,7 +115,7 @@ impl RedisPublisher {
             .map_err(SyncError::Redis)?;
 
         // Record metrics for each published update
-        for _ in 0..updates.len() {
+        for _ in 0..term_ids.len() {
             self.metrics.record_term_update_published();
         }
         self.metrics.record_term_updates_publish_duration(start_time.elapsed());
@@ -129,7 +125,7 @@ impl RedisPublisher {
 
         debug!(
             "Published batch of {} updates to stream '{}' (IDs: {} ... {})",
-            updates.len(),
+            term_ids.len(),
             self.stream_name,
             first_id,
             last_id
