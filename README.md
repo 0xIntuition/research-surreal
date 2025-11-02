@@ -82,14 +82,17 @@ This project provides a complete data pipeline solution that:
 ### 3. PostgreSQL Writer (Rust)
 - **Purpose**: High-performance event processor for relational analytics
 - **Features**:
-  - Identical architecture to SurrealDB writer
+  - Event-driven architecture with Redis stream consumption
   - Async PostgreSQL integration via sqlx
-  - Database migration management
+  - Database migration management with trigger-based updates
+  - Cascade processor for complex aggregations
+  - Analytics worker for triple-level tables
   - Prometheus metrics integration
   - Health check endpoints on port 18211
   - Transaction-aware event storage
 - **Performance**: Tokio async runtime with 4 configurable worker threads
 - **Port**: 18211 (HTTP health/metrics)
+- **Documentation**: See [postgres-writer/README.md](postgres-writer/README.md) and [postgres-writer/issues.md](postgres-writer/issues.md) for detailed architecture and known issues
 
 ### 4. SurrealDB
 - **Purpose**: Multi-model NoSQL database for flexible querying
@@ -313,6 +316,22 @@ MAX_RETRIES=3
 
 Use `docker-compose.override.yml` for local development with port mappings in the 18xxx range.
 
+### Known Issues and Limitations
+
+> **Important**: The PostgreSQL writer has several known issues that should be understood before production deployment. See [postgres-writer/issues.md](postgres-writer/issues.md) for a comprehensive catalog.
+
+**Critical Issues**:
+1. **Transaction Consistency Risk**: Event insertion and cascade updates use separate transactions, which could lead to inconsistent state if cascade fails after event commits
+2. **Non-Graceful Shutdown**: Analytics worker and HTTP server are aborted on shutdown, potentially causing data loss
+3. **Health Endpoint Naming**: Health checks return `surreal_sync_healthy` instead of `postgres_sync_healthy`
+
+**High Priority Issues**:
+- Redis publisher lock contention under high load
+- Advisory lock hash collision risk at scale
+- No automatic backfill mechanism for analytics tables
+
+For complete details, mitigation strategies, and planned improvements, see the [issues catalog](postgres-writer/issues.md).
+
 ### Database Migrations
 
 **PostgreSQL migrations** (10 total):
@@ -331,9 +350,17 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Contributing
 
 This is a research project for the Intuition protocol. Contributions should focus on:
+- **Critical bug fixes**: See [postgres-writer/issues.md](postgres-writer/issues.md) for prioritized issues
 - Performance optimization
 - Monitoring improvements
 - Data pipeline reliability
 - Analytics and materialized view enhancements
 - Documentation and testing
+
+**Before Contributing**:
+1. Review the [issues catalog](postgres-writer/issues.md) to understand known limitations
+2. Check if your contribution addresses any cataloged issues
+3. Ensure changes don't introduce similar patterns to identified problems
+4. Add tests for any bug fixes or new features
+5. Update documentation to reflect changes
 
