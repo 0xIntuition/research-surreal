@@ -93,8 +93,8 @@ pub async fn start_analytics_worker(
 
     // Rate limiting: max messages per second
     // This prevents overwhelming the system during message floods
-    const MAX_MESSAGES_PER_SECOND: u64 = 5000;
-    const MIN_BATCH_INTERVAL_MS: u64 = 10; // Minimum 10ms between batches
+    let max_messages_per_second = config.max_messages_per_second;
+    let min_batch_interval_ms = config.min_batch_interval_ms;
 
     let mut last_batch_time = std::time::Instant::now();
 
@@ -148,16 +148,16 @@ pub async fn start_analytics_worker(
 
                             // Rate limiting: enforce minimum interval between batches
                             let batch_elapsed = last_batch_time.elapsed();
-                            if batch_elapsed.as_millis() < MIN_BATCH_INTERVAL_MS as u128 {
-                                let sleep_ms = MIN_BATCH_INTERVAL_MS - batch_elapsed.as_millis() as u64;
+                            if batch_elapsed.as_millis() < min_batch_interval_ms as u128 {
+                                let sleep_ms = min_batch_interval_ms - batch_elapsed.as_millis() as u64;
                                 tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
                             }
 
                             // Check if we're exceeding rate limit
-                            if rate > MAX_MESSAGES_PER_SECOND as f64 {
+                            if rate > max_messages_per_second as f64 {
                                 warn!(
                                     "Processing rate ({:.2} msg/s) exceeds limit ({} msg/s), throttling...",
-                                    rate, MAX_MESSAGES_PER_SECOND
+                                    rate, max_messages_per_second
                                 );
                                 tokio::time::sleep(tokio::time::Duration::from_millis(100)).await;
                             }

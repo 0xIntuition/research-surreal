@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use surrealdb::Surreal;
 use tracing::{debug, error};
 
-use crate::error::{Result, SyncError};
-use crate::core::types::TransactionInformation;
 use super::utils::parse_hex_to_u64;
+use crate::core::types::TransactionInformation;
+use crate::error::{Result, SyncError};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct RedeemedEvent {
@@ -82,15 +82,11 @@ pub async fn handle_redeemed(
         },
     };
 
-    let _: Option<RedeemedRecord> =
-        db.create("redeemed")
-            .content(record)
-            .await
-            .map_err(|e| {
-                error!("Failed to create Redeemed record: {}", e);
-                SyncError::from(e)
-            })?;
-    
+    let _: Option<RedeemedRecord> = db.create("redeemed").content(record).await.map_err(|e| {
+        error!("Failed to create Redeemed record: {}", e);
+        SyncError::from(e)
+    })?;
+
     debug!("Created Redeemed record");
     Ok(())
 }

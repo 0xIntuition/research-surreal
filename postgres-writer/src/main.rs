@@ -72,16 +72,44 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // Set up graceful shutdown
     let shutdown_pipeline = pipeline.clone();
+    let shutdown_timeout = config.shutdown_timeout_secs;
     tokio::spawn(async move {
         tokio::signal::ctrl_c()
             .await
             .expect("Failed to listen for ctrl-c");
         warn!("Received Ctrl-C, initiating graceful shutdown...");
+
+        // Signal shutdown to pipeline
         if let Err(e) = shutdown_pipeline.stop().await {
             error!("Error during shutdown: {e}");
         }
-        analytics_handle.abort();
-        http_handle.abort();
+
+        // Wait for tasks to complete gracefully with timeout
+        let shutdown_duration = std::time::Duration::from_secs(shutdown_timeout);
+        info!(
+            "Waiting up to {}s for tasks to complete...",
+            shutdown_timeout
+        );
+
+        // Wait for analytics worker
+        match tokio::time::timeout(shutdown_duration, analytics_handle).await {
+            Ok(Ok(())) => info!("Analytics worker stopped gracefully"),
+            Ok(Err(e)) => warn!("Analytics worker panicked: {e}"),
+            Err(_) => {
+                warn!("Analytics worker did not stop within timeout, forcing abort");
+            }
+        }
+
+        // Wait for HTTP server (reusing same timeout)
+        match tokio::time::timeout(shutdown_duration, http_handle).await {
+            Ok(Ok(())) => info!("HTTP server stopped gracefully"),
+            Ok(Err(e)) => warn!("HTTP server panicked: {e}"),
+            Err(_) => {
+                warn!("HTTP server did not stop within timeout, forcing abort");
+            }
+        }
+
+        info!("Shutdown complete");
     });
 
     // Start pipeline

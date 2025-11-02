@@ -1,8 +1,8 @@
+use crate::error::{Result, SyncError};
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
-use crate::error::{Result, SyncError};
 
 #[derive(Debug, Clone)]
 pub struct CircuitBreaker {
@@ -25,10 +25,10 @@ impl CircuitBreaker {
             total_successes: Arc::new(AtomicU64::new(0)),
         }
     }
-    
+
     pub async fn check(&self) -> Result<()> {
         let failures = self.consecutive_failures.load(Ordering::Relaxed);
-        
+
         if failures >= self.max_failures {
             let last_failure = self.last_failure.read().await;
             if let Some(instant) = *last_failure {
@@ -39,26 +39,26 @@ impl CircuitBreaker {
             // Reset after timeout
             self.consecutive_failures.store(0, Ordering::Relaxed);
         }
-        
+
         Ok(())
     }
-    
+
     pub async fn record_success(&self) {
         self.consecutive_failures.store(0, Ordering::Relaxed);
         self.total_successes.fetch_add(1, Ordering::Relaxed);
         *self.last_failure.write().await = None;
     }
-    
+
     pub async fn record_failure(&self) {
         self.consecutive_failures.fetch_add(1, Ordering::Relaxed);
         self.total_failures.fetch_add(1, Ordering::Relaxed);
         *self.last_failure.write().await = Some(Instant::now());
     }
-    
+
     pub fn is_open(&self) -> bool {
         self.consecutive_failures.load(Ordering::Relaxed) >= self.max_failures
     }
-    
+
     pub fn get_state(&self) -> String {
         if self.is_open() {
             "open".to_string()
@@ -66,11 +66,11 @@ impl CircuitBreaker {
             "closed".to_string()
         }
     }
-    
+
     pub fn get_stats(&self) -> (u64, u64) {
         (
             self.total_successes.load(Ordering::Relaxed),
-            self.total_failures.load(Ordering::Relaxed)
+            self.total_failures.load(Ordering::Relaxed),
         )
     }
 }

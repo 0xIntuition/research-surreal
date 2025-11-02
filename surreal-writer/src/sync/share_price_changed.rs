@@ -3,9 +3,9 @@ use serde::{Deserialize, Serialize};
 use surrealdb::Surreal;
 use tracing::{debug, error};
 
+use super::utils::parse_hex_to_u64;
 use crate::core::types::TransactionInformation;
 use crate::error::{Result, SyncError};
-use super::utils::parse_hex_to_u64;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct SharePriceChangedEvent {
@@ -77,14 +77,14 @@ pub async fn handle_share_price_changed(
         },
     };
 
-    let _: Option<SharePriceChangedRecord> =
-        db.create("share_price_changed")
-            .content(record)
-            .await
-            .map_err(|e| {
-                error!("Failed to create SharePriceChanged record: {}", e);
-                SyncError::from(e)
-            })?;
+    let _: Option<SharePriceChangedRecord> = db
+        .create("share_price_changed")
+        .content(record)
+        .await
+        .map_err(|e| {
+            error!("Failed to create SharePriceChanged record: {}", e);
+            SyncError::from(e)
+        })?;
 
     debug!("Created SharePriceChanged record");
     Ok(())

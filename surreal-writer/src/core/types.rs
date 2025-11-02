@@ -13,13 +13,14 @@ where
             } else {
                 &hex_str
             };
-            
-            let timestamp_u64 = u64::from_str_radix(cleaned, 16)
-                .map_err(serde::de::Error::custom)?;
-            
-            let datetime = DateTime::from_timestamp(timestamp_u64 as i64, 0)
-                .ok_or_else(|| serde::de::Error::custom(format!("Invalid timestamp: {}", timestamp_u64)))?;
-            
+
+            let timestamp_u64 =
+                u64::from_str_radix(cleaned, 16).map_err(serde::de::Error::custom)?;
+
+            let datetime = DateTime::from_timestamp(timestamp_u64 as i64, 0).ok_or_else(|| {
+                serde::de::Error::custom(format!("Invalid timestamp: {}", timestamp_u64))
+            })?;
+
             Ok(Some(datetime))
         }
         None => Ok(None),
@@ -160,7 +161,10 @@ mod tests {
         let tx_info: TransactionInformation =
             serde_json::from_value(json_data["transaction_information"].clone()).unwrap();
 
-        assert_eq!(tx_info.address, "0x5a0a023f08df301dcce96166f4185ec77df6a87a");
+        assert_eq!(
+            tx_info.address,
+            "0x5a0a023f08df301dcce96166f4185ec77df6a87a"
+        );
         assert_eq!(tx_info.block_number, 2036374);
         assert_eq!(tx_info.network, "intuition-testnet");
         assert!(tx_info.block_timestamp.is_some());
@@ -276,4 +280,3 @@ mod tests {
         // from this single Redis message, so metrics.record_event_success(2) instead of (1)
     }
 }
-

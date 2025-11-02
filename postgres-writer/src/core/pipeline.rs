@@ -60,6 +60,7 @@ impl EventProcessingPipeline {
         let postgres_client = Arc::new(
             PostgresClient::new(
                 &config.database_url,
+                config.database_pool_size as u32,
                 Some(&config.redis_url),
                 config.analytics_stream_name.clone(),
                 (*metrics).clone(),
@@ -144,7 +145,7 @@ impl EventProcessingPipeline {
                 && snapshot.postgres_healthy
                 && !self.circuit_breaker.is_open(),
             redis_consumer_healthy: snapshot.redis_healthy,
-            surreal_sync_healthy: snapshot.postgres_healthy,
+            postgres_sync_healthy: snapshot.postgres_healthy,
             circuit_breaker_closed: !self.circuit_breaker.is_open(),
             last_check: chrono::Utc::now(),
             metrics: crate::core::types::PipelineMetrics {
@@ -152,7 +153,7 @@ impl EventProcessingPipeline {
                 total_events_failed: snapshot.total_events_failed,
                 circuit_breaker_state: self.circuit_breaker.get_state(),
                 redis_consumer_health: snapshot.redis_healthy,
-                surreal_sync_health: snapshot.postgres_healthy,
+                postgres_sync_health: snapshot.postgres_healthy,
             },
         }
     }

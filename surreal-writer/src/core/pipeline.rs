@@ -1,17 +1,17 @@
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tokio::time::{interval, Duration};
+use std::sync::Arc;
 use tokio::sync::broadcast;
+use tokio::time::{interval, Duration};
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
-use crate::config::Config;
-use crate::consumer::redis_stream::RedisStreamConsumer;
-use crate::sync::surreal_client::SurrealClient;
-use crate::monitoring::metrics::Metrics;
-use crate::error::{Result, SyncError};
 use super::circuit_breaker::CircuitBreaker;
 use super::types::PipelineHealth;
+use crate::config::Config;
+use crate::consumer::redis_stream::RedisStreamConsumer;
+use crate::error::{Result, SyncError};
+use crate::monitoring::metrics::Metrics;
+use crate::sync::surreal_client::SurrealClient;
 
 pub struct EventProcessingPipeline {
     config: Config,
@@ -29,8 +29,13 @@ impl EventProcessingPipeline {
         info!("Initializing event processing pipeline");
 
         let redis_consumer = Arc::new(
-            RedisStreamConsumer::new(&config.redis_url, &config.stream_names, &config.consumer_group, &config.consumer_name)
-                .await?
+            RedisStreamConsumer::new(
+                &config.redis_url,
+                &config.stream_names,
+                &config.consumer_group,
+                &config.consumer_name,
+            )
+            .await?,
         );
 
         let surreal_client = Arc::new(
@@ -40,12 +45,14 @@ impl EventProcessingPipeline {
                 &config.surreal_pass,
                 &config.surreal_ns,
                 &config.surreal_db,
-            ).await?
+            )
+            .await?,
         );
 
-        let circuit_breaker = Arc::new(
-            CircuitBreaker::new(config.circuit_breaker_threshold, config.circuit_breaker_timeout_ms)
-        );
+        let circuit_breaker = Arc::new(CircuitBreaker::new(
+            config.circuit_breaker_threshold,
+            config.circuit_breaker_timeout_ms,
+        ));
 
         let metrics = Arc::new(Metrics::new());
 
@@ -65,8 +72,14 @@ impl EventProcessingPipeline {
     }
 
     pub async fn start(&self) -> Result<()> {
-        if self.is_running.compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst).is_err() {
-            return Err(SyncError::Processing("Pipeline is already running".to_string()));
+        if self
+            .is_running
+            .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+            .is_err()
+        {
+            return Err(SyncError::Processing(
+                "Pipeline is already running".to_string(),
+            ));
         }
 
         info!("Starting event processing pipeline");
@@ -111,7 +124,9 @@ impl EventProcessingPipeline {
     pub async fn health(&self) -> PipelineHealth {
         let snapshot = self.metrics.get_snapshot().await;
         PipelineHealth {
-            healthy: snapshot.redis_healthy && snapshot.surreal_healthy && !self.circuit_breaker.is_open(),
+            healthy: snapshot.redis_healthy
+                && snapshot.surreal_healthy
+                && !self.circuit_breaker.is_open(),
             redis_consumer_healthy: snapshot.redis_healthy,
             surreal_sync_healthy: snapshot.surreal_healthy,
             circuit_breaker_closed: !self.circuit_breaker.is_open(),
@@ -148,7 +163,7 @@ impl EventProcessingPipeline {
         tokio::spawn(async move {
             info!("Worker {} started", worker_id);
             let mut batch_interval = interval(Duration::from_millis(config.batch_timeout_ms));
-            
+
             loop {
                 tokio::select! {
                     _ = batch_interval.tick() => {
@@ -184,7 +199,10 @@ impl EventProcessingPipeline {
         circuit_breaker.check().await?;
 
         // Consume messages from Redis
-        debug!("About to call consume_batch with batch_size: {}", config.batch_size);
+        debug!(
+            "About to call consume_batch with batch_size: {}",
+            config.batch_size
+        );
         let messages = redis_consumer.consume_batch(config.batch_size).await?;
         debug!("consume_batch returned {} messages", messages.len());
         if messages.is_empty() {
@@ -199,24 +217,36 @@ impl EventProcessingPipeline {
         let mut failed = 0u64;
 
         for message in messages {
-            let result = metrics.time_async_operation(|| {
-                surreal_client.sync_event(&message.event)
-            }).await;
-            
+            let result = metrics
+                .time_async_operation(|| surreal_client.sync_event(&message.event))
+                .await;
+
             match result {
                 Ok(_) => {
-                    if let Err(e) = redis_consumer.ack_message(&message.source_stream, &message.redis_message_id).await {
-                        warn!("Failed to acknowledge message {} from stream {}: {}", message.redis_message_id, message.source_stream, e);
+                    if let Err(e) = redis_consumer
+                        .ack_message(&message.source_stream, &message.redis_message_id)
+                        .await
+                    {
+                        warn!(
+                            "Failed to acknowledge message {} from stream {}: {}",
+                            message.redis_message_id, message.source_stream, e
+                        );
                     }
                     successful += 1;
                 }
                 Err(e) => {
                     error!("Failed to sync event: {}", e);
-                    error!("Event details - Name: {}, Data: {}", 
+                    error!(
+                        "Event details - Name: {}, Data: {}",
                         message.event.event_name,
-                        serde_json::to_string_pretty(&message.event.event_data).unwrap_or_else(|_| "Failed to serialize event_data for logging".to_string())
+                        serde_json::to_string_pretty(&message.event.event_data).unwrap_or_else(
+                            |_| "Failed to serialize event_data for logging".to_string()
+                        )
                     );
-                    error!("Event network: {}, signature: {}", message.event.network, message.event.event_signature_hash);
+                    error!(
+                        "Event network: {}, signature: {}",
+                        message.event.network, message.event.event_signature_hash
+                    );
                     failed += 1;
                 }
             }
@@ -228,7 +258,7 @@ impl EventProcessingPipeline {
             circuit_breaker.record_success().await;
             metrics.set_surreal_health(true).await;
         }
-        
+
         if failed > 0 {
             metrics.record_event_failure(failed);
             circuit_breaker.record_failure().await;
@@ -247,13 +277,13 @@ impl EventProcessingPipeline {
 
         tokio::spawn(async move {
             let mut interval = interval(Duration::from_secs(60));
-            
+
             loop {
                 tokio::select! {
                     _ = interval.tick() => {
                         let snapshot = metrics.get_snapshot().await;
                         info!(
-                            "Metrics - Events processed: {}, not-ok: {}, batches: {}, rate: {:.2}/s", 
+                            "Metrics - Events processed: {}, not-ok: {}, batches: {}, rate: {:.2}/s",
                             snapshot.total_events_processed,
                             snapshot.total_events_failed,
                             snapshot.total_batches_processed,

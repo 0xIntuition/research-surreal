@@ -70,7 +70,7 @@ impl HttpServer {
                         "events_processed": health.metrics.total_events_processed,
                         "events_failed": health.metrics.total_events_failed,
                         "redis_healthy": health.redis_consumer_healthy,
-                        "surreal_healthy": health.surreal_sync_healthy,
+                        "postgres_healthy": health.postgres_sync_healthy,
                         "uptime_seconds": snapshot.uptime_seconds,
                         "events_per_second": snapshot.events_per_second,
                         "peak_events_per_second": snapshot.peak_events_per_second,

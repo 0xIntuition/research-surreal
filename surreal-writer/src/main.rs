@@ -1,5 +1,5 @@
-use surreal_writer::{Config, EventProcessingPipeline, HttpServer};
 use std::sync::Arc;
+use surreal_writer::{Config, EventProcessingPipeline, HttpServer};
 use tracing::{error, info, warn};
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
@@ -21,7 +21,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         error!("Failed to load configuration: {}", e);
         e
     })?;
-    
+
     config.validate().map_err(|e| {
         error!("Configuration validation failed: {}", e);
         e
@@ -31,7 +31,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Redis URL: {}", config.redis_url);
     info!("SurrealDB URL: {}", config.surreal_url);
     info!("Streams: {:?}", config.stream_names);
-    info!("Batch size: {}, Workers: {}", config.batch_size, config.workers);
+    info!(
+        "Batch size: {}, Workers: {}",
+        config.batch_size, config.workers
+    );
 
     // Create pipeline
     let pipeline = Arc::new(
@@ -40,7 +43,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             .map_err(|e| {
                 error!("Failed to create pipeline: {}", e);
                 e
-            })?
+            })?,
     );
 
     // Start HTTP server for health checks and metrics
