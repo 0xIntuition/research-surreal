@@ -1,14 +1,16 @@
 use redis::{aio::MultiplexedConnection, Client};
 use serde::{Deserialize, Serialize};
+use std::sync::Arc;
 use tracing::{debug, info};
 
-use crate::error::{Result, SyncError};
+use crate::{error::{Result, SyncError}, monitoring::metrics::Metrics};
 
 /// Redis publisher for analytics updates
 /// Used to notify the analytics worker of term updates
 pub struct RedisPublisher {
     connection: MultiplexedConnection,
     stream_name: String,
+    metrics: Arc<Metrics>,
 }
 
 /// Message published to Redis stream for analytics worker
@@ -20,7 +22,7 @@ pub struct TermUpdateMessage {
 }
 
 impl RedisPublisher {
-    pub async fn new(redis_url: &str, stream_name: String) -> Result<Self> {
+    pub async fn new(redis_url: &str, stream_name: String, metrics: Arc<Metrics>) -> Result<Self> {
         let client = Client::open(redis_url).map_err(SyncError::Redis)?;
         let connection = client
             .get_multiplexed_async_connection()
@@ -35,6 +37,7 @@ impl RedisPublisher {
         Ok(Self {
             connection,
             stream_name,
+            metrics,
         })
     }
 
@@ -44,6 +47,8 @@ impl RedisPublisher {
         term_id: &str,
         counter_term_id: Option<&str>,
     ) -> Result<()> {
+        let start_time = std::time::Instant::now();
+
         let message = TermUpdateMessage {
             term_id: term_id.to_string(),
             counter_term_id: counter_term_id.map(|s| s.to_string()),
@@ -62,6 +67,10 @@ impl RedisPublisher {
             .await
             .map_err(SyncError::Redis)?;
 
+        // Record metrics
+        self.metrics.record_term_update_published();
+        self.metrics.record_term_updates_publish_duration(start_time.elapsed());
+
         debug!(
             "Published to stream '{}': term={}, message_id={}",
             self.stream_name, term_id, message_id
@@ -77,6 +86,8 @@ impl RedisPublisher {
         if updates.is_empty() {
             return Ok(());
         }
+
+        let start_time = std::time::Instant::now();
 
         debug!(
             "Publishing batch of {} term updates to stream '{}'",
@@ -106,6 +117,12 @@ impl RedisPublisher {
             .query_async(&mut self.connection)
             .await
             .map_err(SyncError::Redis)?;
+
+        // Record metrics for each published update
+        for _ in 0..updates.len() {
+            self.metrics.record_term_update_published();
+        }
+        self.metrics.record_term_updates_publish_duration(start_time.elapsed());
 
         let first_id = message_ids.first().map(|s| s.as_str()).unwrap_or("none");
         let last_id = message_ids.last().map(|s| s.as_str()).unwrap_or("none");

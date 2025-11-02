@@ -5,11 +5,13 @@ use super::processor::update_analytics_tables;
 use crate::{
     consumer::TermUpdateMessage,
     error::{Result, SyncError},
+    monitoring::metrics::Metrics,
     Config,
 };
 use redis::{aio::MultiplexedConnection, Client};
 use sqlx::PgPool;
 use std::collections::HashMap;
+use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
@@ -18,6 +20,7 @@ const ANALYTICS_CONSUMER_GROUP_PREFIX: &str = "analytics";
 pub async fn start_analytics_worker(
     config: Config,
     pool: PgPool,
+    metrics: Arc<Metrics>,
     cancellation_token: CancellationToken,
 ) -> Result<()> {
     info!("Starting analytics worker");
@@ -105,7 +108,7 @@ pub async fn start_analytics_worker(
                 info!("Analytics worker received shutdown signal");
                 break;
             }
-            result = process_batch(&mut redis_conn, &pool, &stream_name, &consumer_group, &consumer_name) => {
+            result = process_batch(&mut redis_conn, &pool, &metrics, &stream_name, &consumer_group, &consumer_name) => {
                 match result {
                     Ok(processed_count) => {
                         if processed_count > 0 {
@@ -129,6 +132,9 @@ pub async fn start_analytics_worker(
                                 // Get stream pending count
                                 match get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await {
                                     Ok(pending) => {
+                                        // Record metrics
+                                        metrics.record_analytics_messages_pending(pending as i64);
+
                                         info!(
                                             "Analytics summary for stream '{}': processed {} msgs total ({:.1} msg/s avg), {} pending",
                                             stream_name, total_processed, rate, pending
@@ -232,6 +238,7 @@ async fn get_stream_pending_count(
 async fn process_batch(
     redis_conn: &mut MultiplexedConnection,
     pool: &PgPool,
+    metrics: &Arc<Metrics>,
     stream_name: &str,
     consumer_group: &str,
     consumer_name: &str,
@@ -260,6 +267,9 @@ async fn process_batch(
         return Ok(0);
     }
 
+    // Record batch size
+    metrics.record_analytics_batch_size(messages.len());
+
     let first_msg_id = messages
         .first()
         .map(|(id, _)| id.as_str())
@@ -280,8 +290,16 @@ async fn process_batch(
 
     // Process each message
     for (message_id, term_update) in &messages {
-        match update_analytics_tables(pool, term_update).await {
-            Ok(_) => {
+        let start_time = std::time::Instant::now();
+
+        match update_analytics_tables(pool, metrics, term_update).await {
+            Ok(()) => {
+                // Record processing duration
+                metrics.record_analytics_processing_duration(start_time.elapsed());
+
+                // Record successful consumption
+                metrics.record_analytics_message_consumed();
+
                 debug!(
                     "Successfully updated analytics for term {}",
                     term_update.term_id
@@ -290,6 +308,9 @@ async fn process_batch(
                 successful += 1;
             }
             Err(e) => {
+                // Record failure
+                metrics.record_analytics_message_failure();
+
                 warn!(
                     "Failed to update analytics for term {} (message_id: {}): {}. Message will NOT be ACK'd and will be retried.",
                     term_update.term_id, message_id, e

@@ -150,6 +150,48 @@ lazy_static! {
         ),
         &["event_type"]
     ).unwrap();
+
+    // Analytics worker metrics
+    static ref ANALYTICS_MESSAGES_CONSUMED_COUNTER: Counter = Counter::new(
+        "postgres_writer_analytics_messages_consumed_total",
+        "Total number of term update messages consumed by analytics worker"
+    ).unwrap();
+    static ref ANALYTICS_MESSAGES_PENDING_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_analytics_messages_pending",
+        "Number of pending messages in analytics worker stream"
+    ).unwrap();
+    static ref ANALYTICS_PROCESSING_DURATION_HISTOGRAM: Histogram = Histogram::with_opts(
+        prometheus::HistogramOpts::new(
+            "postgres_writer_analytics_processing_duration_seconds",
+            "Time spent processing analytics updates in seconds"
+        ).buckets(vec![0.01, 0.05, 0.1, 0.5, 1.0, 2.5, 5.0, 10.0, 30.0, 60.0])
+    ).unwrap();
+    static ref ANALYTICS_BATCH_SIZE_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_analytics_batch_size",
+        "Current batch size being processed by analytics worker"
+    ).unwrap();
+    static ref ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM: Histogram = Histogram::with_opts(
+        prometheus::HistogramOpts::new(
+            "postgres_writer_analytics_affected_triples",
+            "Number of triples affected by each term update"
+        ).buckets(vec![0.0, 1.0, 5.0, 10.0, 25.0, 50.0, 100.0, 250.0, 500.0, 1000.0, 5000.0])
+    ).unwrap();
+    static ref ANALYTICS_MESSAGES_FAILED_COUNTER: Counter = Counter::new(
+        "postgres_writer_analytics_messages_failed_total",
+        "Total number of term update messages that failed to process"
+    ).unwrap();
+
+    // Term updates publishing metrics
+    static ref TERM_UPDATES_PUBLISHED_COUNTER: Counter = Counter::new(
+        "postgres_writer_term_updates_published_total",
+        "Total number of term update messages published to Redis"
+    ).unwrap();
+    static ref TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM: Histogram = Histogram::with_opts(
+        prometheus::HistogramOpts::new(
+            "postgres_writer_term_updates_publish_duration_seconds",
+            "Time spent publishing term updates to Redis"
+        ).buckets(vec![0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0])
+    ).unwrap();
 }
 
 #[derive(Debug, Clone)]
@@ -237,6 +279,34 @@ impl Metrics {
             .ok();
         REGISTRY
             .register(Box::new(CASCADE_FAILURES_COUNTER.clone()))
+            .ok();
+
+        // Register analytics worker metrics
+        REGISTRY
+            .register(Box::new(ANALYTICS_MESSAGES_CONSUMED_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(ANALYTICS_MESSAGES_PENDING_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(ANALYTICS_PROCESSING_DURATION_HISTOGRAM.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(ANALYTICS_BATCH_SIZE_GAUGE.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(ANALYTICS_MESSAGES_FAILED_COUNTER.clone()))
+            .ok();
+
+        // Register term updates publishing metrics
+        REGISTRY
+            .register(Box::new(TERM_UPDATES_PUBLISHED_COUNTER.clone()))
+            .ok();
+        REGISTRY
+            .register(Box::new(TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM.clone()))
             .ok();
 
         Self {
@@ -395,6 +465,40 @@ impl Metrics {
             .inc();
     }
 
+    // Analytics worker metrics methods
+    pub fn record_analytics_message_consumed(&self) {
+        ANALYTICS_MESSAGES_CONSUMED_COUNTER.inc();
+    }
+
+    pub fn record_analytics_messages_pending(&self, count: i64) {
+        ANALYTICS_MESSAGES_PENDING_GAUGE.set(count as f64);
+    }
+
+    pub fn record_analytics_processing_duration(&self, duration: std::time::Duration) {
+        ANALYTICS_PROCESSING_DURATION_HISTOGRAM.observe(duration.as_secs_f64());
+    }
+
+    pub fn record_analytics_batch_size(&self, size: usize) {
+        ANALYTICS_BATCH_SIZE_GAUGE.set(size as f64);
+    }
+
+    pub fn record_analytics_affected_triples(&self, count: usize) {
+        ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM.observe(count as f64);
+    }
+
+    pub fn record_analytics_message_failure(&self) {
+        ANALYTICS_MESSAGES_FAILED_COUNTER.inc();
+    }
+
+    // Term updates publishing metrics methods
+    pub fn record_term_update_published(&self) {
+        TERM_UPDATES_PUBLISHED_COUNTER.inc();
+    }
+
+    pub fn record_term_updates_publish_duration(&self, duration: std::time::Duration) {
+        TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM.observe(duration.as_secs_f64());
+    }
+
     pub async fn get_snapshot(&self) -> MetricsSnapshot {
         let uptime = (Utc::now() - self.start_time).num_seconds() as u64;
         UPTIME_GAUGE.set(uptime as f64);
@@ -454,6 +558,18 @@ impl Metrics {
         STREAM_PENDING_MESSAGES_GAUGE.reset();
         STREAM_BATCH_SIZE_GAUGE.reset();
         STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.reset();
+
+        // Reset analytics worker metrics
+        ANALYTICS_MESSAGES_CONSUMED_COUNTER.reset();
+        ANALYTICS_MESSAGES_PENDING_GAUGE.set(0.0);
+        ANALYTICS_PROCESSING_DURATION_HISTOGRAM.reset();
+        ANALYTICS_BATCH_SIZE_GAUGE.set(0.0);
+        ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM.reset();
+        ANALYTICS_MESSAGES_FAILED_COUNTER.reset();
+
+        // Reset term updates publishing metrics
+        TERM_UPDATES_PUBLISHED_COUNTER.reset();
+        TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM.reset();
     }
 }
 

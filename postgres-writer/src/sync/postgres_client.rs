@@ -1,4 +1,5 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
+use std::sync::Arc;
 use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
@@ -68,7 +69,7 @@ impl PostgresClient {
 
         // Initialize Redis publisher if URL provided
         let redis_publisher = if let Some(url) = redis_url {
-            match RedisPublisher::new(url, analytics_stream_name).await {
+            match RedisPublisher::new(url, analytics_stream_name, Arc::new(metrics.clone())).await {
                 Ok(publisher) => Some(Mutex::new(publisher)),
                 Err(e) => {
                     warn!("Failed to initialize Redis publisher: {}. Analytics updates will be disabled.", e);
