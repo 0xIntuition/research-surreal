@@ -12,6 +12,7 @@ pub struct Config {
 
     // PostgreSQL settings
     pub database_url: String,
+    pub database_pool_size: usize,
 
     // Processing settings
     pub batch_size: usize,
@@ -27,9 +28,14 @@ pub struct Config {
     // HTTP server settings
     pub http_port: u16,
 
+    // Shutdown settings
+    pub shutdown_timeout_secs: u64,
+
     // Analytics worker settings
     pub consumer_group_suffix: Option<String>,
     pub analytics_stream_name: String,
+    pub max_messages_per_second: u64,
+    pub min_batch_interval_ms: u64,
 }
 
 impl Config {
@@ -51,6 +57,10 @@ impl Config {
             // PostgreSQL configuration
             database_url: env::var("DATABASE_URL")
                 .map_err(|_| SyncError::Config("DATABASE_URL is required".to_string()))?,
+            database_pool_size: env::var("DATABASE_POOL_SIZE")
+                .unwrap_or_else(|_| "10".to_string())
+                .parse()
+                .unwrap_or(10),
 
             // Processing configuration
             batch_size: env::var("BATCH_SIZE")
@@ -90,6 +100,12 @@ impl Config {
                 .parse()
                 .unwrap_or(8080),
 
+            // Shutdown configuration
+            shutdown_timeout_secs: env::var("SHUTDOWN_TIMEOUT_SECS")
+                .unwrap_or_else(|_| "30".to_string())
+                .parse()
+                .unwrap_or(30),
+
             // Analytics worker configuration
             consumer_group_suffix: env::var("CONSUMER_GROUP_SUFFIX").ok(),
             analytics_stream_name: {
@@ -108,16 +124,26 @@ impl Config {
                     base_name
                 }
             },
+            max_messages_per_second: env::var("MAX_MESSAGES_PER_SECOND")
+                .unwrap_or_else(|_| "5000".to_string())
+                .parse()
+                .unwrap_or(5000),
+            min_batch_interval_ms: env::var("MIN_BATCH_INTERVAL_MS")
+                .unwrap_or_else(|_| "10".to_string())
+                .parse()
+                .unwrap_or(10),
         })
     }
 
     pub fn validate(&self) -> Result<()> {
+        // Stream validation
         if self.stream_names.is_empty() {
             return Err(SyncError::Config(
                 "At least one stream name is required".to_string(),
             ));
         }
 
+        // Processing validation
         if self.batch_size == 0 {
             return Err(SyncError::Config(
                 "Batch size must be greater than 0".to_string(),
@@ -127,6 +153,60 @@ impl Config {
         if self.workers == 0 {
             return Err(SyncError::Config(
                 "Number of workers must be greater than 0".to_string(),
+            ));
+        }
+
+        // Timeout validation
+        if self.batch_timeout_ms == 0 {
+            return Err(SyncError::Config(
+                "Batch timeout must be greater than 0".to_string(),
+            ));
+        }
+
+        if self.processing_timeout_ms == 0 {
+            return Err(SyncError::Config(
+                "Processing timeout must be greater than 0".to_string(),
+            ));
+        }
+
+        // Circuit breaker validation
+        if self.circuit_breaker_timeout_ms == 0 {
+            return Err(SyncError::Config(
+                "Circuit breaker timeout must be greater than 0".to_string(),
+            ));
+        }
+
+        // HTTP port validation (valid port range: 1-65535)
+        if self.http_port == 0 {
+            return Err(SyncError::Config(
+                "HTTP port must be between 1 and 65535".to_string(),
+            ));
+        }
+
+        // Database pool size validation
+        if self.database_pool_size == 0 {
+            return Err(SyncError::Config(
+                "Database pool size must be greater than 0".to_string(),
+            ));
+        }
+
+        // Shutdown timeout validation
+        if self.shutdown_timeout_secs == 0 {
+            return Err(SyncError::Config(
+                "Shutdown timeout must be greater than 0".to_string(),
+            ));
+        }
+
+        // Rate limiting validation
+        if self.max_messages_per_second == 0 {
+            return Err(SyncError::Config(
+                "Max messages per second must be greater than 0".to_string(),
+            ));
+        }
+
+        if self.min_batch_interval_ms == 0 {
+            return Err(SyncError::Config(
+                "Min batch interval must be greater than 0".to_string(),
             ));
         }
 

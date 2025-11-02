@@ -21,13 +21,14 @@ pub struct PostgresClient {
 impl PostgresClient {
     pub async fn new(
         database_url: &str,
+        pool_size: u32,
         redis_url: Option<&str>,
         analytics_stream_name: String,
         metrics: Metrics,
     ) -> Result<Self> {
         // Create connection pool
         let pool = PgPoolOptions::new()
-            .max_connections(10)
+            .max_connections(pool_size)
             .connect(database_url)
             .await
             .map_err(|e| {

@@ -266,6 +266,7 @@ impl TestHarness {
         postgres_writer::config::Config {
             redis_url: self.redis_url().to_string(),
             database_url: self.database_url().to_string(),
+            database_pool_size: 10,
             stream_names: vec!["rindexer_producer".to_string()],
             consumer_group: "test-group".to_string(),
             consumer_name: "test-consumer".to_string(),
@@ -277,8 +278,11 @@ impl TestHarness {
             circuit_breaker_threshold: 10,
             circuit_breaker_timeout_ms: 60000,
             http_port: 0,
+            shutdown_timeout_secs: 30,
             consumer_group_suffix: None,
             analytics_stream_name: "term_updates".to_string(),
+            max_messages_per_second: 5000,
+            min_batch_interval_ms: 10,
         }
     }
 

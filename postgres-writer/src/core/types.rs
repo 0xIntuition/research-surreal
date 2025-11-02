@@ -73,7 +73,7 @@ pub struct PipelineMetrics {
     pub total_events_failed: u64,
     pub circuit_breaker_state: String,
     pub redis_consumer_health: bool,
-    pub surreal_sync_health: bool,
+    pub postgres_sync_health: bool,
 }
 
 /// Health status for the entire pipeline
@@ -81,7 +81,7 @@ pub struct PipelineMetrics {
 pub struct PipelineHealth {
     pub healthy: bool,
     pub redis_consumer_healthy: bool,
-    pub surreal_sync_healthy: bool,
+    pub postgres_sync_healthy: bool,
     pub circuit_breaker_closed: bool,
     pub last_check: DateTime<Utc>,
     pub metrics: PipelineMetrics,

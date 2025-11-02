@@ -164,6 +164,7 @@ services:
       RUST_BACKTRACE: "1"
       REDIS_URL: ${REDIS_URL}
       DATABASE_URL: ${DATABASE_URL}
+      DATABASE_POOL_SIZE: "10"
       CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_GROUP_SUFFIX: ${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
@@ -175,6 +176,9 @@ services:
       RECONNECT_DELAY_MS: "5000"
       MAX_RETRIES: "3"
       HTTP_PORT: "8081"
+      SHUTDOWN_TIMEOUT_SECS: "30"
+      MAX_MESSAGES_PER_SECOND: "5000"
+      MIN_BATCH_INTERVAL_MS: "10"
       REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
       - "8081"
