@@ -47,7 +47,7 @@ Different event types perform different database operations:
 - Inefficient query causing multiple operations
 - Loop executing unexpected iterations
 - Retry logic triggering excessive operations
-- N+1 query problem (postgres_client.rs:149-158)
+- N+1 query problem (multiple database round trips)
 
 ### 4. Data Issues
 - Events requiring more cascade operations than usual
@@ -136,10 +136,11 @@ Different event types perform different database operations:
 
 ### For Performance Issues
 
-1. **Optimize N+1 queries** (postgres_client.rs:149-158):
+1. **Optimize database queries**:
    ```bash
-   # If counter_term_id lookups are causing spike
-   # This needs code optimization to batch queries
+   # Review query patterns for N+1 issues
+   # If counter_term_id lookups are causing spike,
+   # consider code optimization to batch queries
    ```
 
 2. **Review cascade operations:**
@@ -217,7 +218,7 @@ Some operations naturally have different baseline rates:
 ## Prevention
 
 1. **Query optimization:**
-   - Implement batch query optimization (postgres_client.rs:149-158)
+   - Implement batch query optimization to reduce round trips
    - Reduce unnecessary database round trips
    - Use connection pooling effectively
 

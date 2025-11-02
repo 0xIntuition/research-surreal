@@ -31,7 +31,7 @@ This runbook addresses alerts related to high failure rates for specific event t
 3. **Application Logic Issues**
    - Bug in event-type-specific processing logic
    - Error in cascade update logic
-   - Transaction consistency issues (see TODO in postgres_client.rs:105-108)
+   - Cascade failures (event committed but cascade failed - will auto-retry via Redis)
 
 4. **Resource Constraints**
    - Out of memory conditions
@@ -85,7 +85,7 @@ This runbook addresses alerts related to high failure rates for specific event t
 2. **If database locks detected:**
    - Identify and kill blocking queries if safe to do so
    - Consider adjusting transaction isolation level
-   - Implement the TODO for single transaction (postgres_client.rs:105-108)
+   - Review advisory lock usage in cascade processor
 
 3. **If database performance degraded:**
    - Check database resource usage (CPU, memory, disk I/O)

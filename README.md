@@ -318,17 +318,18 @@ Use `docker-compose.override.yml` for local development with port mappings in th
 
 ### Known Issues and Limitations
 
-> **Important**: The PostgreSQL writer has several known issues that should be understood before production deployment. See [postgres-writer/issues.md](postgres-writer/issues.md) for a comprehensive catalog.
+> **Note**: The PostgreSQL writer has some known issues and potential improvements. See [postgres-writer/issues.md](postgres-writer/issues.md) for a comprehensive catalog.
 
 **Critical Issues**:
-1. **Transaction Consistency Risk**: Event insertion and cascade updates use separate transactions, which could lead to inconsistent state if cascade fails after event commits
+1. **Health Endpoint Naming**: Health checks return `surreal_sync_healthy` instead of `postgres_sync_healthy`
 2. **Non-Graceful Shutdown**: Analytics worker and HTTP server are aborted on shutdown, potentially causing data loss
-3. **Health Endpoint Naming**: Health checks return `surreal_sync_healthy` instead of `postgres_sync_healthy`
 
 **High Priority Issues**:
 - Redis publisher lock contention under high load
 - Advisory lock hash collision risk at scale
 - No automatic backfill mechanism for analytics tables
+
+**Note on Transaction Handling**: The system intentionally uses separate transactions for event insertion and cascade updates, combined with idempotent retries via Redis. See [Transaction Handling](postgres-writer/README.md#transaction-handling-and-retry-semantics) for details on this architectural decision.
 
 For complete details, mitigation strategies, and planned improvements, see the [issues catalog](postgres-writer/issues.md).
 

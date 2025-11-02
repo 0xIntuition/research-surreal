@@ -107,13 +107,12 @@ impl PostgresClient {
                 .unwrap_or_else(|_| "Failed to serialize tx_info for logging".to_string())
         );
 
-        // TODO: Refactor to use a single transaction for both event insert and cascade updates
-        // Currently these use separate transactions which could lead to inconsistent state if
-        // cascade fails after event is committed. This requires refactoring all event handlers
-        // to accept a Transaction<Postgres> instead of &PgPool. Tracked for future PR.
-
         // Process the event using the appropriate handler which will create the DB entry
         // This will trigger the database triggers that update base tables (atom, triple, position, vault)
+        //
+        // Note: Event insertion and cascade updates use separate transactions intentionally.
+        // Event handlers use ON CONFLICT for idempotency, allowing safe retries via Redis.
+        // If cascade fails, the message is not ACK'd and will be redelivered for retry.
         let event_handler_result = event_handlers::process_event(
             &self.pool,
             &event.event_name,
@@ -145,9 +144,9 @@ impl PostgresClient {
             .run_cascade_after_event(event)
             .await
             .inspect_err(|_e| {
-                // Record cascade failure - this is a specific edge case where event was already
-                // committed but cascade failed. This is tracked separately due to the TODO about
-                // transaction consistency at lines 105-108.
+                // Record cascade failure - event was already committed but cascade failed.
+                // The Redis message will not be ACK'd, allowing retry of the full operation.
+                // The event insert will be idempotent (ON CONFLICT), and cascade will retry.
                 self.metrics.record_cascade_failure(event_type);
                 self.metrics.record_event_by_type_failure(event_type);
                 self.metrics

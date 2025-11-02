@@ -37,7 +37,7 @@ Different event types trigger different cascade operations:
 
 2. **Transaction Issues**
    - Long transaction chains
-   - Multiple separate transactions instead of batching (see postgres_client.rs:149-158)
+   - Multiple database round trips for counter_term_id lookups
    - Transaction rollbacks and retries
    - Deadlock detection and resolution overhead
 
@@ -47,7 +47,7 @@ Different event types trigger different cascade operations:
    - Cascade fan-out to many related records
 
 4. **Consistency Issues**
-   - Cascade failures after successful event commit (TODO at postgres_client.rs:105-108)
+   - Cascade failures after successful event commit (auto-retries via Redis)
    - Retry logic causing duplicate work
    - Race conditions between concurrent updates
 
@@ -142,13 +142,15 @@ Different event types trigger different cascade operations:
 
 ### For Transaction Issues
 
-1. **Optimize transaction batching** (postgres_client.rs:149-158):
-   - Batch counter_term_id lookups instead of N separate transactions
+1. **Optimize database queries**:
+   - Batch counter_term_id lookups to reduce round trips
    - Reduce transaction scope where possible
+   - Review query performance with EXPLAIN ANALYZE
 
-2. **Implement single transaction for event + cascade** (TODO):
-   - Address the TODO at postgres_client.rs:105-108
-   - Ensures atomicity and reduces transaction overhead
+2. **Review transaction design**:
+   - System uses separate transactions intentionally for performance
+   - See [Transaction Handling](../../postgres-writer/README.md#transaction-handling-and-retry-semantics) for design rationale
+   - Focus on optimizing individual transaction performance rather than combining them
 
 3. **Check for deadlocks:**
    ```bash
@@ -208,7 +210,7 @@ rate(postgres_writer_database_operations_total[5m])
 
 2. **Code improvements:**
    - Implement batch query optimization
-   - Use single transactions for event + cascade
+   - Optimize individual transaction performance
    - Add cascade failure tracking metrics
 
 3. **Capacity planning:**
@@ -223,7 +225,7 @@ rate(postgres_writer_database_operations_total[5m])
 
 ## Known Issues
 
-- **Transaction consistency** (postgres_client.rs:105-108): Event insert and cascade updates use separate transactions, which can lead to cascades failing after successful event commits. Consider this when investigating cascade failures.
+- **Transaction design**: Event insert and cascade updates use separate transactions intentionally for performance. This means cascades can fail after successful event commits, but will auto-retry via Redis. See [Transaction Handling](../../postgres-writer/README.md#transaction-handling-and-retry-semantics) for details.
 
 ## Escalation
 

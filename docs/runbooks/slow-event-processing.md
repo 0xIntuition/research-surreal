@@ -35,7 +35,7 @@ This runbook addresses the **SlowEventTypeProcessing** alert, which triggers whe
    - Inefficient query patterns (N+1 queries)
    - Large transaction sizes
    - Memory pressure causing garbage collection pauses
-   - Unnecessary database queries in hot path (see postgres_client.rs:149-158)
+   - Multiple database round trips in hot path
 
 4. **Resource Contention**
    - High CPU usage on sync service
@@ -127,12 +127,14 @@ This runbook addresses the **SlowEventTypeProcessing** alert, which triggers whe
 
 ### For Application Issues
 
-1. **Optimize batching** (postgres_client.rs:149-158):
-   - Implement batch query optimization
-   - Reduce number of separate transactions
+1. **Optimize database queries**:
+   - Implement batch query optimization to reduce round trips
+   - Review query performance with EXPLAIN ANALYZE
 
-2. **Reduce transaction scope:**
-   - Implement single transaction for event + cascade (TODO at postgres_client.rs:105-108)
+2. **Review transaction design:**
+   - System uses separate transactions intentionally for performance
+   - See [Transaction Handling](../../postgres-writer/README.md#transaction-handling-and-retry-semantics)
+   - Focus on optimizing individual transaction performance
 
 3. **Check for memory issues:**
    ```bash
@@ -178,7 +180,7 @@ After applying fixes, monitor:
    - Identify performance bottlenecks proactively
 
 3. **Code optimization:**
-   - Implement batch query optimization (postgres_client.rs:149-158)
+   - Implement batch query optimization to reduce database round trips
    - Use connection pooling effectively
    - Profile hot paths regularly
 

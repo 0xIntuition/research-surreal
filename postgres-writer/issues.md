@@ -22,32 +22,7 @@ This document catalogs all identified issues, bugs, and potential improvements i
 
 ## Critical Issues
 
-### 1. Transaction Consistency Risk
-
-**Location**: `src/sync/postgres_client.rs:110-113`
-
-**Severity**: Critical
-
-**Description**: Event insertion and cascade updates use separate transactions, which could lead to inconsistent database state if cascade fails after the event is committed.
-
-```rust
-// TODO: Refactor to use a single transaction for both event insert and cascade updates
-// Currently these use separate transactions which could lead to inconsistent state if
-// cascade fails after event is committed.
-```
-
-**Impact**:
-- Data integrity issues
-- Inconsistent aggregations in vault and term tables
-- Analytics worker may process updates for partially committed data
-
-**Recommendation**: Refactor all event handlers to accept `Transaction<Postgres>` instead of `&PgPool`, ensuring atomicity across event insertion and cascade updates.
-
-**Effort**: High (requires refactoring all event handlers)
-
----
-
-### 2. Misleading Health Check Field Names
+### 1. Misleading Health Check Field Names
 
 **Location**: `src/core/pipeline.rs:147`
 
@@ -74,7 +49,7 @@ PipelineHealth {
 
 ---
 
-### 3. Graceful Shutdown Not Implemented
+### 2. Graceful Shutdown Not Implemented
 
 **Location**: `src/main.rs:83-84`
 
@@ -100,7 +75,7 @@ http_handle.abort();
 
 ## High Priority Issues
 
-### 4. Redis Publisher Lock Contention
+### 3. Redis Publisher Lock Contention
 
 **Location**: `src/sync/postgres_client.rs:166-200`
 
@@ -129,7 +104,7 @@ The batching logic (MAX_BATCH_SIZE: 50) helps, but database queries are still pe
 
 ---
 
-### 5. No Validation for Hex String Formats
+### 4. No Validation for Hex String Formats
 
 **Location**: Multiple event handlers in `src/sync/`
 
@@ -148,7 +123,7 @@ The batching logic (MAX_BATCH_SIZE: 50) helps, but database queries are still pe
 
 ---
 
-### 6. Advisory Lock Hash Collision Risk
+### 5. Advisory Lock Hash Collision Risk
 
 **Location**: `src/processors/cascade.rs:161-199`
 
@@ -177,7 +152,7 @@ The batching logic (MAX_BATCH_SIZE: 50) helps, but database queries are still pe
 
 ## Medium Priority Issues
 
-### 7. Hardcoded Database Connection Pool Size
+### 6. Hardcoded Database Connection Pool Size
 
 **Location**: `src/sync/postgres_client.rs:29-30`
 
@@ -202,7 +177,7 @@ let pool = PgPoolOptions::new()
 
 ---
 
-### 8. Rate Limiting Hard-Coded in Analytics Worker
+### 7. Rate Limiting Hard-Coded in Analytics Worker
 
 **Location**: `src/analytics/worker.rs:95-97`
 
@@ -226,7 +201,7 @@ const MIN_BATCH_INTERVAL_MS: u64 = 10;
 
 ---
 
-### 9. No Automatic Backfill Mechanism
+### 8. No Automatic Backfill Mechanism
 
 **Location**: General architecture issue
 
@@ -248,7 +223,7 @@ const MIN_BATCH_INTERVAL_MS: u64 = 10;
 
 ---
 
-### 10. Configuration Validation Gaps
+### 9. Configuration Validation Gaps
 
 **Location**: `src/config.rs:114-134`
 
@@ -276,7 +251,7 @@ pub fn validate(&self) -> Result<()> {
 
 ## Low Priority Issues
 
-### 11. Limited Observability Metrics
+### 10. Limited Observability Metrics
 
 **Location**: `src/monitoring/metrics.rs`
 
@@ -300,7 +275,7 @@ pub fn validate(&self) -> Result<()> {
 
 ---
 
-### 12. Unclear Migration Strategy Documentation
+### 11. Unclear Migration Strategy Documentation
 
 **Location**: `README.md:490-502`
 
@@ -322,7 +297,7 @@ pub fn validate(&self) -> Result<()> {
 
 ---
 
-### 13. No Test Coverage Metrics
+### 12. No Test Coverage Metrics
 
 **Location**: General testing infrastructure
 
@@ -344,7 +319,7 @@ pub fn validate(&self) -> Result<()> {
 
 ---
 
-### 14. Exponential Backoff Could Be More Sophisticated
+### 13. Exponential Backoff Could Be More Sophisticated
 
 **Location**: `src/analytics/worker.rs:88-92`
 
@@ -372,7 +347,7 @@ let backoff_secs = std::cmp::min(
 
 ## Code Quality Improvements
 
-### 15. Inconsistent Error Messages
+### 14. Inconsistent Error Messages
 
 **Location**: Various locations
 
@@ -390,7 +365,7 @@ let backoff_secs = std::cmp::min(
 
 ---
 
-### 16. Magic Numbers in Code
+### 15. Magic Numbers in Code
 
 **Location**: Multiple files
 
@@ -407,7 +382,7 @@ let backoff_secs = std::cmp::min(
 
 ---
 
-### 17. Duplicate Code in Event Handlers
+### 16. Duplicate Code in Event Handlers
 
 **Location**: `src/sync/deposited.rs`, `src/sync/redeemed.rs`
 
@@ -423,7 +398,7 @@ let backoff_secs = std::cmp::min(
 
 ## Documentation Issues
 
-### 18. Line Number References Outdated
+### 17. Line Number References Outdated
 
 **Location**: `README.md`
 
@@ -437,7 +412,7 @@ let backoff_secs = std::cmp::min(
 
 ---
 
-### 19. Missing Environment Variable Documentation
+### 18. Missing Environment Variable Documentation
 
 **Location**: `README.md:343-373`
 
@@ -454,7 +429,7 @@ let backoff_secs = std::cmp::min(
 
 ---
 
-### 20. No Architecture Decision Records (ADRs)
+### 19. No Architecture Decision Records (ADRs)
 
 **Location**: N/A
 
@@ -470,7 +445,7 @@ let backoff_secs = std::cmp::min(
 
 ## Performance Optimizations
 
-### 21. Potential N+1 Query in Analytics Processor
+### 20. Potential N+1 Query in Analytics Processor
 
 **Location**: `src/analytics/processor.rs` (implied from architecture)
 
@@ -484,7 +459,7 @@ let backoff_secs = std::cmp::min(
 
 ---
 
-### 22. No Connection Pooling for Redis Publisher
+### 21. No Connection Pooling for Redis Publisher
 
 **Location**: `src/consumer/redis_publisher.rs`
 
@@ -503,7 +478,7 @@ let backoff_secs = std::cmp::min(
 
 ---
 
-### 23. String Allocations in Hot Path
+### 22. String Allocations in Hot Path
 
 **Location**: Multiple locations in event processing
 
@@ -522,16 +497,16 @@ let backoff_secs = std::cmp::min(
 
 ## Summary
 
-**Total Issues Identified**: 23
+**Total Issues Identified**: 22
 
 **Breakdown by Severity**:
-- Critical: 3
+- Critical: 2
 - High: 3
 - Medium: 7
 - Low: 10
 
 **Breakdown by Category**:
-- Data Integrity: 3
+- Data Integrity: 2
 - Performance: 5
 - Observability: 2
 - Code Quality: 4
@@ -540,21 +515,20 @@ let backoff_secs = std::cmp::min(
 - Testing: 2
 
 **Recommended Priority Order**:
-1. Fix transaction consistency (Issue #1)
-2. Fix health check naming (Issue #2)
-3. Implement graceful shutdown (Issue #3)
-4. Address Redis publisher lock contention (Issue #4)
-5. Add input validation (Issue #5)
-6. Make database pool configurable (Issue #7)
-7. Improve metrics and observability (Issue #11)
-8. Add configuration validation (Issue #10)
-9. Address remaining low-priority issues
+1. Fix health check naming (Issue #1)
+2. Implement graceful shutdown (Issue #2)
+3. Address Redis publisher lock contention (Issue #3)
+4. Add input validation (Issue #4)
+5. Make database pool configurable (Issue #6)
+6. Improve metrics and observability (Issue #10)
+7. Add configuration validation (Issue #9)
+8. Address remaining low-priority issues
 
 **Estimated Total Effort**:
-- Critical/High fixes: ~3-4 weeks
+- Critical/High fixes: ~2-3 weeks
 - Medium priority: ~2-3 weeks
 - Low priority: ~1-2 weeks
-- **Total**: ~6-9 weeks for complete resolution
+- **Total**: ~5-8 weeks for complete resolution
 
 ---
 
