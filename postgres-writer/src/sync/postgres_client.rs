@@ -33,7 +33,7 @@ pub struct PostgresClient {
     //
     // Reference: PR #11 review comment (2025-11-02)
     redis_publisher: Option<Mutex<RedisPublisher>>,
-    metrics: Metrics,
+    metrics: Arc<Metrics>,
 }
 
 impl PostgresClient {
@@ -42,7 +42,7 @@ impl PostgresClient {
         pool_size: u32,
         redis_url: Option<&str>,
         analytics_stream_name: String,
-        metrics: Metrics,
+        metrics: Arc<Metrics>,
     ) -> Result<Self> {
         // Create connection pool
         let pool = PgPoolOptions::new()
@@ -86,7 +86,7 @@ impl PostgresClient {
 
         // Initialize Redis publisher if URL provided
         let redis_publisher = if let Some(url) = redis_url {
-            match RedisPublisher::new(url, analytics_stream_name, Arc::new(metrics.clone())).await {
+            match RedisPublisher::new(url, analytics_stream_name, metrics.clone()).await {
                 Ok(publisher) => Some(Mutex::new(publisher)),
                 Err(e) => {
                     warn!("Failed to initialize Redis publisher: {}. Analytics updates will be disabled.", e);

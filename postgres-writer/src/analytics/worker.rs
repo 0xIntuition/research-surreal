@@ -131,25 +131,27 @@ pub async fn start_analytics_worker(
                                 processed_count, total_processed, rate
                             );
 
+                            // Update pending count metric on every batch for real-time monitoring
+                            let pending_count = get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await.ok();
+                            if let Some(pending) = pending_count {
+                                metrics.record_analytics_messages_pending(pending as i64);
+                            }
+
                             // Log periodic summary
                             if last_summary_time.elapsed().as_secs() >= SUMMARY_INTERVAL_SECS {
-                                // Get stream pending count
-                                match get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await {
-                                    Ok(pending) => {
-                                        // Record metrics
-                                        metrics.record_analytics_messages_pending(pending as i64);
-
+                                match pending_count {
+                                    Some(pending) => {
                                         info!(
                                             "Analytics summary for stream '{}': processed {} msgs total ({:.1} msg/s avg), {} pending",
                                             stream_name, total_processed, rate, pending
                                         );
                                     }
-                                    Err(e) => {
+                                    None => {
                                         info!(
                                             "Analytics summary for stream '{}': processed {} msgs total ({:.1} msg/s avg)",
                                             stream_name, total_processed, rate
                                         );
-                                        debug!("Failed to get pending count: {}", e);
+                                        debug!("Failed to get pending count for summary");
                                     }
                                 }
 
@@ -277,6 +279,8 @@ async fn process_batch(
     let messages = parse_messages(result)?;
 
     if messages.is_empty() {
+        // Record empty batch to ensure gauge shows 0 during idle periods
+        metrics.record_analytics_batch_size(0);
         return Ok(0);
     }
 

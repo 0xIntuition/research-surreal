@@ -112,10 +112,8 @@ impl RedisPublisher {
             .await
             .map_err(SyncError::Redis)?;
 
-        // Record metrics for each published update
-        for _ in 0..term_ids.len() {
-            self.metrics.record_term_update_published();
-        }
+        // Record metrics for batch publish (single pipeline operation)
+        self.metrics.record_term_update_published();
         self.metrics
             .record_term_updates_publish_duration(start_time.elapsed());
 
