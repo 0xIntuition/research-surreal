@@ -3,10 +3,7 @@
     "list": [
       {
         "builtIn": 1,
-        "datasource": {
-          "type": "datasource",
-          "uid": "grafana"
-        },
+        "datasource": "-- Grafana --",
         "enable": true,
         "hide": true,
         "iconColor": "rgba(0, 211, 255, 1)",
@@ -22,10 +19,7 @@
   "links": [],
   "panels": [
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -79,10 +73,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_uptime_seconds",
           "interval": "",
           "legendFormat": "Uptime",
@@ -93,10 +83,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -161,10 +148,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_redis_healthy",
           "interval": "",
           "legendFormat": "Redis",
@@ -175,10 +158,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -231,10 +211,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_events_processed_total",
           "interval": "",
           "legendFormat": "Total Events",
@@ -245,10 +221,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -328,10 +301,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "rate(postgres_writer_events_processed_total[5m])",
           "interval": "",
           "legendFormat": "Events/sec",
@@ -342,10 +311,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -425,20 +391,12 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_events_per_second",
           "interval": "",
           "legendFormat": "Current EPS",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_peak_events_per_second",
           "interval": "",
           "legendFormat": "Peak EPS",
@@ -449,10 +407,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -532,10 +487,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "rate(postgres_writer_events_failed_total[5m])",
           "interval": "",
           "legendFormat": "Failed Events/sec",
@@ -546,10 +497,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -639,10 +587,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer:failure_rate_percent:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }}",
@@ -653,10 +597,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -721,10 +662,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_postgres_healthy",
           "interval": "",
           "legendFormat": "PostgreSQL",
@@ -735,10 +672,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -792,10 +726,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_batches_processed_total",
           "interval": "",
           "legendFormat": "Total Batches",
@@ -806,10 +736,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -888,10 +815,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer:events_processed_rate:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }}",
@@ -902,10 +825,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -960,10 +880,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "sum by (event_type) (increase(postgres_writer_events_processed_by_type_total[1h]))",
           "interval": "",
           "legendFormat": "{{ event_type }}",
@@ -974,10 +890,7 @@
       "type": "piechart"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1060,20 +973,12 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.95, rate(postgres_writer_processing_duration_seconds_bucket[5m])) * 1000",
           "interval": "",
           "legendFormat": "95th percentile",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.50, rate(postgres_writer_processing_duration_seconds_bucket[5m])) * 1000",
           "interval": "",
           "legendFormat": "50th percentile",
@@ -1084,10 +989,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1165,10 +1067,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer:database_operations_rate:by_operation",
           "interval": "",
           "legendFormat": "{{ operation }}",
@@ -1179,10 +1077,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1262,20 +1157,12 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer:event_processing_duration_seconds:p50:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }} (p50)",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer:event_processing_duration_seconds:p95:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }} (p95)",
@@ -1286,10 +1173,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1369,10 +1253,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer:cascade_duration_seconds:p95:by_type",
           "interval": "",
           "legendFormat": "{{ event_type }} (p95)",
@@ -1383,10 +1263,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1469,10 +1346,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "rate(postgres_writer_term_updates_published_total[5m])",
           "interval": "",
           "legendFormat": "Published/sec",
@@ -1483,10 +1356,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1566,10 +1436,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "rate(postgres_writer_analytics_messages_failed_total[5m])",
           "interval": "",
           "legendFormat": "Failed Messages/sec",
@@ -1580,10 +1446,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1666,10 +1529,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "rate(postgres_writer_analytics_messages_consumed_total[5m])",
           "interval": "",
           "legendFormat": "Messages/sec",
@@ -1680,10 +1539,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1766,20 +1622,12 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.95, rate(postgres_writer_analytics_processing_duration_seconds_bucket[5m]))",
           "interval": "",
           "legendFormat": "95th percentile",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.50, rate(postgres_writer_analytics_processing_duration_seconds_bucket[5m]))",
           "interval": "",
           "legendFormat": "50th percentile",
@@ -1790,10 +1638,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1876,20 +1721,12 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.95, rate(postgres_writer_analytics_affected_triples_bucket[5m]))",
           "interval": "",
           "legendFormat": "95th percentile",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.50, rate(postgres_writer_analytics_affected_triples_bucket[5m]))",
           "interval": "",
           "legendFormat": "50th percentile",
@@ -1900,10 +1737,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -1961,10 +1795,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_analytics_messages_pending",
           "interval": "",
           "legendFormat": "Pending Messages",
@@ -1975,10 +1805,7 @@
       "type": "stat"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2061,10 +1888,6 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "postgres_writer_analytics_batch_size",
           "interval": "",
           "legendFormat": "Batch Size",
@@ -2075,10 +1898,7 @@
       "type": "timeseries"
     },
     {
-      "datasource": {
-        "type": "prometheus",
-        "uid": "prometheus"
-      },
+      "datasource": "Prometheus",
       "fieldConfig": {
         "defaults": {
           "color": {
@@ -2161,20 +1981,12 @@
       },
       "targets": [
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.95, rate(postgres_writer_term_updates_publish_duration_seconds_bucket[5m]))",
           "interval": "",
           "legendFormat": "95th percentile",
           "refId": "A"
         },
         {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "prometheus"
-          },
           "expr": "histogram_quantile(0.50, rate(postgres_writer_term_updates_publish_duration_seconds_bucket[5m]))",
           "interval": "",
           "legendFormat": "50th percentile",
