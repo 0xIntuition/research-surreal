@@ -41,7 +41,7 @@ impl HealthStatus {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ConnectionPoolStats {
     pub total_connections: usize,
-    pub healthy_connections: usize,
-    pub unhealthy_connections: usize,
+    pub active_connections: usize,
+    pub idle_connections: usize,
     pub pool_utilization: f64,
 }

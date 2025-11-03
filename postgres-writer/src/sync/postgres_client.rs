@@ -390,8 +390,8 @@ impl PostgresClient {
 
         crate::monitoring::health::ConnectionPoolStats {
             total_connections: total,
-            healthy_connections: active,
-            unhealthy_connections: idle,
+            active_connections: active,
+            idle_connections: idle,
             pool_utilization: utilization,
         }
     }

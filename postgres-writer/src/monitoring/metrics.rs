@@ -57,13 +57,13 @@ lazy_static! {
         "postgres_writer_pool_connections_total",
         "Total number of connections in the PostgreSQL connection pool"
     ).unwrap();
-    static ref POOL_CONNECTIONS_HEALTHY_GAUGE: Gauge = Gauge::new(
-        "postgres_writer_pool_connections_healthy",
-        "Number of healthy connections in the PostgreSQL connection pool"
+    static ref POOL_CONNECTIONS_ACTIVE_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_pool_connections_active",
+        "Number of active connections in the PostgreSQL connection pool"
     ).unwrap();
-    static ref POOL_CONNECTIONS_UNHEALTHY_GAUGE: Gauge = Gauge::new(
-        "postgres_writer_pool_connections_unhealthy",
-        "Number of unhealthy connections in the PostgreSQL connection pool"
+    static ref POOL_CONNECTIONS_IDLE_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_pool_connections_idle",
+        "Number of idle connections in the PostgreSQL connection pool"
     ).unwrap();
     static ref POOL_UTILIZATION_GAUGE: Gauge = Gauge::new(
         "postgres_writer_pool_utilization_percent",
@@ -268,13 +268,11 @@ impl Metrics {
             .register(Box::new(POOL_CONNECTIONS_TOTAL_GAUGE.clone()))
             .unwrap_or_else(|e| warn!("Failed to register POOL_CONNECTIONS_TOTAL_GAUGE: {}", e));
         REGISTRY
-            .register(Box::new(POOL_CONNECTIONS_HEALTHY_GAUGE.clone()))
-            .unwrap_or_else(|e| warn!("Failed to register POOL_CONNECTIONS_HEALTHY_GAUGE: {}", e));
+            .register(Box::new(POOL_CONNECTIONS_ACTIVE_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register POOL_CONNECTIONS_ACTIVE_GAUGE: {}", e));
         REGISTRY
-            .register(Box::new(POOL_CONNECTIONS_UNHEALTHY_GAUGE.clone()))
-            .unwrap_or_else(|e| {
-                warn!("Failed to register POOL_CONNECTIONS_UNHEALTHY_GAUGE: {}", e)
-            });
+            .register(Box::new(POOL_CONNECTIONS_IDLE_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register POOL_CONNECTIONS_IDLE_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(POOL_UTILIZATION_GAUGE.clone()))
             .unwrap_or_else(|e| warn!("Failed to register POOL_UTILIZATION_GAUGE: {}", e));
@@ -475,8 +473,8 @@ impl Metrics {
         stats: &crate::monitoring::health::ConnectionPoolStats,
     ) {
         POOL_CONNECTIONS_TOTAL_GAUGE.set(stats.total_connections as f64);
-        POOL_CONNECTIONS_HEALTHY_GAUGE.set(stats.healthy_connections as f64);
-        POOL_CONNECTIONS_UNHEALTHY_GAUGE.set(stats.unhealthy_connections as f64);
+        POOL_CONNECTIONS_ACTIVE_GAUGE.set(stats.active_connections as f64);
+        POOL_CONNECTIONS_IDLE_GAUGE.set(stats.idle_connections as f64);
         POOL_UTILIZATION_GAUGE.set(stats.pool_utilization);
     }
 
@@ -651,8 +649,8 @@ impl Metrics {
 
         // Reset connection pool gauges
         POOL_CONNECTIONS_TOTAL_GAUGE.set(0.0);
-        POOL_CONNECTIONS_HEALTHY_GAUGE.set(0.0);
-        POOL_CONNECTIONS_UNHEALTHY_GAUGE.set(0.0);
+        POOL_CONNECTIONS_ACTIVE_GAUGE.set(0.0);
+        POOL_CONNECTIONS_IDLE_GAUGE.set(0.0);
         POOL_UTILIZATION_GAUGE.set(0.0);
 
         // Reset stream gauge vectors

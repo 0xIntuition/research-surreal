@@ -155,10 +155,10 @@ groups:
         expr: postgres_writer_pool_utilization_percent
 
       - record: postgres_writer:pool_connections_active
-        expr: postgres_writer_pool_connections_healthy
+        expr: postgres_writer_pool_connections_active
 
       - record: postgres_writer:pool_connections_idle
-        expr: postgres_writer_pool_connections_unhealthy
+        expr: postgres_writer_pool_connections_idle
 
       # PostgreSQL connection metrics from postgres_exporter
       - record: postgres:connections_active
