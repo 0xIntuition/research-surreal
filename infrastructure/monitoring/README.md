@@ -341,11 +341,74 @@ The dashboard provides comprehensive visibility into event processing pipeline p
 2. Check Prometheus is collecting metrics: http://localhost:9090/graph
 3. Verify the sync service `/metrics` endpoint is accessible
 
+**Note on Datasource Configuration:**
+The provided Grafana dashboards use a hardcoded datasource UID of `"prometheus"`. To import the dashboards successfully, ensure your Prometheus datasource in Grafana is named exactly `"prometheus"`. To check or configure this:
+
+1. In Grafana, go to Configuration → Data Sources
+2. Select your Prometheus datasource
+3. Check the UID field - it should be `prometheus`
+4. If different, either rename it or update the dashboard JSON files to match your datasource UID
+
 ### Recording rules not working
 
 1. Check Prometheus logs for evaluation errors: `docker logs prometheus`
 2. Verify recording rule syntax: `promtool check rules recording_rules.yml`
 3. Check for division-by-zero or other expression errors in Prometheus logs
+
+## Validation and Testing
+
+Before deploying changes to monitoring configuration, validate the syntax to prevent runtime errors:
+
+### Validate Prometheus Rules
+
+```bash
+# Install promtool (if not already installed)
+# Option 1: Use Docker
+docker run --rm -v $(pwd):/workspace prom/prometheus:latest \
+  promtool check rules /workspace/infrastructure/monitoring/alert_rules.yml
+
+docker run --rm -v $(pwd):/workspace prom/prometheus:latest \
+  promtool check rules /workspace/infrastructure/monitoring/recording_rules.yml
+
+# Option 2: Install locally (macOS)
+brew install prometheus
+cd infrastructure/monitoring
+promtool check rules alert_rules.yml
+promtool check rules recording_rules.yml
+```
+
+### Validate Grafana Dashboards
+
+```bash
+# Validate dashboard JSON syntax
+jq empty infrastructure/monitoring/grafana/dashboards/*.json
+
+# Check for common issues
+for f in infrastructure/monitoring/grafana/dashboards/*.json; do
+  echo "=== $f ==="
+  jq '.dashboard.panels | length' "$f"
+  echo "panels found"
+done
+```
+
+### Integration Testing
+
+After starting the monitoring stack:
+
+```bash
+# 1. Verify all targets are up
+curl http://localhost:18500/api/v1/targets | jq '.data.activeTargets[] | {job: .labels.job, health: .health}'
+
+# 2. Check recording rules are evaluating
+curl http://localhost:18500/api/v1/rules | jq '.data.groups[] | {name: .name, rules: (.rules | length)}'
+
+# 3. Verify specific metric exists
+curl -G http://localhost:18500/api/v1/query \
+  --data-urlencode 'query=postgres:cache_hit_ratio_percent' | jq
+
+# 4. Test alert evaluation (should show pending or firing if conditions met)
+curl http://localhost:18500/api/v1/alerts | jq '.data.alerts[] | {name: .labels.alertname, state: .state}'
+```
 
 ## Security Considerations
 

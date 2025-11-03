@@ -154,7 +154,6 @@ services:
     image: prometheuscommunity/postgres-exporter:latest
     environment:
       DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:18100/storage?sslmode=disable"
-      PG_EXPORTER_EXTEND_QUERY_PATH: "/etc/postgres_exporter/queries.yaml"
     ports:
       - "18103:9187"
     depends_on:

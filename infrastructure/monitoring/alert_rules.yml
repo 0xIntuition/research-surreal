@@ -160,6 +160,18 @@ groups:
           description: "postgres-writer cannot connect to PostgreSQL database. Event processing is blocked. Check PostgreSQL service status and network connectivity."
           runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/postgres-connection-failure.md"
 
+      # Critical: postgres-writer service is down
+      - alert: PostgresWriterDown
+        expr: absent(up{job="postgres-writer"}) or up{job="postgres-writer"} == 0
+        for: 2m
+        labels:
+          severity: critical
+          component: postgres-writer
+        annotations:
+          summary: "postgres-writer service is down"
+          description: "postgres-writer service is not running or not responding. Event processing from Redis to PostgreSQL is completely stopped. Check service logs and restart if necessary."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/postgres-writer-down.md"
+
       # Info: High rollback rate - may indicate application errors
       - alert: PostgresHighRollbackRate
         expr: |

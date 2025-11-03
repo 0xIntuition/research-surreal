@@ -185,13 +185,15 @@ groups:
       - record: postgres:transactions_total_rate
         expr: rate(pg_stat_database_xact_commit{datname="storage"}[5m]) + rate(pg_stat_database_xact_rollback{datname="storage"}[5m])
 
-      # Cache hit ratio - percentage of reads served from cache
+      # Cache hit ratio - percentage of reads served from cache (5m rate)
+      # Uses rate() to reflect recent performance rather than all-time stats
       - record: postgres:cache_hit_ratio_percent
         expr: |
           100 * (
-            sum(pg_stat_database_blks_hit{datname="storage"})
+            sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m]))
             /
-            (sum(pg_stat_database_blks_hit{datname="storage"}) + sum(pg_stat_database_blks_read{datname="storage"}))
+            (sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m])) +
+             sum(rate(pg_stat_database_blks_read{datname="storage"}[5m])))
           )
 
       # Database size growth rate (bytes per second over 1h)
