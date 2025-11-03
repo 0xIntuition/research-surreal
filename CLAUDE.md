@@ -19,7 +19,7 @@ Blockchain → Rindexer → Redis Streams → Dual Writers → SurrealDB + Postg
 - **Redis Streams**: Event buffering and distribution layer
 - **SurrealDB Writer**: Rust service consuming events → SurrealDB (NoSQL)
 - **PostgreSQL Writer**: Rust service consuming events → PostgreSQL (TimescaleDB)
-- **Analytics Layer**: Materialized views and trigger-based aggregations in PostgreSQL
+- **Analytics Layer**: Trigger-based updates and Rust cascade processor for aggregations in PostgreSQL
 - **Monitoring**: Prometheus + Grafana for observability
 - **Web Dashboard**: Next.js 15 app for real-time metrics
 
@@ -195,16 +195,6 @@ postgres-writer/src/
     └── health.rs              # Health checks
 ```
 
-## Known Issues and Critical Context
-
-**Critical Issues:**
-1. **Health endpoint naming**: Returns `surreal_sync_healthy` instead of `postgres_sync_healthy` (`src/monitoring/health.rs`)
-2. **Non-graceful shutdown**: Analytics worker and HTTP server are aborted on shutdown, risking data loss
-
-**High Priority:**
-- Redis publisher lock contention under high load
-- Advisory lock hash collision risk at scale
-- No automatic backfill mechanism for analytics tables
 
 **Migration History:**
 - Migrations 20250130000002-20250130000010: Old materialized view approach (reference only, NOT used)
@@ -242,7 +232,7 @@ All services use ports in the **18000-18999 range**:
 **PostgreSQL Writer:**
 - `REDIS_URL`, `DATABASE_URL`
 - `REDIS_STREAMS`: Comma-separated stream names
-- `BATCH_SIZE=100`, `BATCH_TIMEOUT_MS=5000`
+- `BATCH_SIZE=20`, `BATCH_TIMEOUT_MS=5000`
 - `CONSUMER_GROUP`, `CONSUMER_GROUP_SUFFIX`
 - `ANALYTICS_STREAM_NAME=term_updates`
 - `TOKIO_WORKER_THREADS=4`
