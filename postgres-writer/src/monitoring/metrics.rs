@@ -52,6 +52,24 @@ lazy_static! {
         "Application uptime in seconds"
     ).unwrap();
 
+    // Connection pool metrics
+    static ref POOL_CONNECTIONS_TOTAL_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_pool_connections_total",
+        "Total number of connections in the PostgreSQL connection pool"
+    ).unwrap();
+    static ref POOL_CONNECTIONS_HEALTHY_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_pool_connections_healthy",
+        "Number of healthy connections in the PostgreSQL connection pool"
+    ).unwrap();
+    static ref POOL_CONNECTIONS_UNHEALTHY_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_pool_connections_unhealthy",
+        "Number of unhealthy connections in the PostgreSQL connection pool"
+    ).unwrap();
+    static ref POOL_UTILIZATION_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_pool_utilization_percent",
+        "Connection pool utilization as a percentage (0-100)"
+    ).unwrap();
+
     // Redis Streams metrics
     static ref STREAM_LAG_GAUGE: IntGaugeVec = IntGaugeVec::new(
         Opts::new(
@@ -245,6 +263,22 @@ impl Metrics {
             .register(Box::new(UPTIME_GAUGE.clone()))
             .unwrap_or_else(|e| warn!("Failed to register UPTIME_GAUGE: {}", e));
 
+        // Register connection pool metrics
+        REGISTRY
+            .register(Box::new(POOL_CONNECTIONS_TOTAL_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register POOL_CONNECTIONS_TOTAL_GAUGE: {}", e));
+        REGISTRY
+            .register(Box::new(POOL_CONNECTIONS_HEALTHY_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register POOL_CONNECTIONS_HEALTHY_GAUGE: {}", e));
+        REGISTRY
+            .register(Box::new(POOL_CONNECTIONS_UNHEALTHY_GAUGE.clone()))
+            .unwrap_or_else(|e| {
+                warn!("Failed to register POOL_CONNECTIONS_UNHEALTHY_GAUGE: {}", e)
+            });
+        REGISTRY
+            .register(Box::new(POOL_UTILIZATION_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register POOL_UTILIZATION_GAUGE: {}", e));
+
         // Register Redis Streams metrics
         REGISTRY
             .register(Box::new(STREAM_LAG_GAUGE.clone()))
@@ -436,6 +470,16 @@ impl Metrics {
         POSTGRES_HEALTHY_GAUGE.set(if healthy { 1.0 } else { 0.0 });
     }
 
+    pub fn record_connection_pool_stats(
+        &self,
+        stats: &crate::monitoring::health::ConnectionPoolStats,
+    ) {
+        POOL_CONNECTIONS_TOTAL_GAUGE.set(stats.total_connections as f64);
+        POOL_CONNECTIONS_HEALTHY_GAUGE.set(stats.healthy_connections as f64);
+        POOL_CONNECTIONS_UNHEALTHY_GAUGE.set(stats.unhealthy_connections as f64);
+        POOL_UTILIZATION_GAUGE.set(stats.pool_utilization);
+    }
+
     pub async fn update_last_event_time(&self) {
         *self.last_event_time.write().await = Some(Utc::now());
     }
@@ -604,6 +648,12 @@ impl Metrics {
         REDIS_HEALTHY_GAUGE.set(0.0);
         POSTGRES_HEALTHY_GAUGE.set(0.0);
         UPTIME_GAUGE.set(0.0);
+
+        // Reset connection pool gauges
+        POOL_CONNECTIONS_TOTAL_GAUGE.set(0.0);
+        POOL_CONNECTIONS_HEALTHY_GAUGE.set(0.0);
+        POOL_CONNECTIONS_UNHEALTHY_GAUGE.set(0.0);
+        POOL_UTILIZATION_GAUGE.set(0.0);
 
         // Reset stream gauge vectors
         STREAM_LAG_GAUGE.reset();

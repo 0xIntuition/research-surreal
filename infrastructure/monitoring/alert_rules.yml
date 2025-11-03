@@ -94,3 +94,97 @@ groups:
           summary: "Spike in {{ $labels.operation }} operations for {{ $labels.event_type }}"
           description: "Database operation rate for {{ $labels.operation }} ({{ $labels.event_type }}) is {{ $value | humanize }} ops/sec, which is 2x the 1-hour average."
           runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/database-spike.md"
+
+  ## PostgreSQL Database Health Alerts
+  ## These alerts monitor the PostgreSQL database itself (not just the application)
+  - name: postgres_database_alerts
+    interval: 15s
+    rules:
+      # Critical: Connection pool nearly exhausted (postgres-writer application pool)
+      - alert: PostgresWriterConnectionPoolExhaustion
+        expr: postgres_writer:pool_utilization_percent > 80
+        for: 3m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL writer connection pool utilization is critically high"
+          description: "Connection pool utilization is {{ $value | humanizePercentage }}. Pool may be exhausted soon, which will cause event processing failures. Consider increasing DATABASE_POOL_SIZE."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/connection-pool-exhaustion.md"
+
+      # Warning: High PostgreSQL connection count (database-wide)
+      - alert: PostgresHighConnectionCount
+        expr: postgres:connections_utilization_percent > 80
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL connection count is high"
+          description: "PostgreSQL is using {{ $value | humanizePercentage }} of max_connections. High connection count may indicate connection leaks or need to increase max_connections setting."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/high-connection-count.md"
+
+      # Warning: Low cache hit ratio - indicates potential performance issues
+      - alert: PostgresLowCacheHitRatio
+        expr: postgres:cache_hit_ratio_percent < 90
+        for: 10m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL cache hit ratio is low"
+          description: "Cache hit ratio is {{ $value | humanizePercentage }}, which is below the recommended 90%. This indicates excessive disk I/O. Consider increasing shared_buffers or investigating query patterns."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/low-cache-hit-ratio.md"
+
+      # Warning: Deadlocks detected
+      - alert: PostgresDeadlocksDetected
+        expr: rate(pg_stat_database_deadlocks{datname="storage"}[5m]) > 0
+        for: 2m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL deadlocks detected"
+          description: "Deadlocks are occurring at {{ $value | humanize }} per second. Deadlocks indicate transaction conflicts and should be investigated."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/deadlocks.md"
+
+      # Critical: PostgreSQL connection failures
+      - alert: PostgresConnectionFailure
+        expr: postgres_writer_postgres_healthy == 0
+        for: 1m
+        labels:
+          severity: critical
+          component: postgres
+        annotations:
+          summary: "PostgreSQL connection is unhealthy"
+          description: "postgres-writer cannot connect to PostgreSQL database. Event processing is blocked. Check PostgreSQL service status and network connectivity."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/postgres-connection-failure.md"
+
+      # Info: High rollback rate - may indicate application errors
+      - alert: PostgresHighRollbackRate
+        expr: |
+          (
+            postgres:transactions_rollback_rate
+            /
+            postgres:transactions_total_rate
+          ) > 0.1
+        for: 10m
+        labels:
+          severity: info
+          component: postgres
+        annotations:
+          summary: "PostgreSQL rollback rate is elevated"
+          description: "Transaction rollback rate is {{ $value | humanizePercentage }} of total transactions. High rollback rates may indicate application errors or conflicts."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/high-rollback-rate.md"
+
+      # Warning: Database conflicts detected
+      - alert: PostgresConflictsDetected
+        expr: rate(pg_stat_database_conflicts{datname="storage"}[5m]) > 0
+        for: 5m
+        labels:
+          severity: warning
+          component: postgres
+        annotations:
+          summary: "PostgreSQL database conflicts detected"
+          description: "Database conflicts are occurring at {{ $value | humanize }} per second. This may indicate replication issues or lock contention."
+          runbook_url: "https://github.com/0xIntuition/research-surreal/blob/main/docs/runbooks/database-conflicts.md"

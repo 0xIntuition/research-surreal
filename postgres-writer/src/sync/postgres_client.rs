@@ -374,6 +374,28 @@ impl PostgresClient {
         &self.pool
     }
 
+    /// Get connection pool statistics for monitoring
+    pub fn get_pool_stats(&self) -> crate::monitoring::health::ConnectionPoolStats {
+        let total = self.pool.size() as usize;
+        let idle = self.pool.num_idle();
+        let active = total.saturating_sub(idle);
+        let pool_options = self.pool.options();
+        let max_connections = pool_options.get_max_connections() as usize;
+
+        let utilization = if max_connections > 0 {
+            (total as f64 / max_connections as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        crate::monitoring::health::ConnectionPoolStats {
+            total_connections: total,
+            healthy_connections: active,
+            unhealthy_connections: idle,
+            pool_utilization: utilization,
+        }
+    }
+
     fn extract_transaction_info(&self, event: &RindexerEvent) -> Result<TransactionInformation> {
         let tx_info_value = event
             .event_data

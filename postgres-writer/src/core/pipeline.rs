@@ -140,6 +140,11 @@ impl EventProcessingPipeline {
 
     pub async fn health(&self) -> PipelineHealth {
         let snapshot = self.metrics.get_snapshot().await;
+
+        // Record connection pool stats to Prometheus metrics
+        let pool_stats = self.postgres_client.get_pool_stats();
+        self.metrics.record_connection_pool_stats(&pool_stats);
+
         PipelineHealth {
             healthy: snapshot.redis_healthy
                 && snapshot.postgres_healthy
