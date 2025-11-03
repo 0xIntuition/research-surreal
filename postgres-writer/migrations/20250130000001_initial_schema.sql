@@ -1,6 +1,11 @@
 -- Initial schema for postgres-writer
 -- Creates all event tables with transaction information embedded
 
+-- Create snapshot schema for materialized views
+-- This schema is used for validation: materialized views aggregate from events
+-- and are compared against trigger-based tables in the public schema
+CREATE SCHEMA IF NOT EXISTS snapshot;
+
 -- Atom Created Events
 CREATE TABLE IF NOT EXISTS atom_created_events (
     transaction_hash TEXT NOT NULL,

@@ -1,10 +1,14 @@
--- Refresh All Views Function
+-- Snapshot Schema and Refresh All Views Function
 --
--- This migration creates a utility function to refresh all materialized views
--- in the correct dependency order and track the execution time for each view.
+-- This migration creates the snapshot schema and a utility function to refresh
+-- all materialized views in the correct dependency order and track the execution
+-- time for each view.
+--
+-- The snapshot schema contains legacy materialized views that run in parallel to
+-- the trigger-based tables in the public schema for validation purposes.
 --
 -- Usage:
---   SELECT * FROM refresh_all_views();
+--   SELECT * FROM snapshot.refresh_all_views();
 --
 -- Returns a table with columns:
 --   - view_name: Name of the materialized view
@@ -21,11 +25,14 @@
 -- Uses CONCURRENT refresh mode to avoid locking views during refresh.
 -- Continues refreshing remaining views even if individual refreshes fail.
 
--- Drop existing function if it exists
-DROP FUNCTION IF EXISTS refresh_all_views() CASCADE;
+-- Create snapshot schema
+CREATE SCHEMA IF NOT EXISTS snapshot;
 
--- Create the refresh function
-CREATE OR REPLACE FUNCTION refresh_all_views()
+-- Drop existing function if it exists
+DROP FUNCTION IF EXISTS snapshot.refresh_all_views() CASCADE;
+
+-- Create the refresh function in snapshot schema
+CREATE OR REPLACE FUNCTION snapshot.refresh_all_views()
 RETURNS TABLE(
     view_name TEXT,
     duration_seconds NUMERIC,
@@ -42,7 +49,7 @@ BEGIN
     -- Refresh position (base view)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.position;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.position;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -65,7 +72,7 @@ BEGIN
     -- Refresh atom (base view)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.atom;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.atom;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -88,7 +95,7 @@ BEGIN
     -- Refresh triple (base view)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.triple;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.triple;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -111,7 +118,7 @@ BEGIN
     -- Refresh vault (depends on position)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.vault;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.vault;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -134,7 +141,7 @@ BEGIN
     -- Refresh triple_vault (depends on triple/atom)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.triple_vault;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.triple_vault;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -157,7 +164,7 @@ BEGIN
     -- Refresh term (depends on vault)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.term;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.term;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -180,7 +187,7 @@ BEGIN
     -- Refresh triple_term (depends on triple_vault)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.triple_term;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.triple_term;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -203,7 +210,7 @@ BEGIN
     -- Refresh predicate_object (depends on triple and triple_term)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.predicate_object;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.predicate_object;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -226,7 +233,7 @@ BEGIN
     -- Refresh subject_predicate (depends on triple and triple_term)
     BEGIN
         start_time := clock_timestamp();
-        REFRESH MATERIALIZED VIEW CONCURRENTLY public.subject_predicate;
+        REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.subject_predicate;
         end_time := clock_timestamp();
         duration := EXTRACT(EPOCH FROM (end_time - start_time));
 
@@ -251,14 +258,14 @@ END;
 $$;
 
 -- Add function documentation
-COMMENT ON FUNCTION refresh_all_views() IS
-'Refreshes all materialized views in dependency order and returns timing information.
+COMMENT ON FUNCTION snapshot.refresh_all_views() IS
+'Refreshes all materialized views in the snapshot schema in dependency order and returns timing information.
 Refreshes views using CONCURRENT mode to avoid locking.
 Returns a table with view_name, duration_seconds, status, and error_message columns.
 Continues processing remaining views even if individual refreshes fail.
 
 Example usage:
-  SELECT * FROM refresh_all_views();
+  SELECT * FROM snapshot.refresh_all_views();
 
 Can be scheduled with pg_cron for periodic refreshes:
-  SELECT cron.schedule(''refresh-all-views'', ''0 * * * *'', ''SELECT refresh_all_views();'');';
+  SELECT cron.schedule(''refresh-snapshot-views'', ''0 * * * *'', ''SELECT snapshot.refresh_all_views();'');';

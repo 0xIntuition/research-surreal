@@ -1,5 +1,6 @@
--- Migration: Create term materialized view
+-- Migration: Create term materialized view in snapshot schema
 -- This view aggregates vault data grouped by term_id
+-- Part of the snapshot schema for validation against trigger-based public schema
 --
 -- Description:
 -- The term materialized view provides aggregated data for each term (atom or triple).
@@ -7,7 +8,7 @@
 -- For Atom type, atom_id is set to term_id. For Triple/CounterTriple, triple_id is set to term_id.
 --
 -- Refresh:
--- SELECT refresh_term_view();
+-- SELECT snapshot.refresh_term_view();
 
 -- Create term_type enum
 DO $$ BEGIN
@@ -17,11 +18,11 @@ EXCEPTION
 END $$;
 
 -- Drop existing objects
-DROP MATERIALIZED VIEW IF EXISTS public.term CASCADE;
-DROP FUNCTION IF EXISTS refresh_term_view() CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS snapshot.term CASCADE;
+DROP FUNCTION IF EXISTS snapshot.refresh_term_view() CASCADE;
 
--- Create materialized view
-CREATE MATERIALIZED VIEW public.term AS
+-- Create materialized view in snapshot schema
+CREATE MATERIALIZED VIEW snapshot.term AS
 WITH
 -- Aggregate vault data by term_id
 aggregated_vaults AS (
@@ -32,7 +33,7 @@ aggregated_vaults AS (
         SUM(market_cap) AS total_market_cap,
         MIN(created_at) AS created_at,
         MAX(updated_at) AS updated_at
-    FROM public.vault
+    FROM snapshot.vault
     GROUP BY term_id, vault_type
 )
 
@@ -55,65 +56,65 @@ FROM aggregated_vaults;
 -- Create unique index for CONCURRENT refresh capability
 -- This index is required for REFRESH MATERIALIZED VIEW CONCURRENTLY
 CREATE UNIQUE INDEX term_pkey
-    ON public.term (id);
+    ON snapshot.term (id);
 
 -- Additional indexes for query optimization
 CREATE INDEX idx_term_type
-    ON public.term (type);
+    ON snapshot.term (type);
 
 CREATE INDEX idx_term_updated_at
-    ON public.term (updated_at);
+    ON snapshot.term (updated_at);
 
 CREATE INDEX idx_term_total_market_cap
-    ON public.term (total_market_cap DESC);
+    ON snapshot.term (total_market_cap DESC);
 
 CREATE INDEX idx_term_total_assets
-    ON public.term (total_assets DESC);
+    ON snapshot.term (total_assets DESC);
 
 CREATE INDEX idx_term_atom_id
-    ON public.term (atom_id) WHERE atom_id IS NOT NULL;
+    ON snapshot.term (atom_id) WHERE atom_id IS NOT NULL;
 
 CREATE INDEX idx_term_triple_id
-    ON public.term (triple_id) WHERE triple_id IS NOT NULL;
+    ON snapshot.term (triple_id) WHERE triple_id IS NOT NULL;
 
 -- Create refresh function
 -- This function can be called manually or scheduled via pg_cron
-CREATE OR REPLACE FUNCTION refresh_term_view()
+CREATE OR REPLACE FUNCTION snapshot.refresh_term_view()
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY public.term;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.term;
 END;
 $$;
 
 -- Add comments for documentation
-COMMENT ON MATERIALIZED VIEW public.term IS
-'Aggregated term data from vault view. Shows totals across all curve_ids for each term. For Atom type, atom_id = term_id. For Triple/CounterTriple, triple_id = term_id. Updated via refresh_term_view().';
+COMMENT ON MATERIALIZED VIEW snapshot.term IS
+'Aggregated term data from vault view. Shows totals across all curve_ids for each term. Part of snapshot schema for validation.';
 
-COMMENT ON FUNCTION refresh_term_view() IS
-'Refreshes the term materialized view using CONCURRENT mode. Can be called manually or scheduled via pg_cron for periodic updates.';
+COMMENT ON FUNCTION snapshot.refresh_term_view() IS
+'Refreshes the term materialized view in snapshot schema using CONCURRENT mode. Can be called manually or scheduled via pg_cron for periodic updates.';
 
-COMMENT ON COLUMN public.term.id IS
+COMMENT ON COLUMN snapshot.term.id IS
 'Unique identifier for the term (atom or triple) as hex-encoded bytes32. This is the term_id from the vault.';
 
-COMMENT ON COLUMN public.term.type IS
+COMMENT ON COLUMN snapshot.term.type IS
 'Type of term: Atom (individual entity), Triple (subject-predicate-object pro), or CounterTriple (con).';
 
-COMMENT ON COLUMN public.term.atom_id IS
+COMMENT ON COLUMN snapshot.term.atom_id IS
 'Set to term_id when type is Atom, NULL otherwise. Used for filtering and joining with atom-specific data.';
 
-COMMENT ON COLUMN public.term.triple_id IS
+COMMENT ON COLUMN snapshot.term.triple_id IS
 'Set to term_id when type is Triple or CounterTriple, NULL otherwise. Used for filtering and joining with triple-specific data.';
 
-COMMENT ON COLUMN public.term.total_assets IS
+COMMENT ON COLUMN snapshot.term.total_assets IS
 'Sum of total_assets across all vaults (all curve_ids) for this term.';
 
-COMMENT ON COLUMN public.term.total_market_cap IS
+COMMENT ON COLUMN snapshot.term.total_market_cap IS
 'Sum of market_cap across all vaults (all curve_ids) for this term. Represents total market capitalization.';
 
-COMMENT ON COLUMN public.term.created_at IS
+COMMENT ON COLUMN snapshot.term.created_at IS
 'Timestamp when the term was first created (earliest created_at from any vault with this term_id).';
 
-COMMENT ON COLUMN public.term.updated_at IS
+COMMENT ON COLUMN snapshot.term.updated_at IS
 'Timestamp of the most recent update across any vault with this term_id.';

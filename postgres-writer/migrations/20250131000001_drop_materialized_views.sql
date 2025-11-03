@@ -1,6 +1,15 @@
--- Drop all materialized views in reverse dependency order
--- This must be run before creating the new regular tables
+-- Drop materialized views migration
+--
+-- NOTE: This migration is now a no-op because materialized views were created in the
+-- snapshot schema (not public schema) in migrations 20250130000002-20250130000010.
+-- The snapshot schema coexists with the trigger-based public schema for validation.
+--
+-- The DROP statements below are preserved for reference but commented out.
+-- If you need to drop the snapshot views, use:
+--   DROP SCHEMA snapshot CASCADE;
 
+-- Original DROP statements (now commented out):
+/*
 -- Level 4: Aggregate views (depend on triple_term)
 DROP MATERIALIZED VIEW IF EXISTS predicate_object CASCADE;
 DROP MATERIALIZED VIEW IF EXISTS subject_predicate CASCADE;
@@ -29,3 +38,4 @@ DROP FUNCTION IF EXISTS refresh_triple_term_view() CASCADE;
 DROP FUNCTION IF EXISTS refresh_predicate_object_view() CASCADE;
 DROP FUNCTION IF EXISTS refresh_subject_predicate_view() CASCADE;
 DROP FUNCTION IF EXISTS refresh_all_views() CASCADE;
+*/

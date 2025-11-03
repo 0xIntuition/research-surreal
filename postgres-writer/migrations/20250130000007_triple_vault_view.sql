@@ -1,5 +1,6 @@
--- Migration: Create triple_vault materialized view
+-- Migration: Create triple_vault materialized view in snapshot schema
 -- Description: Aggregates vault data for both pro (term_id) and counter (counter_term_id) vaults per triple
+-- Part of the snapshot schema for validation against trigger-based public schema
 --
 -- Prerequisites:
 -- This migration requires:
@@ -9,14 +10,14 @@
 -- Note: counter_term_id is computed by the application using alloy::primitives::keccak256
 --
 -- Refresh:
--- SELECT refresh_triple_vault_view();
+-- SELECT snapshot.refresh_triple_vault_view();
 
 -- 1. DROP EXISTING OBJECTS (for idempotency)
-DROP MATERIALIZED VIEW IF EXISTS public.triple_vault CASCADE;
-DROP FUNCTION IF EXISTS refresh_triple_vault_view() CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS snapshot.triple_vault CASCADE;
+DROP FUNCTION IF EXISTS snapshot.refresh_triple_vault_view() CASCADE;
 
 -- 2. CREATE MATERIALIZED VIEW
-CREATE MATERIALIZED VIEW public.triple_vault AS
+CREATE MATERIALIZED VIEW snapshot.triple_vault AS
 WITH vault_combined AS (
     -- Pro vaults: match on triple.term_id
     SELECT
@@ -32,8 +33,8 @@ WITH vault_combined AS (
         v.block_number AS vault_block_number,
         v.log_index,
         v.updated_at
-    FROM public.triple t
-    INNER JOIN public.vault v
+    FROM snapshot.triple t
+    INNER JOIN snapshot.vault v
         ON t.term_id = v.term_id
         AND v.vault_type = 'Triple'
 
@@ -53,8 +54,8 @@ WITH vault_combined AS (
         v.block_number AS vault_block_number,
         v.log_index,
         v.updated_at
-    FROM public.triple t
-    INNER JOIN public.vault v
+    FROM snapshot.triple t
+    INNER JOIN snapshot.vault v
         ON t.counter_term_id = v.term_id
         AND v.vault_type = 'CounterTriple'
 )
@@ -82,81 +83,81 @@ GROUP BY term_id, counter_term_id, curve_id;
 
 -- Primary index (unique identifier) - required for CONCURRENT refresh
 CREATE UNIQUE INDEX triple_vault_pkey
-    ON public.triple_vault (term_id, curve_id);
+    ON snapshot.triple_vault (term_id, curve_id);
 
 -- Triple identifier indexes
 CREATE INDEX idx_triple_vault_term_id
-    ON public.triple_vault (term_id);
+    ON snapshot.triple_vault (term_id);
 
 CREATE INDEX idx_triple_vault_counter_term_id
-    ON public.triple_vault (counter_term_id);
+    ON snapshot.triple_vault (counter_term_id);
 
 -- Market cap indexes (for ranking and filtering)
 CREATE INDEX idx_triple_vault_market_cap
-    ON public.triple_vault (market_cap DESC);
+    ON snapshot.triple_vault (market_cap DESC);
 
 -- Position count indexes (for popularity ranking)
 CREATE INDEX idx_triple_vault_position_count
-    ON public.triple_vault (position_count DESC);
+    ON snapshot.triple_vault (position_count DESC);
 
 -- Temporal indexes (for time-based queries and ordering)
 CREATE INDEX idx_triple_vault_updated_at
-    ON public.triple_vault (updated_at DESC);
+    ON snapshot.triple_vault (updated_at DESC);
 
 -- Composite indexes for common query patterns
 -- Most active triples by market cap and recent updates
 CREATE INDEX idx_triple_vault_market_cap_updated
-    ON public.triple_vault (market_cap DESC, updated_at DESC);
+    ON snapshot.triple_vault (market_cap DESC, updated_at DESC);
 
 -- 4. CREATE REFRESH FUNCTION
 -- This function can be called manually or scheduled via pg_cron
-CREATE OR REPLACE FUNCTION refresh_triple_vault_view()
+CREATE OR REPLACE FUNCTION snapshot.refresh_triple_vault_view()
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY public.triple_vault;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.triple_vault;
 END;
 $$;
 
 -- 5. ADD COMMENTS FOR DOCUMENTATION
 
-COMMENT ON MATERIALIZED VIEW public.triple_vault IS
-'Aggregated triple vault data combining metrics from both pro (term_id) and counter (counter_term_id) vaults. Shows combined totals across both vaults. Updated via refresh_triple_vault_view().';
+COMMENT ON MATERIALIZED VIEW snapshot.triple_vault IS
+'Aggregated triple vault data combining metrics from both pro (term_id) and counter (counter_term_id) vaults. Shows combined totals across both vaults. Updated via snapshot.refresh_triple_vault_view().';
 
-COMMENT ON FUNCTION refresh_triple_vault_view() IS
+COMMENT ON FUNCTION snapshot.refresh_triple_vault_view() IS
 'Refreshes the triple_vault materialized view using CONCURRENT mode. Can be called manually or scheduled via pg_cron for periodic updates.';
 
 -- Triple identifier columns
-COMMENT ON COLUMN public.triple_vault.term_id IS
+COMMENT ON COLUMN snapshot.triple_vault.term_id IS
 'Unique identifier for the triple (hex-encoded bytes32). This is the "pro" (for) vault term ID.';
 
-COMMENT ON COLUMN public.triple_vault.counter_term_id IS
+COMMENT ON COLUMN snapshot.triple_vault.counter_term_id IS
 'Term ID of the counter-triple (the "con" or against position). Should be calculated using keccak256(abi.encodePacked(COUNTER_SALT, term_id)) in the application.';
 
-COMMENT ON COLUMN public.triple_vault.curve_id IS
+COMMENT ON COLUMN snapshot.triple_vault.curve_id IS
 'Bonding curve identifier for the vault (typically 0 for standard curve).';
 
 -- Combined metric columns
-COMMENT ON COLUMN public.triple_vault.total_shares IS
+COMMENT ON COLUMN snapshot.triple_vault.total_shares IS
 'Combined total shares across both pro and counter vaults.';
 
-COMMENT ON COLUMN public.triple_vault.total_assets IS
+COMMENT ON COLUMN snapshot.triple_vault.total_assets IS
 'Combined total assets across both pro and counter vaults (in wei).';
 
-COMMENT ON COLUMN public.triple_vault.position_count IS
+COMMENT ON COLUMN snapshot.triple_vault.position_count IS
 'Combined count of active positions across both pro and counter vaults.';
 
-COMMENT ON COLUMN public.triple_vault.market_cap IS
+COMMENT ON COLUMN snapshot.triple_vault.market_cap IS
 'Combined market capitalization across both pro and counter vaults. Represents total economic activity for this triple.';
 
 -- Block and transaction columns
-COMMENT ON COLUMN public.triple_vault.block_number IS
+COMMENT ON COLUMN snapshot.triple_vault.block_number IS
 'Most recent block number from either vault update or triple creation.';
 
-COMMENT ON COLUMN public.triple_vault.log_index IS
+COMMENT ON COLUMN snapshot.triple_vault.log_index IS
 'Log index from the most recent vault event (prioritizes pro vault).';
 
 -- Timestamp column
-COMMENT ON COLUMN public.triple_vault.updated_at IS
+COMMENT ON COLUMN snapshot.triple_vault.updated_at IS
 'Timestamp of the most recent vault update from either pro or counter vault.';

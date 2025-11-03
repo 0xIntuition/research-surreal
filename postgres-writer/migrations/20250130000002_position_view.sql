@@ -1,12 +1,13 @@
--- Migration: Create position materialized view
+-- Migration: Create position materialized view in snapshot schema
 -- This view aggregates deposited and redeemed events to track current positions
+-- Part of the snapshot schema for validation against trigger-based public schema
 
 -- Drop existing objects if they exist (for idempotency)
-DROP MATERIALIZED VIEW IF EXISTS public.position CASCADE;
-DROP FUNCTION IF EXISTS refresh_position_view() CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS snapshot.position CASCADE;
+DROP FUNCTION IF EXISTS snapshot.refresh_position_view() CASCADE;
 
--- Create the position materialized view
-CREATE MATERIALIZED VIEW public.position AS
+-- Create the position materialized view in snapshot schema
+CREATE MATERIALIZED VIEW snapshot.position AS
 WITH
 -- Get latest deposited event per position (most positions only have deposits)
 -- This uses the optimized composite index for DISTINCT ON
@@ -184,60 +185,60 @@ LEFT JOIN redeem_totals rt
 
 -- Create indexes for optimized queries
 CREATE UNIQUE INDEX position_pkey
-    ON public.position (account_id, term_id, curve_id);
+    ON snapshot.position (account_id, term_id, curve_id);
 
 CREATE INDEX idx_position_account_id
-    ON public.position (account_id);
+    ON snapshot.position (account_id);
 
 CREATE INDEX idx_position_term_id
-    ON public.position (term_id);
+    ON snapshot.position (term_id);
 
 CREATE INDEX idx_position_updated_at
-    ON public.position (updated_at);
+    ON snapshot.position (updated_at);
 
 CREATE INDEX idx_position_created_at
-    ON public.position (created_at);
+    ON snapshot.position (created_at);
 
 -- Partial indexes for active positions (shares > 0)
 -- These are much smaller and faster for queries that only care about active positions
 -- Expected size: 50-80% smaller than full indexes
 CREATE INDEX idx_position_active_account
-    ON public.position (account_id)
+    ON snapshot.position (account_id)
     WHERE shares > 0;
 
 CREATE INDEX idx_position_active_term
-    ON public.position (term_id)
+    ON snapshot.position (term_id)
     WHERE shares > 0;
 
 CREATE INDEX idx_position_active_account_term
-    ON public.position (account_id, term_id)
+    ON snapshot.position (account_id, term_id)
     WHERE shares > 0;
 
 -- Partial index for positions with significant deposits
 -- Useful for filtering out dust positions or test transactions
 CREATE INDEX idx_position_significant
-    ON public.position (account_id, term_id, curve_id)
+    ON snapshot.position (account_id, term_id, curve_id)
     WHERE total_deposit_assets_after_total_fees > 1000000000000000000;  -- > 1 token (18 decimals)
 
 -- Create refresh function for the materialized view
-CREATE OR REPLACE FUNCTION refresh_position_view()
+CREATE OR REPLACE FUNCTION snapshot.refresh_position_view()
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
     -- CONCURRENTLY allows queries during refresh (requires unique index)
-    REFRESH MATERIALIZED VIEW CONCURRENTLY public.position;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.position;
 END;
 $$;
 
-COMMENT ON MATERIALIZED VIEW public.position IS
-'Aggregated position data from deposited and redeemed events. Shows current shares and cumulative deposit/redeem totals per (account_id, term_id, curve_id).';
+COMMENT ON MATERIALIZED VIEW snapshot.position IS
+'Aggregated position data from deposited and redeemed events. Shows current shares and cumulative deposit/redeem totals per (account_id, term_id, curve_id). Part of snapshot schema for validation.';
 
-COMMENT ON FUNCTION refresh_position_view() IS
-'Refreshes the position materialized view. Can be called manually or scheduled via pg_cron.';
+COMMENT ON FUNCTION snapshot.refresh_position_view() IS
+'Refreshes the position materialized view in snapshot schema. Can be called manually or scheduled via pg_cron.';
 
 -- Example usage for manual refresh:
--- SELECT refresh_position_view();
+-- SELECT snapshot.refresh_position_view();
 
 -- Example usage for scheduled refresh (requires pg_cron extension):
--- SELECT cron.schedule('refresh-position', '*/5 * * * *', 'SELECT refresh_position_view();');
+-- SELECT cron.schedule('refresh-snapshot-position', '*/5 * * * *', 'SELECT snapshot.refresh_position_view();');
