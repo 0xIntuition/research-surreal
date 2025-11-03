@@ -11,7 +11,7 @@ This project provides a complete data pipeline solution that:
 3. **Synchronizes data** to dual storage backends:
    - **SurrealDB** for flexible NoSQL querying
    - **PostgreSQL** (TimescaleDB) for relational analytics and time-series data
-4. **Provides analytics** through PostgreSQL materialized views for pre-computed metrics
+4. **Provides analytics** through PostgreSQL triggers and Rust cascade processor for real-time aggregations
 5. **Monitors pipeline** health with Prometheus and Grafana
 6. **Visualizes data** through a Next.js dashboard
 
@@ -107,19 +107,14 @@ This project provides a complete data pipeline solution that:
 - **Purpose**: Time-series relational database for analytics
 - **Version**: PostgreSQL 17.5 via TimescaleDB image
 - **Features**:
-  - 10 database migrations with schema evolution
+  - 13 database migrations (10 reference + 3 production)
   - Event tables: atom_created, triple_created, deposited, redeemed, share_price_changed
-  - **Materialized Views** for pre-computed analytics:
-    - `position_view` - Track user positions across vaults
-    - `vault_view` - Vault-level aggregations
-    - `term_view` - Term analytics
-    - `atom_view` - Atom data views
-    - `triple_view` - Triple relationships
-    - `triple_vault_view` - Triple-vault connections
-    - `triple_term_view` - Triple-term aggregations
-    - `predicate_aggregates` - Predicate statistics
-  - Refresh utilities for materialized view management
+  - **Trigger-based updates** for real-time data synchronization:
+    - Base tables: `atom`, `triple`, `position`, `vault` (updated by PostgreSQL triggers)
+    - Aggregated tables: `term` (updated by Rust cascade processor)
+    - Analytics tables: `triple_vault`, `triple_term`, `predicate_object`, `subject_predicate` (updated by analytics worker)
   - Composite indexes for performance
+  - Advisory locks for preventing race conditions
 - **Port**: 18100 (PostgreSQL protocol)
 
 ### 6. Web Dashboard (Next.js)
@@ -231,8 +226,8 @@ This scheme:
    - `intuition_testnet_share_price_changed`
 4. **Dual-Path Processing**:
    - **SurrealDB Writer**: Consumes and batches events (20/batch, 100ms interval) → SurrealDB
-   - **PostgreSQL Writer**: Consumes and batches events (100/batch, 500ms interval) → PostgreSQL
-5. **Analytics Processing**: PostgreSQL materialized views compute aggregations and relationships
+   - **PostgreSQL Writer**: Consumes and batches events (20/batch, 5000ms timeout) → PostgreSQL
+5. **Analytics Processing**: PostgreSQL triggers and Rust cascade processor compute real-time aggregations
 6. **Data Storage**:
    - SurrealDB stores events in flexible NoSQL format
    - PostgreSQL stores events in relational tables with full transaction context
@@ -272,7 +267,7 @@ This scheme:
 
 ### Batch Processing
 - **SurrealDB Sync**: 20 events per batch, 100ms interval
-- **PostgreSQL Sync**: 100 events per batch, 500ms interval (configurable)
+- **PostgreSQL Sync**: 20 events per batch, 5000ms timeout (configurable)
 
 ### Concurrency
 - 4 Tokio worker threads per sync service (configurable via `TOKIO_WORKER_THREADS`)
@@ -316,26 +311,9 @@ MAX_RETRIES=3
 
 Use `docker-compose.override.yml` for local development with port mappings in the 18xxx range.
 
-### Known Issues and Limitations
-
-> **Note**: The PostgreSQL writer has some known issues and potential improvements. See [postgres-writer/issues.md](postgres-writer/issues.md) for a comprehensive catalog.
-
-**Critical Issues**:
-1. **Health Endpoint Naming**: Health checks return `surreal_sync_healthy` instead of `postgres_sync_healthy`
-2. **Non-Graceful Shutdown**: Analytics worker and HTTP server are aborted on shutdown, potentially causing data loss
-
-**High Priority Issues**:
-- Redis publisher lock contention under high load
-- Advisory lock hash collision risk at scale
-- No automatic backfill mechanism for analytics tables
-
-**Note on Transaction Handling**: The system intentionally uses separate transactions for event insertion and cascade updates, combined with idempotent retries via Redis. See [Transaction Handling](postgres-writer/README.md#transaction-handling-and-retry-semantics) for details on this architectural decision.
-
-For complete details, mitigation strategies, and planned improvements, see the [issues catalog](postgres-writer/issues.md).
-
 ### Database Migrations
 
-**PostgreSQL migrations** (10 total):
+**PostgreSQL migrations** (13 total: 10 reference + 3 production):
 ```bash
 cd postgres-writer
 sqlx migrate run
@@ -351,17 +329,18 @@ MIT License - see [LICENSE](LICENSE) file for details.
 ## Contributing
 
 This is a research project for the Intuition protocol. Contributions should focus on:
-- **Critical bug fixes**: See [postgres-writer/issues.md](postgres-writer/issues.md) for prioritized issues
+- **Critical bug fixes**: See [postgres-writer/README.md](postgres-writer/README.md) for known issues
 - Performance optimization
 - Monitoring improvements
 - Data pipeline reliability
-- Analytics and materialized view enhancements
+- Analytics table enhancements
 - Documentation and testing
 
 **Before Contributing**:
-1. Review the [issues catalog](postgres-writer/issues.md) to understand known limitations
-2. Check if your contribution addresses any cataloged issues
-3. Ensure changes don't introduce similar patterns to identified problems
+1. Review the [postgres-writer documentation](postgres-writer/README.md) to understand the architecture
+2. Check existing issues and planned improvements
+3. Ensure changes don't introduce race conditions or data inconsistencies
 4. Add tests for any bug fixes or new features
 5. Update documentation to reflect changes
+6. Run `cargo fmt` and `cargo clippy` before committing Rust code
 

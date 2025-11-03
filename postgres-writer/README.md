@@ -503,7 +503,7 @@ Returns:
 {
   "healthy": true,
   "redis_consumer_healthy": true,
-  "surreal_sync_healthy": true,
+  "postgres_sync_healthy": true,
   "circuit_breaker_closed": true,
   "last_check": "2025-01-30T12:00:00Z",
   "metrics": {
@@ -511,7 +511,7 @@ Returns:
     "total_events_failed": 0,
     "circuit_breaker_state": "Closed",
     "redis_consumer_health": true,
-    "surreal_sync_health": true
+    "postgres_sync_health": true
   }
 }
 ```
@@ -525,91 +525,6 @@ Key metrics:
 - `events_failed_total` - Total events failed
 - `event_processing_duration_seconds` - Processing time histogram
 - `circuit_breaker_state` - Current circuit breaker state (0=closed, 1=open)
-
-## Known Issues and Improvements
-
-> **Note**: For a comprehensive catalog of all identified issues, see [issues.md](./issues.md)
-
-### Critical Issues
-
-1. **Health Endpoint Naming Confusion** (See [issues.md#1](./issues.md#1-misleading-health-check-field-names))
-   - Health check returns `surreal_sync_healthy` instead of `postgres_sync_healthy`
-   - **Impact**: Misleading monitoring and alerting
-   - **Status**: Known issue, fix pending
-
-2. **Non-Graceful Shutdown** (See [issues.md#2](./issues.md#2-graceful-shutdown-not-implemented))
-   - Analytics worker and HTTP server are aborted on shutdown
-   - **Impact**: Potential data loss and duplicate message processing
-   - **Mitigation**: Use SIGTERM with grace period for deployment rollouts
-
-### High Priority Issues
-
-3. **Analytics Worker Lag**
-   - The analytics worker processes updates asynchronously, so analytics tables may lag behind real-time data
-   - **Impact**: Queries on `triple_vault`, `triple_term`, `predicate_object`, `subject_predicate` may be slightly stale
-   - **Mitigation**: The lag is typically < 1 second under normal load
-
-4. **Advisory Lock Contention**
-   - Heavy concurrent updates to the same position can cause lock contention
-   - Uses FNV-1a hash with theoretical collision risk at scale
-   - **Impact**: Slight slowdown on high-frequency deposits/redeems; potential race conditions on hash collisions
-   - **Mitigation**: Advisory locks are transaction-scoped and release quickly
-
-5. **No Automatic Backfill**
-   - If analytics worker fails, updates are retried but there's no automatic backfill mechanism
-   - **Impact**: Missed updates require manual intervention
-   - **Mitigation**: Failed messages remain in Redis stream (not ACK'd) and will be retried
-
-### Medium Priority Issues
-
-7. **Redis Publisher Lock Contention** (See [issues.md#4](./issues.md#4-redis-publisher-lock-contention))
-   - Database queries performed while holding Redis publisher lock
-   - **Impact**: Reduced throughput under high load
-   - **Mitigation**: Batch size limited to 50 term_ids per batch
-
-8. **Hardcoded Configuration Values**
-   - Database connection pool size (10 connections)
-   - Analytics rate limits (5000 msg/s)
-   - **Impact**: Limited deployment flexibility
-   - **Mitigation**: Use environment variables when needed
-
-### Proposed Improvements
-
-1. **Batch Analytics Updates**
-   - Currently processes term updates one at a time
-   - **Proposal**: Batch multiple term updates into single transactions
-   - **Benefit**: 5-10x throughput improvement for analytics worker
-   - **Priority**: High
-
-2. **Incremental Triple Analytics**
-   - Currently recalculates entire predicate_object and subject_predicate on every update
-   - **Proposal**: Maintain incremental counters instead of full aggregations
-   - **Benefit**: Faster analytics updates, reduced database load
-   - **Priority**: Medium
-
-3. **Unified Transaction Architecture**
-   - Refactor to use single transaction for event + cascade
-   - **Proposal**: Change all event handlers to accept Transaction<Postgres>
-   - **Benefit**: Guaranteed data consistency, simplified error handling
-   - **Priority**: Critical (addresses Issue #1)
-
-4. **Event Replay**
-   - No built-in mechanism to replay events from scratch
-   - **Proposal**: Add command to reset state and replay from Redis stream
-   - **Benefit**: Easy recovery from data corruption or schema changes
-   - **Priority**: Medium
-
-5. **Enhanced Observability**
-   - Currently only basic Prometheus metrics
-   - **Proposal**: Add queue depth, processing lag, query performance metrics
-   - **Benefit**: Better debugging and capacity planning
-   - **Priority**: Medium
-
-6. **Dead Letter Queue**
-   - Failed events are retried indefinitely
-   - **Proposal**: Add dead letter queue for events that fail after max retries
-   - **Benefit**: Better visibility into problematic events
-   - **Priority**: Low
 
 ## Development Notes
 
