@@ -3,7 +3,7 @@
 -- Part of the snapshot schema for validation against trigger-based public schema
 --
 -- Refresh:
--- SELECT snapshot.snapshot.refresh_atom_view();
+-- SELECT snapshot.refresh_atom_view();
 
 -- 1. CREATE ENUM TYPES
 DO $$ BEGIN
