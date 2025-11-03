@@ -45,7 +45,11 @@ impl PostgresClient {
         metrics: Arc<Metrics>,
     ) -> Result<Self> {
         // Create connection pool
+        // Set min_connections to maintain a baseline pool for better observability
+        // and reduced connection establishment overhead
+        let min_connections = (pool_size / 2).max(1);
         let pool = PgPoolOptions::new()
+            .min_connections(min_connections)
             .max_connections(pool_size)
             .connect(database_url)
             .await
