@@ -2,7 +2,6 @@ name: rindexer-surreal
 
 services:
   rindexer:
-    container_name: rindexer
     build:
       context: ../rindexer
       dockerfile: Dockerfile
@@ -21,7 +20,6 @@ services:
       - dokploy-network
 
   surrealdb:
-    container_name: surrealdb
     image: surrealdb/surrealdb:latest
     command: ["start", "--bind", "0.0.0.0:8000", "--user", "root", "--pass", "root", "--import-file", "/schema.surql", "rocksdb:/data/surreal.db"]
     volumes:
@@ -96,7 +94,6 @@ services:
       - "traefik.http.services.surrealdb-app.loadbalancer.server.port=8000"
 
   surreal-writer:
-    container_name: surreal-writer
     build:
       context: ../surreal-writer
       dockerfile: Dockerfile
@@ -134,7 +131,6 @@ services:
       retries: 3
 
   postgres:
-    container_name: postgres
     image: timescale/timescaledb-ha:pg17.5-ts2.20.1
     environment:
       POSTGRES_USER: postgres
@@ -155,7 +151,6 @@ services:
       - dokploy-network
 
   postgres-writer:
-    container_name: postgres-writer
     build:
       context: ../postgres-writer
       dockerfile: Dockerfile
@@ -196,7 +191,6 @@ services:
       retries: 3
 
   prometheus:
-    container_name: prometheus
     image: prom/prometheus:latest
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -224,7 +218,6 @@ services:
       - "traefik.http.services.prometheus-app.loadbalancer.server.port=9090"
 
   grafana:
-    container_name: grafana
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_USER: admin
@@ -250,7 +243,6 @@ services:
       - "traefik.http.services.grafana-app.loadbalancer.server.port=3000"
 
   example-web-app:
-    container_name: example-web-app
     build:
       context: ../example-web-app
       dockerfile: Dockerfile

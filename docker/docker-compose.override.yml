@@ -3,13 +3,12 @@ name: rindexer-surreal
 services:
 
   # Local Redis for development
-  redis:
-    container_name: redis
+  redisdb:
     image: redis:7-alpine
     ports:
       - "18101:6379"
     volumes:
-      - redis_data:/data
+      - redisdb_data:/data
       - ../infrastructure/redis/redis.conf:/redis.conf:ro
     command: ["redis-server", "/redis.conf"]
     healthcheck:
@@ -21,27 +20,25 @@ services:
       - rindexer-network
 
   redis-commander:
-    container_name: redis-commander
     image: ghcr.io/joeferner/redis-commander:latest
     ports:
       - '18400:8081'
     environment:
-      REDIS_HOSTS: local:redis:6379
+      REDIS_HOSTS: local:redisdb:6379
     restart: unless-stopped
     networks:
       - rindexer-network
     depends_on:
-      redis:
+      redisdb:
         condition: service_healthy
 
   # Redis Exporter for Prometheus metrics
   redis-exporter:
-    container_name: redis-exporter
     image: oliver006/redis_exporter:latest
     ports:
       - "18401:9121"
     environment:
-      REDIS_ADDR: redis:6379
+      REDIS_ADDR: redisdb:6379
       # Enable stream metrics collection
       REDIS_EXPORTER_CHECK_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
       # Enable consumer group metrics
@@ -53,18 +50,18 @@ services:
     networks:
       - rindexer-network
     depends_on:
-      redis:
+      redisdb:
         condition: service_healthy
     restart: unless-stopped
 
   # Override rindexer service for local development
   rindexer:
     environment:
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redisdb:6379
     depends_on:
       # postgres:
       #   condition: service_healthy
-      redis:
+      redisdb:
         condition: service_healthy
     networks:
       - rindexer-network
@@ -87,7 +84,7 @@ services:
     environment:
       RUST_LOG: "surreal_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redisdb:6379
       SURREAL_URL: ws://surrealdb:8000/rpc
       SURREAL_USER: "root"
       SURREAL_PASS: "root"
@@ -107,7 +104,7 @@ services:
     depends_on:
       # postgres:
       #   condition: service_healthy
-      redis:
+      redisdb:
         condition: service_healthy
       surrealdb:
         condition: service_healthy
@@ -119,7 +116,7 @@ services:
     environment:
       RUST_LOG: "postgres_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://redisdb:6379
       DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
       CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_GROUP_SUFFIX: ${CONSUMER_GROUP_SUFFIX:-sync}
@@ -136,7 +133,7 @@ services:
     ports:
       - "18211:18211"  # Health check endpoint
     depends_on:
-      redis:
+      redisdb:
         condition: service_healthy
       postgres:
         condition: service_healthy
@@ -145,7 +142,6 @@ services:
 
 
   surrealist:
-    container_name: surrealist
     image: surrealdb/surrealist:latest
     ports:
       - "18301:8080"
@@ -201,7 +197,6 @@ services:
       - "18300:3001"
 
   drizzle-studio:
-    container_name: drizzle-studio
     build: ../infrastructure/drizzle/
     ports:
       - "4983:4983"
@@ -221,6 +216,6 @@ networks:
 
 volumes:
   # postgres_data:
-  redis_data:
+  redisdb_data:
   prometheus_data:
   grafana_data:
