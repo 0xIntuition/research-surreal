@@ -122,12 +122,13 @@ services:
       CONSUMER_GROUP_SUFFIX: ${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
       ANALYTICS_STREAM_NAME: ${ANALYTICS_STREAM_NAME:-term_updates}
-      TOKIO_WORKER_THREADS: "5"
-      BATCH_SIZE: "10"
-      BATCH_TIMEOUT_MS: "500"
-      PROCESSING_INTERVAL_MS: "500"
-      RECONNECT_DELAY_MS: "2000"
-      MAX_RETRIES: "5"
+      TOKIO_WORKER_THREADS: "8"
+      BATCH_SIZE: "500"
+      BATCH_TIMEOUT_MS: "5000"
+      PROCESSING_INTERVAL_MS: "100"
+      RECONNECT_DELAY_MS: "5000"
+      MAX_RETRIES: "3"
+      MAX_MESSAGES_PER_SECOND: "10000"
       HTTP_PORT: "18211"
       REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
