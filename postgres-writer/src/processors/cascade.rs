@@ -29,6 +29,7 @@ impl CascadeProcessor {
 
     /// Process cascade after a deposit or redeem event
     /// This is called AFTER the trigger has updated the position table
+    /// Only updates vault.position_count (vault financial metrics are updated by SharePriceChanged events)
     pub async fn process_position_change(
         &self,
         tx: &mut Transaction<'_, Postgres>,
@@ -51,56 +52,31 @@ impl CascadeProcessor {
 
         debug!("Acquired advisory lock {} for position", lock_id);
 
-        // Update vault aggregates (position_count and derived metrics)
+        // Update vault.position_count (only field that changes on deposits/redeems)
+        // Note: vault financial metrics (total_shares, total_assets, market_cap) are only
+        // updated by SharePriceChanged events, so no term aggregation is needed here
         self.vault_updater
             .update_vault_from_positions(tx, term_id, curve_id)
             .await?;
 
-        // Update term aggregates (sum across all vaults for this term)
-        let updated_term_ids = self
-            .term_updater
-            .update_term_from_vaults(tx, term_id)
-            .await?;
+        debug!("Cascade completed for position change");
 
-        debug!(
-            "Cascade completed for position change. Updated {} terms",
-            updated_term_ids.len()
-        );
-
-        // Note: Redis publishing happens after transaction commit
-        // See process_position_change_with_redis for the full flow
         Ok(())
     }
 
     /// Process cascade after a share price change event
     /// This is called AFTER the trigger has updated the vault table
+    /// Only updates term aggregations (vault is already fully updated by trigger)
     pub async fn process_price_change(
         &self,
         tx: &mut Transaction<'_, Postgres>,
         term_id: &str,
-        curve_id: &str,
+        _curve_id: &str,
     ) -> Result<()> {
-        debug!(
-            "Processing cascade for price change: term={}, curve={}",
-            term_id, curve_id
-        );
+        debug!("Processing cascade for price change: term={}", term_id);
 
-        // Acquire advisory lock for this vault to prevent concurrent updates
-        let lock_id = Self::hash_vault(term_id, curve_id);
-        sqlx::query("SELECT pg_advisory_xact_lock($1)")
-            .bind(lock_id)
-            .execute(&mut **tx)
-            .await
-            .map_err(SyncError::Sqlx)?;
-
-        debug!("Acquired advisory lock {} for vault", lock_id);
-
-        // Recalculate vault market_cap based on new share price
-        self.vault_updater
-            .recalculate_market_cap(tx, term_id, curve_id)
-            .await?;
-
-        // Update term aggregates
+        // Update term aggregates (sum vault metrics across all curves for this term)
+        // Note: vault table is already fully updated by the trigger, including market_cap
         let updated_term_ids = self
             .term_updater
             .update_term_from_vaults(tx, term_id)
@@ -178,25 +154,6 @@ impl CascadeProcessor {
         // XOR fold to 63 bits to avoid sign issues with advisory locks
         ((hash >> 32) ^ (hash & 0xFFFFFFFF)) as i64 & 0x7FFFFFFFFFFFFFFF
     }
-
-    /// Hash a vault key to get a lock ID for advisory locks
-    /// Uses FNV-1a hash for deterministic, collision-resistant hashing
-    fn hash_vault(term_id: &str, curve_id: &str) -> i64 {
-        // Use FNV-1a-like hash for better distribution
-        let mut hash = 0xcbf29ce484222325u64; // FNV offset basis
-
-        for byte in term_id.bytes() {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3); // FNV prime
-        }
-        for byte in curve_id.bytes() {
-            hash ^= byte as u64;
-            hash = hash.wrapping_mul(0x100000001b3);
-        }
-
-        // XOR fold to 63 bits to avoid sign issues with advisory locks
-        ((hash >> 32) ^ (hash & 0xFFFFFFFF)) as i64 & 0x7FFFFFFFFFFFFFFF
-    }
 }
 
 impl Default for CascadeProcessor {
@@ -224,12 +181,5 @@ mod tests {
             hash1, hash2,
             "Different inputs should produce different hashes"
         );
-    }
-
-    #[test]
-    fn test_hash_vault_deterministic() {
-        let hash1 = CascadeProcessor::hash_vault("term1", "curve1");
-        let hash2 = CascadeProcessor::hash_vault("term1", "curve1");
-        assert_eq!(hash1, hash2, "Hash should be deterministic");
     }
 }
