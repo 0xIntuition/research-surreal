@@ -60,13 +60,18 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
         .expect("Failed to get database pool");
 
     // Vault should have exactly 10 positions (advisory locks should prevent race conditions)
-    let _vault = DbAssertions::assert_vault_state(pool, term_id, curve_id, 10)
+    let vault = DbAssertions::assert_vault_state(pool, term_id, curve_id, 10)
         .await
         .expect("Failed to verify vault state");
 
-    // Note: total_shares is only set by SharePriceChanged events, not deposits
-    // Since this test has no SharePriceChanged events, total_shares will be 0
-    // The cascade processor updates position_count and total_assets from positions
+    // Note: Deposits only update vault.position_count. Financial metrics (total_shares,
+    // total_assets, market_cap) are only updated by SharePriceChanged events.
+    // Term aggregations are also only updated by SharePriceChanged events.
+    // (see perf optimization commit 0e59404)
+    assert_eq!(
+        vault.position_count, 10,
+        "Vault should have correct position count after concurrent deposits"
+    );
 
     // Each position should exist with correct shares
     for i in 0..10 {
@@ -85,16 +90,8 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
         );
     }
 
-    // Check term aggregation was updated correctly
-    let term = DbAssertions::assert_term_aggregation(pool, term_id, "Atom")
-        .await
-        .expect("Failed to verify term aggregation");
-
-    // Total assets should reflect all deposits
-    assert!(
-        term.total_assets.parse::<i64>().unwrap() > 0,
-        "Term should have aggregated assets"
-    );
+    // Term aggregations are not updated by deposits (only by SharePriceChanged events)
+    // so we don't check term.total_assets here
 
     // Cleanup - ensure pipeline stops even if stop() hangs
     let stop_result =
