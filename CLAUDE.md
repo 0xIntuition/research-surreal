@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Research Surreal is a high-performance blockchain event indexing and dual-database data pipeline for the Intuition protocol. It indexes blockchain events from the MultiVault contract, streams them through Redis, and synchronizes to both SurrealDB (NoSQL) and PostgreSQL (TimescaleDB) with real-time analytics.
+Research Backend is a high-performance blockchain event indexing and dual-database data pipeline for the Intuition protocol. It indexes blockchain events from the MultiVault contract, streams them through Redis, and synchronizes to both SurrealDB (NoSQL) and PostgreSQL (TimescaleDB) with real-time analytics.
 
 ## Architecture
 

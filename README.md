@@ -1,4 +1,4 @@
-# Research Surreal
+# Research Backend
 
 A high-performance blockchain event indexing and dual-database data pipeline system for the Intuition protocol, featuring real-time synchronization between Redis streams and both SurrealDB and PostgreSQL with comprehensive monitoring and analytics.
 
