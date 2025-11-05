@@ -207,7 +207,7 @@ All services use ports in the **18000-18999 range**:
 | Port | Service |
 |------|---------|
 | 18100 | PostgreSQL |
-| 18101 | RedisDB |
+| 18101 | Redis |
 | 18102 | SurrealDB API |
 | 18200 | Rindexer GraphQL |
 | 18210 | SurrealDB Writer (health/metrics) |

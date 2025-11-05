@@ -70,7 +70,7 @@ This runbook addresses alerts related to high failure rates for specific event t
 5. **Verify event data format**
    ```bash
    # Sample events from Redis for the failing event type
-   docker exec -it redisdb redis-cli LRANGE events:queue 0 10
+   docker exec -it redis redis-cli LRANGE events:queue 0 10
    ```
 
 ## Resolution Steps

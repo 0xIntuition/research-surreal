@@ -184,7 +184,7 @@ This project uses a structured port numbering scheme in the **18000-18999 range*
 
 | Port Range | Service Type | Services |
 |------------|--------------|----------|
-| **18100-18199** | Databases | PostgreSQL (18100), RedisDB (18101), SurrealDB (18102) |
+| **18100-18199** | Databases | PostgreSQL (18100), Redis (18101), SurrealDB (18102) |
 | **18200-18299** | Backend APIs | Rindexer (18200), SurrealDB Writer (18210), PostgreSQL Writer (18211) |
 | **18300-18399** | Frontend/UI | Web Dashboard (18300), Surrealist (18301) |
 | **18400-18499** | Admin Tools | RedisInsight (18400) |

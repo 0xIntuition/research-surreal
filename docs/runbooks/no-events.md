@@ -59,10 +59,10 @@ Always verify if the event type *should* be occurring before treating this as an
 2. **Check if events are in Redis queue**
    ```bash
    # Check Redis queue length
-   docker exec -it redisdb redis-cli LLEN events:queue
+   docker exec -it redis redis-cli LLEN events:queue
 
    # Sample events to see types present
-   docker exec -it redisdb redis-cli LRANGE events:queue 0 100 | grep -i "<event_type>"
+   docker exec -it redis redis-cli LRANGE events:queue 0 100 | grep -i "<event_type>"
    ```
 
 3. **Check event producer status**
@@ -120,11 +120,11 @@ Always verify if the event type *should* be occurring before treating this as an
 
 1. **Check Redis health:**
    ```bash
-   docker exec -it redisdb redis-cli PING
+   docker exec -it redis redis-cli PING
    # Should return PONG
 
    # Check Redis memory usage
-   docker exec -it redisdb redis-cli INFO memory
+   docker exec -it redis redis-cli INFO memory
    ```
 
 2. **Restart sync service if needed:**
