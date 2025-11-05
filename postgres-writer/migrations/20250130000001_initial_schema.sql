@@ -1,5 +1,17 @@
 -- Initial schema for postgres-writer
 -- Creates all event tables with transaction information embedded
+--
+-- MIGRATION HISTORY NOTE:
+-- Migrations 20250130000002-20250130000010 were originally created to use the public schema
+-- for materialized views. They were later moved to the snapshot schema for validation purposes.
+-- This migration (20250130000001) was updated retroactively to create the snapshot schema.
+-- The snapshot schema is used to compare the legacy materialized view approach against the
+-- current trigger-based + Rust cascade approach in the public schema.
+
+-- Create snapshot schema for materialized views
+-- This schema is used for validation: materialized views aggregate from events
+-- and are compared against trigger-based tables in the public schema
+CREATE SCHEMA IF NOT EXISTS snapshot;
 
 -- Atom Created Events
 CREATE TABLE IF NOT EXISTS atom_created_events (

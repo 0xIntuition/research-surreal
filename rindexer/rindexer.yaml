@@ -5,8 +5,12 @@ project_type: no-code
 timestamps: true
 networks:
   - name: intuition-testnet
-    chain_id: 13579
-    rpc: https://testnet.rpc.intuition.systems/http
+    # chain_id: 13579
+    # rpc: https://testnet.rpc.intuition.systems/http
+    # chain_id: 31337
+    # rpc: http://host.docker.internal:8545/
+    chain_id: 1155
+    rpc: https://rpc.intuition.systems/http
 
 storage:
   postgres:
@@ -21,8 +25,12 @@ contracts:
   - name: MultiVault
     details:
       - network: intuition-testnet
-        address: "0x2Ece8D4dEdcB9918A398528f3fa4688b1d2CAB91"
-        start_block: 8092570
+        address: "0x6E35cF57A41fA15eA0EaE9C33e751b01A784Fe7e"
+        start_block: 1311
+        # address: "0x322813Fd9A801c5507c9de605d63CEA4f2CE6c44"
+        # start_block: 0
+        # address: "0x2Ece8D4dEdcB9918A398528f3fa4688b1d2CAB91"
+        # start_block: 8092570
     abi: ./abi/Multivault.json
     include_events:
       - name: AtomCreated

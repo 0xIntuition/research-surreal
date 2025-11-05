@@ -177,7 +177,9 @@ async fn test_deposits_update_term_aggregations() {
     let term_id = "0x0000000000000000000000000000000000000000000000000000000000000001";
     let account_id = "0x742d35Cc6634C0532925a3b844Bc9e7595f0bEb0";
 
-    // Create atom and deposit
+    // Create atom, deposit, and trigger price change to update term aggregations
+    // Note: Deposits only update vault.position_count. Term aggregations are only
+    // updated by SharePriceChanged events (see perf optimization commit 0e59404)
     let events = vec![
         EventBuilder::new()
             .with_block(1000)
@@ -185,6 +187,9 @@ async fn test_deposits_update_term_aggregations() {
         EventBuilder::new()
             .with_block(1001)
             .deposited(account_id, term_id, 10000, 10000),
+        EventBuilder::new()
+            .with_block(1002)
+            .share_price_changed(term_id, 10000),
     ];
 
     harness
@@ -203,11 +208,11 @@ async fn test_deposits_update_term_aggregations() {
         async move { pipeline.start().await }
     });
 
-    // Wait for processing
+    // Wait for processing (3 events now)
     harness
-        .wait_for_processing(2, 15)
+        .wait_for_processing(3, 15)
         .await
-        .expect("Failed to process 2 events within 15 seconds");
+        .expect("Failed to process 3 events within 15 seconds");
     harness
         .wait_for_cascade(term_id, 5)
         .await
@@ -224,11 +229,11 @@ async fn test_deposits_update_term_aggregations() {
         .await
         .expect("Failed to verify term aggregation");
 
-    // After deposit, total_assets should be updated by cascade processor
+    // After SharePriceChanged event, total_assets should be updated by cascade processor
     let total_assets = term.total_assets.parse::<i64>().unwrap();
     assert!(
         total_assets > 0,
-        "Term total_assets should be updated after deposit"
+        "Term total_assets should be updated after share price change"
     );
 
     // Cleanup - ensure pipeline stops even if stop() hangs

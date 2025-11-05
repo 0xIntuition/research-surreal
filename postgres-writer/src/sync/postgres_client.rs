@@ -45,7 +45,11 @@ impl PostgresClient {
         metrics: Arc<Metrics>,
     ) -> Result<Self> {
         // Create connection pool
+        // Set min_connections to maintain a baseline pool for better observability
+        // and reduced connection establishment overhead
+        let min_connections = (pool_size / 2).max(1);
         let pool = PgPoolOptions::new()
+            .min_connections(min_connections)
             .max_connections(pool_size)
             .connect(database_url)
             .await
@@ -372,6 +376,28 @@ impl PostgresClient {
     /// Get a reference to the database connection pool for custom operations
     pub fn pool(&self) -> &PgPool {
         &self.pool
+    }
+
+    /// Get connection pool statistics for monitoring
+    pub fn get_pool_stats(&self) -> crate::monitoring::health::ConnectionPoolStats {
+        let total = self.pool.size() as usize;
+        let idle = self.pool.num_idle();
+        let active = total.saturating_sub(idle);
+        let pool_options = self.pool.options();
+        let max_connections = pool_options.get_max_connections() as usize;
+
+        let utilization = if max_connections > 0 {
+            (total as f64 / max_connections as f64) * 100.0
+        } else {
+            0.0
+        };
+
+        crate::monitoring::health::ConnectionPoolStats {
+            total_connections: total,
+            active_connections: active,
+            idle_connections: idle,
+            pool_utilization: utilization,
+        }
     }
 
     fn extract_transaction_info(&self, event: &RindexerEvent) -> Result<TransactionInformation> {

@@ -2,7 +2,6 @@ name: rindexer-surreal
 
 services:
   rindexer:
-    container_name: rindexer
     build:
       context: ../rindexer
       dockerfile: Dockerfile
@@ -21,7 +20,6 @@ services:
       - dokploy-network
 
   surrealdb:
-    container_name: surrealdb
     image: surrealdb/surrealdb:latest
     command: ["start", "--bind", "0.0.0.0:8000", "--user", "root", "--pass", "root", "--import-file", "/schema.surql", "rocksdb:/data/surreal.db"]
     volumes:
@@ -96,7 +94,6 @@ services:
       - "traefik.http.services.surrealdb-app.loadbalancer.server.port=8000"
 
   surreal-writer:
-    container_name: surreal-writer
     build:
       context: ../surreal-writer
       dockerfile: Dockerfile
@@ -134,13 +131,16 @@ services:
       retries: 3
 
   postgres:
-    container_name: postgres
     image: timescale/timescaledb-ha:pg17.5-ts2.20.1
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: storage
       PGPORT: 18100
+    command:
+      - postgres
+      - -c
+      - work_mem=64MB
     volumes:
       - database-data:/var/lib/postgresql/data/
     ports:
@@ -154,8 +154,43 @@ services:
     networks:
       - dokploy-network
 
+  postgres-exporter:
+    image: prometheuscommunity/postgres-exporter:latest
+    environment:
+      DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:18100/storage?sslmode=disable"
+    ports:
+      - "18103:9187"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9187/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  redis-exporter:
+    image: oliver006/redis_exporter:latest
+    environment:
+      # REDIS_ADDR expects host:port format, not full URL
+      # For production, set REDIS_EXPORTER_ADDR env var (e.g., "redishost:6379")
+      REDIS_ADDR: ${REDIS_EXPORTER_ADDR:-redis:6379}
+      REDIS_EXPORTER_LOG_FORMAT: "txt"
+    ports:
+      - "18104:9121"
+    restart: unless-stopped
+    networks:
+      - dokploy-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9121/metrics"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
   postgres-writer:
-    container_name: postgres-writer
     build:
       context: ../postgres-writer
       dockerfile: Dockerfile
@@ -164,20 +199,20 @@ services:
       RUST_BACKTRACE: "1"
       REDIS_URL: ${REDIS_URL}
       DATABASE_URL: ${DATABASE_URL}
-      DATABASE_POOL_SIZE: "10"
+      DATABASE_POOL_SIZE: "25"
       CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_GROUP_SUFFIX: ${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
       ANALYTICS_STREAM_NAME: ${ANALYTICS_STREAM_NAME:-term_updates}
-      TOKIO_WORKER_THREADS: "4"
-      BATCH_SIZE: "20"
+      TOKIO_WORKER_THREADS: "8"
+      BATCH_SIZE: "500"
       BATCH_TIMEOUT_MS: "5000"
       PROCESSING_INTERVAL_MS: "100"
       RECONNECT_DELAY_MS: "5000"
       MAX_RETRIES: "3"
       HTTP_PORT: "8081"
       SHUTDOWN_TIMEOUT_SECS: "30"
-      MAX_MESSAGES_PER_SECOND: "5000"
+      MAX_MESSAGES_PER_SECOND: "10000"
       MIN_BATCH_INTERVAL_MS: "10"
       REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
@@ -196,7 +231,6 @@ services:
       retries: 3
 
   prometheus:
-    container_name: prometheus
     image: prom/prometheus:latest
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
@@ -224,12 +258,16 @@ services:
       - "traefik.http.services.prometheus-app.loadbalancer.server.port=9090"
 
   grafana:
-    container_name: grafana
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: false
+      # Enable anonymous access for public viewing
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # Disable Grafana Live to prevent WebSocket auth errors
+      GF_LIVE_MAX_CONNECTIONS: "0"
       GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
     volumes:
       - grafana_data:/var/lib/grafana
@@ -250,7 +288,6 @@ services:
       - "traefik.http.services.grafana-app.loadbalancer.server.port=3000"
 
   example-web-app:
-    container_name: example-web-app
     build:
       context: ../example-web-app
       dockerfile: Dockerfile

@@ -129,7 +129,7 @@ This project provides a complete data pipeline solution that:
 
 ### 7. Admin & IDE Tools
 - **Surrealist**: SurrealDB database IDE on port 18301
-- **RedisInsight**: Redis admin UI on port 18400
+- **RedisInsight**: RedisDB admin UI on port 18400
 - **Drizzle Studio**: PostgreSQL database IDE available at https://local.drizzle.studio/
 
 ### 8. Monitoring Stack
@@ -170,7 +170,7 @@ docker compose up -d
 | **Web Dashboard** | http://localhost:18300/ | Real-time metrics visualization |
 | **Grafana** | http://localhost:18501/ | Monitoring dashboards |
 | **Surrealist** | http://localhost:18301/ | SurrealDB IDE |
-| **RedisInsight** | http://localhost:18400/ | Redis admin interface |
+| **RedisInsight** | http://localhost:18400/ | RedisDB admin interface |
 | **Drizzle Studio** | https://local.drizzle.studio/ | PostgreSQL database IDE |
 | **Prometheus** | http://localhost:18500/ | Metrics storage |
 | **Rindexer** | http://localhost:18200/ | GraphQL API for indexed events |

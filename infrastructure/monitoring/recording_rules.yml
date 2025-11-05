@@ -144,3 +144,81 @@ groups:
       # Hourly metrics - peak event processing rate in last hour
       - record: postgres_writer:events_processed_rate_1h_max:by_type
         expr: max_over_time(rate(postgres_writer_events_processed_by_type_total[5m])[1h:1m])
+
+  ## PostgreSQL Database-Level Metrics
+  ## These metrics come from postgres_exporter and monitor the PostgreSQL database itself
+  - name: postgres_database_recording_rules
+    interval: 15s
+    rules:
+      # Connection pool utilization from postgres-writer application
+      - record: postgres_writer:pool_utilization_percent
+        expr: postgres_writer_pool_utilization_percent
+
+      - record: postgres_writer:pool_connections_active
+        expr: postgres_writer_pool_connections_active
+
+      - record: postgres_writer:pool_connections_idle
+        expr: postgres_writer_pool_connections_idle
+
+      # PostgreSQL connection metrics from postgres_exporter
+      - record: postgres:connections_active
+        expr: pg_stat_database_numbackends{datname="storage"}
+
+      - record: postgres:connections_max
+        expr: pg_settings_max_connections
+
+      - record: postgres:connections_utilization_percent
+        expr: |
+          100 * (
+            pg_stat_database_numbackends{datname="storage"}
+            /
+            pg_settings_max_connections
+          )
+
+      # Transaction rates
+      - record: postgres:transactions_commit_rate
+        expr: rate(pg_stat_database_xact_commit{datname="storage"}[5m])
+
+      - record: postgres:transactions_rollback_rate
+        expr: rate(pg_stat_database_xact_rollback{datname="storage"}[5m])
+
+      - record: postgres:transactions_total_rate
+        expr: rate(pg_stat_database_xact_commit{datname="storage"}[5m]) + rate(pg_stat_database_xact_rollback{datname="storage"}[5m])
+
+      # Cache hit ratio - percentage of reads served from cache (5m rate)
+      # Uses rate() to reflect recent performance rather than all-time stats
+      # Includes division-by-zero protection
+      - record: postgres:cache_hit_ratio_percent
+        expr: |
+          100 * (
+            sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m]))
+            /
+            (sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m])) +
+             sum(rate(pg_stat_database_blks_read{datname="storage"}[5m])) > 0)
+          )
+          OR 0
+
+      # Database size growth rate (bytes per second over 1h)
+      - record: postgres:database_size_growth_rate
+        expr: rate(pg_database_size_bytes{datname="storage"}[1h])
+
+      # Tuple (row) operation rates
+      - record: postgres:tuples_inserted_rate
+        expr: rate(pg_stat_database_tup_inserted{datname="storage"}[5m])
+
+      - record: postgres:tuples_updated_rate
+        expr: rate(pg_stat_database_tup_updated{datname="storage"}[5m])
+
+      - record: postgres:tuples_deleted_rate
+        expr: rate(pg_stat_database_tup_deleted{datname="storage"}[5m])
+
+      - record: postgres:tuples_fetched_rate
+        expr: rate(pg_stat_database_tup_fetched{datname="storage"}[5m])
+
+      # Deadlock rate
+      - record: postgres:deadlocks_rate
+        expr: rate(pg_stat_database_deadlocks{datname="storage"}[5m])
+
+      # Lock wait events rate
+      - record: postgres:conflicts_rate
+        expr: rate(pg_stat_database_conflicts{datname="storage"}[5m])

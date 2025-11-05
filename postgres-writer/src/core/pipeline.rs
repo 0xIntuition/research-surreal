@@ -140,6 +140,11 @@ impl EventProcessingPipeline {
 
     pub async fn health(&self) -> PipelineHealth {
         let snapshot = self.metrics.get_snapshot().await;
+
+        // Record connection pool stats to Prometheus metrics
+        let pool_stats = self.postgres_client.get_pool_stats();
+        self.metrics.record_connection_pool_stats(&pool_stats);
+
         PipelineHealth {
             healthy: snapshot.redis_healthy
                 && snapshot.postgres_healthy
@@ -328,6 +333,7 @@ impl EventProcessingPipeline {
     fn spawn_monitoring_task(&self) -> tokio::task::JoinHandle<()> {
         let metrics = self.metrics.clone();
         let redis_consumer = self.redis_consumer.clone();
+        let postgres_client = self.postgres_client.clone();
         let cancellation_token = self.cancellation_token.clone();
 
         tokio::spawn(async move {
@@ -354,6 +360,10 @@ impl EventProcessingPipeline {
                                 debug!("Stream {} metrics - lag: {}, pending: {}", stream_name, lag, pending_count);
                             }
                         }
+
+                        // Record connection pool stats to Prometheus metrics
+                        let pool_stats = postgres_client.get_pool_stats();
+                        metrics.record_connection_pool_stats(&pool_stats);
 
                         // Calculate instantaneous rate (events since last check)
                         let now = std::time::Instant::now();

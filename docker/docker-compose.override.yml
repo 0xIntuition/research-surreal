@@ -4,7 +4,6 @@ services:
 
   # Local Redis for development
   redis:
-    container_name: redis
     image: redis:7-alpine
     ports:
       - "18101:6379"
@@ -21,7 +20,6 @@ services:
       - rindexer-network
 
   redis-commander:
-    container_name: redis-commander
     image: ghcr.io/joeferner/redis-commander:latest
     ports:
       - '18400:8081'
@@ -36,7 +34,6 @@ services:
 
   # Redis Exporter for Prometheus metrics
   redis-exporter:
-    container_name: redis-exporter
     image: oliver006/redis_exporter:latest
     ports:
       - "18401:9121"
@@ -125,12 +122,13 @@ services:
       CONSUMER_GROUP_SUFFIX: ${CONSUMER_GROUP_SUFFIX:-sync}
       CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
       ANALYTICS_STREAM_NAME: ${ANALYTICS_STREAM_NAME:-term_updates}
-      TOKIO_WORKER_THREADS: "5"
-      BATCH_SIZE: "10"
-      BATCH_TIMEOUT_MS: "500"
-      PROCESSING_INTERVAL_MS: "500"
-      RECONNECT_DELAY_MS: "2000"
-      MAX_RETRIES: "5"
+      TOKIO_WORKER_THREADS: "8"
+      BATCH_SIZE: "500"
+      BATCH_TIMEOUT_MS: "5000"
+      PROCESSING_INTERVAL_MS: "100"
+      RECONNECT_DELAY_MS: "5000"
+      MAX_RETRIES: "3"
+      MAX_MESSAGES_PER_SECOND: "10000"
       HTTP_PORT: "18211"
       REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
@@ -145,7 +143,6 @@ services:
 
 
   surrealist:
-    container_name: surrealist
     image: surrealdb/surrealist:latest
     ports:
       - "18301:8080"
@@ -186,8 +183,13 @@ services:
       - ../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: false
+      # Enable anonymous access for public viewing
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # Disable Grafana Live to prevent WebSocket auth errors
+      GF_LIVE_MAX_CONNECTIONS: "0"
       GF_INSTALL_PLUGINS: grafana-piechart-panel,grafana-worldmap-panel
     networks:
       - rindexer-network
@@ -201,7 +203,6 @@ services:
       - "18300:3001"
 
   drizzle-studio:
-    container_name: drizzle-studio
     build: ../infrastructure/drizzle/
     ports:
       - "4983:4983"

@@ -1,8 +1,9 @@
--- Migration: Create atom materialized view
+-- Migration: Create atom materialized view in snapshot schema
 -- Description: Transforms atom_created events into an atom view with decoded data and metadata
+-- Part of the snapshot schema for validation against trigger-based public schema
 --
 -- Refresh:
--- SELECT refresh_atom_view();
+-- SELECT snapshot.refresh_atom_view();
 
 -- 1. CREATE ENUM TYPES
 DO $$ BEGIN
@@ -22,11 +23,11 @@ EXCEPTION
 END $$;
 
 -- 2. DROP EXISTING OBJECTS (for idempotency)
-DROP MATERIALIZED VIEW IF EXISTS public.atom CASCADE;
-DROP FUNCTION IF EXISTS refresh_atom_view() CASCADE;
+DROP MATERIALIZED VIEW IF EXISTS snapshot.atom CASCADE;
+DROP FUNCTION IF EXISTS snapshot.refresh_atom_view() CASCADE;
 
 -- 3. CREATE MATERIALIZED VIEW
-CREATE MATERIALIZED VIEW public.atom AS
+CREATE MATERIALIZED VIEW snapshot.atom AS
 WITH atom_events AS (
     SELECT
         term_id,
@@ -50,40 +51,40 @@ WITH atom_events AS (
 SELECT * FROM atom_events;
 
 -- 4. CREATE INDEXES
-CREATE UNIQUE INDEX atom_pkey ON public.atom (term_id);
-CREATE INDEX idx_atom_creator_id ON public.atom (creator_id);
-CREATE INDEX idx_atom_wallet_id ON public.atom (wallet_id);
-CREATE INDEX idx_atom_created_at ON public.atom (created_at);
-CREATE INDEX idx_atom_block_number ON public.atom (block_number);
-CREATE INDEX idx_atom_type ON public.atom (type);
-CREATE INDEX idx_atom_resolving_status ON public.atom (resolving_status);
+CREATE UNIQUE INDEX atom_pkey ON snapshot.atom (term_id);
+CREATE INDEX idx_atom_creator_id ON snapshot.atom (creator_id);
+CREATE INDEX idx_atom_wallet_id ON snapshot.atom (wallet_id);
+CREATE INDEX idx_atom_created_at ON snapshot.atom (created_at);
+CREATE INDEX idx_atom_block_number ON snapshot.atom (block_number);
+CREATE INDEX idx_atom_type ON snapshot.atom (type);
+CREATE INDEX idx_atom_resolving_status ON snapshot.atom (resolving_status);
 
 -- 5. CREATE REFRESH FUNCTION
-CREATE OR REPLACE FUNCTION refresh_atom_view()
+CREATE OR REPLACE FUNCTION snapshot.refresh_atom_view()
 RETURNS void
 LANGUAGE plpgsql
 AS $$
 BEGIN
-    REFRESH MATERIALIZED VIEW CONCURRENTLY public.atom;
+    REFRESH MATERIALIZED VIEW CONCURRENTLY snapshot.atom;
 END;
 $$;
 
 -- 6. ADD COMMENTS
-COMMENT ON MATERIALIZED VIEW public.atom IS 'Materialized view of atoms created from atom_created events with decoded data and metadata';
-COMMENT ON FUNCTION refresh_atom_view() IS 'Refreshes the atom materialized view concurrently';
-COMMENT ON COLUMN public.atom.term_id IS 'Unique identifier for the atom (hex-encoded bytes32)';
-COMMENT ON COLUMN public.atom.wallet_id IS 'Ethereum address of the atom wallet';
-COMMENT ON COLUMN public.atom.creator_id IS 'Ethereum address of the atom creator';
-COMMENT ON COLUMN public.atom.data IS 'Atom data as text';
-COMMENT ON COLUMN public.atom.raw_data IS 'Raw atom data (same as data in this schema)';
-COMMENT ON COLUMN public.atom.type IS 'Atom type classification (defaults to Unknown)';
-COMMENT ON COLUMN public.atom.emoji IS 'Optional emoji representation (enriched later)';
-COMMENT ON COLUMN public.atom.label IS 'Optional human-readable label (enriched later)';
-COMMENT ON COLUMN public.atom.image IS 'Optional image URL (enriched later)';
-COMMENT ON COLUMN public.atom.value_id IS 'Optional reference to value data (enriched later)';
-COMMENT ON COLUMN public.atom.block_number IS 'Block number when the atom was created';
-COMMENT ON COLUMN public.atom.created_at IS 'Timestamp when the atom was created';
-COMMENT ON COLUMN public.atom.transaction_hash IS 'Transaction hash of the creation event';
-COMMENT ON COLUMN public.atom.resolving_status IS 'Status of atom metadata resolution (Pending, Resolved, Failed)';
-COMMENT ON COLUMN public.atom.log_index IS 'Log index of the creation event within the transaction';
-COMMENT ON COLUMN public.atom.updated_at IS 'Timestamp when the record was last updated';
+COMMENT ON MATERIALIZED VIEW snapshot.atom IS 'Materialized view of atoms created from atom_created events with decoded data and metadata';
+COMMENT ON FUNCTION snapshot.refresh_atom_view() IS 'Refreshes the atom materialized view concurrently';
+COMMENT ON COLUMN snapshot.atom.term_id IS 'Unique identifier for the atom (hex-encoded bytes32)';
+COMMENT ON COLUMN snapshot.atom.wallet_id IS 'Ethereum address of the atom wallet';
+COMMENT ON COLUMN snapshot.atom.creator_id IS 'Ethereum address of the atom creator';
+COMMENT ON COLUMN snapshot.atom.data IS 'Atom data as text';
+COMMENT ON COLUMN snapshot.atom.raw_data IS 'Raw atom data (same as data in this schema)';
+COMMENT ON COLUMN snapshot.atom.type IS 'Atom type classification (defaults to Unknown)';
+COMMENT ON COLUMN snapshot.atom.emoji IS 'Optional emoji representation (enriched later)';
+COMMENT ON COLUMN snapshot.atom.label IS 'Optional human-readable label (enriched later)';
+COMMENT ON COLUMN snapshot.atom.image IS 'Optional image URL (enriched later)';
+COMMENT ON COLUMN snapshot.atom.value_id IS 'Optional reference to value data (enriched later)';
+COMMENT ON COLUMN snapshot.atom.block_number IS 'Block number when the atom was created';
+COMMENT ON COLUMN snapshot.atom.created_at IS 'Timestamp when the atom was created';
+COMMENT ON COLUMN snapshot.atom.transaction_hash IS 'Transaction hash of the creation event';
+COMMENT ON COLUMN snapshot.atom.resolving_status IS 'Status of atom metadata resolution (Pending, Resolved, Failed)';
+COMMENT ON COLUMN snapshot.atom.log_index IS 'Log index of the creation event within the transaction';
+COMMENT ON COLUMN snapshot.atom.updated_at IS 'Timestamp when the record was last updated';
