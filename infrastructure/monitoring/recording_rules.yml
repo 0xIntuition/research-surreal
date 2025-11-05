@@ -187,14 +187,16 @@ groups:
 
       # Cache hit ratio - percentage of reads served from cache (5m rate)
       # Uses rate() to reflect recent performance rather than all-time stats
+      # Includes division-by-zero protection
       - record: postgres:cache_hit_ratio_percent
         expr: |
           100 * (
             sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m]))
             /
             (sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m])) +
-             sum(rate(pg_stat_database_blks_read{datname="storage"}[5m])))
+             sum(rate(pg_stat_database_blks_read{datname="storage"}[5m])) > 0)
           )
+          OR 0
 
       # Database size growth rate (bytes per second over 1h)
       - record: postgres:database_size_growth_rate

@@ -183,7 +183,7 @@ services:
       - ../infrastructure/monitoring/grafana/dashboards:/var/lib/grafana/dashboards:ro
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: false
       # Enable anonymous access for public viewing
       GF_AUTH_ANONYMOUS_ENABLED: "true"

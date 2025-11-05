@@ -175,7 +175,9 @@ services:
   redis-exporter:
     image: oliver006/redis_exporter:latest
     environment:
-      REDIS_ADDR: ${REDIS_URL}
+      # REDIS_ADDR expects host:port format, not full URL
+      # For production, set REDIS_EXPORTER_ADDR env var (e.g., "redishost:6379")
+      REDIS_ADDR: ${REDIS_EXPORTER_ADDR:-redis:6379}
       REDIS_EXPORTER_LOG_FORMAT: "txt"
     ports:
       - "18104:9121"
@@ -259,7 +261,7 @@ services:
     image: grafana/grafana:latest
     environment:
       GF_SECURITY_ADMIN_USER: admin
-      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
       GF_USERS_ALLOW_SIGN_UP: false
       # Enable anonymous access for public viewing
       GF_AUTH_ANONYMOUS_ENABLED: "true"
