@@ -27,7 +27,7 @@ impl TestHarness {
     /// Creates a new test environment with isolated containers
     pub async fn new() -> Result<Self> {
         // Start RabbitMQ container
-        let rabbitmq_container = RabbitMq::default().start().await?;
+        let rabbitmq_container = RabbitMq.start().await?;
         let rabbitmq_port = rabbitmq_container.get_host_port_ipv4(5672).await?;
         let rabbitmq_url = format!("amqp://guest:guest@127.0.0.1:{rabbitmq_port}");
 
@@ -143,7 +143,7 @@ impl TestHarness {
         // Declare queues and bind them to exchanges
         for exchange in &self.exchanges {
             let queue_name = format!("{}.{}", self.queue_prefix, exchange);
-            let routing_key = format!("intuition.{}", exchange);
+            let routing_key = format!("intuition.{exchange}");
 
             channel
                 .queue_declare(
@@ -255,7 +255,7 @@ impl TestHarness {
                 exchange
             };
 
-            let routing_key = format!("intuition.{}", target_exchange);
+            let routing_key = format!("intuition.{target_exchange}");
             let payload = serde_json::to_vec(&event)?;
 
             channel

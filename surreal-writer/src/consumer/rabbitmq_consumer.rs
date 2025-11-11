@@ -422,7 +422,7 @@ impl RabbitMQConsumer {
     }
 
     /// Get the depth (message count) of a queue
-    pub async fn get_queue_depth(&self, queue_name: &str) -> Result<()> {
+    pub async fn get_queue_depth(&self, queue_name: &str) -> Result<u32> {
         // Get the first channel to query queue info
         if let Some(channel) = self.channels.first() {
             let channel = channel.lock().await;
@@ -442,18 +442,15 @@ impl RabbitMQConsumer {
                 )
                 .await
             {
-                Ok(queue) => {
-                    let _message_count = queue.message_count();
-                    Ok(())
-                }
+                Ok(queue) => Ok(queue.message_count()),
                 Err(e) => {
                     warn!("Failed to get queue depth for {}: {}", queue_name, e);
-                    Ok(()) // Return Ok on error instead of failing
+                    Ok(0) // Return 0 on error instead of failing
                 }
             }
         } else {
             warn!("No channels available to query queue depth");
-            Ok(())
+            Ok(0)
         }
     }
 }
