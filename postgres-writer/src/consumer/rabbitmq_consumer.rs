@@ -54,13 +54,13 @@ impl RabbitMQConsumer {
                 .await
                 .map_err(|e| SyncError::Connection(format!("Failed to set prefetch count: {e}")))?;
 
-            // Declare exchange (direct type) - match rindexer's settings with durable: false
+            // Declare exchange (direct type) - durable to survive RabbitMQ restarts
             channel
                 .exchange_declare(
                     exchange,
                     lapin::ExchangeKind::Direct,
                     ExchangeDeclareOptions {
-                        durable: false,
+                        durable: true,
                         auto_delete: false,
                         internal: false,
                         nowait: false,
@@ -310,7 +310,7 @@ impl RabbitMQConsumer {
         let mut consumers = Vec::new();
 
         // Recreate channels and consumers
-        for (exchange, _routing_key) in self.exchanges.iter().zip(self.routing_keys.iter()) {
+        for (exchange, routing_key) in self.exchanges.iter().zip(self.routing_keys.iter()) {
             let channel = connection.create_channel().await.map_err(|e| {
                 SyncError::Connection(format!("Failed to create channel on reconnect: {e}"))
             })?;
@@ -322,7 +322,64 @@ impl RabbitMQConsumer {
                     SyncError::Connection(format!("Failed to set prefetch count on reconnect: {e}"))
                 })?;
 
+            // Re-declare exchange (in case it was deleted during downtime)
+            channel
+                .exchange_declare(
+                    exchange,
+                    lapin::ExchangeKind::Direct,
+                    ExchangeDeclareOptions {
+                        durable: true,
+                        auto_delete: false,
+                        internal: false,
+                        nowait: false,
+                        passive: false,
+                    },
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::Connection(format!(
+                        "Failed to declare exchange {exchange} on reconnect: {e}"
+                    ))
+                })?;
+
             let queue_name = format!("{}.{exchange}", self.queue_prefix);
+
+            // Re-declare queue (in case it was deleted during downtime)
+            channel
+                .queue_declare(
+                    &queue_name,
+                    QueueDeclareOptions {
+                        durable: true,
+                        exclusive: false,
+                        auto_delete: false,
+                        nowait: false,
+                        passive: false,
+                    },
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::Connection(format!(
+                        "Failed to declare queue {queue_name} on reconnect: {e}"
+                    ))
+                })?;
+
+            // Re-bind queue to exchange
+            channel
+                .queue_bind(
+                    &queue_name,
+                    exchange,
+                    routing_key,
+                    QueueBindOptions::default(),
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::Connection(format!(
+                        "Failed to bind queue {queue_name} to exchange {exchange} on reconnect: {e}"
+                    ))
+                })?;
 
             // Start consuming
             let consumer = channel

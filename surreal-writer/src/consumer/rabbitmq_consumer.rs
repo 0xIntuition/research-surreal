@@ -54,13 +54,13 @@ impl RabbitMQConsumer {
                 .await
                 .map_err(|e| SyncError::Connection(format!("Failed to set prefetch count: {e}")))?;
 
-            // Declare exchange (direct type) - match rindexer's settings with durable: false
+            // Declare exchange (direct type) - durable to survive RabbitMQ restarts
             channel
                 .exchange_declare(
                     exchange,
                     lapin::ExchangeKind::Direct,
                     ExchangeDeclareOptions {
-                        durable: false,
+                        durable: true,
                         auto_delete: false,
                         internal: false,
                         nowait: false,
@@ -310,7 +310,7 @@ impl RabbitMQConsumer {
         let mut consumers = Vec::new();
 
         // Recreate channels and consumers
-        for (exchange, _routing_key) in self.exchanges.iter().zip(self.routing_keys.iter()) {
+        for (exchange, routing_key) in self.exchanges.iter().zip(self.routing_keys.iter()) {
             let channel = connection.create_channel().await.map_err(|e| {
                 SyncError::Connection(format!("Failed to create channel on reconnect: {e}"))
             })?;
@@ -322,7 +322,64 @@ impl RabbitMQConsumer {
                     SyncError::Connection(format!("Failed to set prefetch count on reconnect: {e}"))
                 })?;
 
+            // Re-declare exchange (in case it was deleted during downtime)
+            channel
+                .exchange_declare(
+                    exchange,
+                    lapin::ExchangeKind::Direct,
+                    ExchangeDeclareOptions {
+                        durable: true,
+                        auto_delete: false,
+                        internal: false,
+                        nowait: false,
+                        passive: false,
+                    },
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::Connection(format!(
+                        "Failed to declare exchange {exchange} on reconnect: {e}"
+                    ))
+                })?;
+
             let queue_name = format!("{}.{exchange}", self.queue_prefix);
+
+            // Re-declare queue (in case it was deleted during downtime)
+            channel
+                .queue_declare(
+                    &queue_name,
+                    QueueDeclareOptions {
+                        durable: true,
+                        exclusive: false,
+                        auto_delete: false,
+                        nowait: false,
+                        passive: false,
+                    },
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::Connection(format!(
+                        "Failed to declare queue {queue_name} on reconnect: {e}"
+                    ))
+                })?;
+
+            // Re-bind queue to exchange
+            channel
+                .queue_bind(
+                    &queue_name,
+                    exchange,
+                    routing_key,
+                    QueueBindOptions::default(),
+                    FieldTable::default(),
+                )
+                .await
+                .map_err(|e| {
+                    SyncError::Connection(format!(
+                        "Failed to bind queue {queue_name} to exchange {exchange} on reconnect: {e}"
+                    ))
+                })?;
 
             // Start consuming
             let consumer = channel
@@ -354,5 +411,49 @@ impl RabbitMQConsumer {
 
         info!("Successfully reconnected to RabbitMQ");
         Ok(())
+    }
+
+    /// Get the list of queue names being consumed
+    pub fn get_queue_names(&self) -> Vec<String> {
+        self.exchanges
+            .iter()
+            .map(|e| format!("{}.{}", self.queue_prefix, e))
+            .collect()
+    }
+
+    /// Get the depth (message count) of a queue
+    pub async fn get_queue_depth(&self, queue_name: &str) -> Result<()> {
+        // Get the first channel to query queue info
+        if let Some(channel) = self.channels.first() {
+            let channel = channel.lock().await;
+
+            // Use queue_declare with passive=true to get queue info without modifying it
+            match channel
+                .queue_declare(
+                    queue_name,
+                    QueueDeclareOptions {
+                        passive: true, // Just query, don't create
+                        durable: true, // Must match actual queue configuration
+                        exclusive: false,
+                        auto_delete: false,
+                        nowait: false,
+                    },
+                    FieldTable::default(),
+                )
+                .await
+            {
+                Ok(queue) => {
+                    let _message_count = queue.message_count();
+                    Ok(())
+                }
+                Err(e) => {
+                    warn!("Failed to get queue depth for {}: {}", queue_name, e);
+                    Ok(()) // Return Ok on error instead of failing
+                }
+            }
+        } else {
+            warn!("No channels available to query queue depth");
+            Ok(())
+        }
     }
 }

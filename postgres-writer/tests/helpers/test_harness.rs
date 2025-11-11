@@ -129,7 +129,7 @@ impl TestHarness {
                     exchange,
                     ExchangeKind::Direct,
                     ExchangeDeclareOptions {
-                        durable: false,
+                        durable: true,
                         auto_delete: false,
                         internal: false,
                         nowait: false,
