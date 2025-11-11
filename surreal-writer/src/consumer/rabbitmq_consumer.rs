@@ -271,9 +271,8 @@ impl RabbitMQConsumer {
                     array.len()
                 );
 
-                let last_index = array.len() - 1;
-
                 // Process each blockchain event in the array
+                // Attach acker to ALL messages so that any failure triggers NACK
                 for (index, event_data) in array.iter().enumerate() {
                     let mut individual_event = event.clone();
                     individual_event.event_data = event_data.clone();
@@ -282,12 +281,8 @@ impl RabbitMQConsumer {
                         id: format!("{queue_name}-{index}"),
                         event: individual_event,
                         source_stream: queue_name.to_string(),
-                        // Only attach acker to the last message in the batch
-                        acker: if index == last_index {
-                            Some(acker.clone())
-                        } else {
-                            None
-                        },
+                        // Attach acker to all messages to prevent data loss on intermediate failures
+                        acker: Some(acker.clone()),
                     });
                 }
             }
