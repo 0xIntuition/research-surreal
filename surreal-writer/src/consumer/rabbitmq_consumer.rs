@@ -3,6 +3,7 @@ use lapin::{options::*, types::FieldTable, Channel, Connection, ConnectionProper
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
+use uuid::Uuid;
 
 use crate::core::types::{RindexerEvent, StreamMessage};
 use crate::error::{Result, SyncError};
@@ -54,13 +55,13 @@ impl RabbitMQConsumer {
                 .await
                 .map_err(|e| SyncError::Connection(format!("Failed to set prefetch count: {e}")))?;
 
-            // Declare exchange (direct type) - durable to survive RabbitMQ restarts
+            // Declare exchange (direct type)
             channel
                 .exchange_declare(
                     exchange,
                     lapin::ExchangeKind::Direct,
                     ExchangeDeclareOptions {
-                        durable: true,
+                        durable: false,
                         auto_delete: false,
                         internal: false,
                         nowait: false,
@@ -109,10 +110,12 @@ impl RabbitMQConsumer {
                 })?;
 
             // Start consuming from the queue
+            // Use UUID to ensure consumer tag uniqueness across restarts
+            let consumer_tag = format!("{queue_prefix}_{exchange}_{}", Uuid::new_v4());
             let consumer = channel
                 .basic_consume(
                     &queue_name,
-                    &format!("{queue_prefix}_{exchange}"),
+                    &consumer_tag,
                     BasicConsumeOptions {
                         no_ack: false,
                         exclusive: false,
@@ -272,7 +275,9 @@ impl RabbitMQConsumer {
                 );
 
                 // Process each blockchain event in the array
-                // Attach acker to ALL messages so that any failure triggers NACK
+                // Only attach acker to the LAST message to prevent "already used Acker" errors
+                // (RabbitMQ only allows one ack/nack per delivery)
+                let last_index = array.len() - 1;
                 for (index, event_data) in array.iter().enumerate() {
                     let mut individual_event = event.clone();
                     individual_event.event_data = event_data.clone();
@@ -281,8 +286,12 @@ impl RabbitMQConsumer {
                         id: format!("{queue_name}-{index}"),
                         event: individual_event,
                         source_stream: queue_name.to_string(),
-                        // Attach acker to all messages to prevent data loss on intermediate failures
-                        acker: Some(acker.clone()),
+                        // Only the last message gets the acker
+                        acker: if index == last_index {
+                            Some(acker.clone())
+                        } else {
+                            None
+                        },
                     });
                 }
             }
@@ -328,7 +337,7 @@ impl RabbitMQConsumer {
                     exchange,
                     lapin::ExchangeKind::Direct,
                     ExchangeDeclareOptions {
-                        durable: true,
+                        durable: false,
                         auto_delete: false,
                         internal: false,
                         nowait: false,
@@ -382,10 +391,12 @@ impl RabbitMQConsumer {
                 })?;
 
             // Start consuming
+            // Use UUID to ensure consumer tag uniqueness across restarts
+            let consumer_tag = format!("{}_{exchange}_{}", self.queue_prefix, Uuid::new_v4());
             let consumer = channel
                 .basic_consume(
                     &queue_name,
-                    &format!("{}_{exchange}", self.queue_prefix),
+                    &consumer_tag,
                     BasicConsumeOptions {
                         no_ack: false,
                         exclusive: false,

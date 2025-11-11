@@ -78,7 +78,7 @@ services:
       # RabbitMQ configuration
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
       RABBITMQ_EXCHANGES: "atom_created,triple_created,deposited,redeemed,share_price_changed"
-      QUEUE_PREFIX: "surreal"
+      QUEUE_PREFIX: "surreal${QUEUE_PREFIX_SUFFIX:-}"
       PREFETCH_COUNT: "20"
       # SurrealDB configuration
       SURREAL_URL: ws://surrealdb:8000/rpc
@@ -114,12 +114,14 @@ services:
     environment:
       RUST_LOG: "postgres_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
+      # RabbitMQ configuration
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      RABBITMQ_EXCHANGES: "atom_created,triple_created,deposited,redeemed,share_price_changed"
+      QUEUE_PREFIX: "postgres${QUEUE_PREFIX_SUFFIX:-}"
+      PREFETCH_COUNT: "20"
+      # Database configuration
       DATABASE_URL: postgresql://postgres:postgres@postgres:18100/storage
-      CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
-      CONSUMER_GROUP_SUFFIX: ${CONSUMER_GROUP_SUFFIX:-sync}
-      CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
-      ANALYTICS_STREAM_NAME: ${ANALYTICS_STREAM_NAME:-term_updates}
+      # Processing configuration
       TOKIO_WORKER_THREADS: "8"
       BATCH_SIZE: "500"
       BATCH_TIMEOUT_MS: "5000"
@@ -127,6 +129,7 @@ services:
       RECONNECT_DELAY_MS: "5000"
       MAX_RETRIES: "3"
       MAX_MESSAGES_PER_SECOND: "10000"
+      # HTTP server configuration
       HTTP_PORT: "18211"
     ports:
       - "18211:18211"  # Health check endpoint

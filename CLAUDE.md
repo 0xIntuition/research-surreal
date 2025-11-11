@@ -74,10 +74,11 @@ cd docker
 docker compose up -d
 ```
 
-**Restart sync services:**
+**Restart writer services with fresh queues (for performance testing):**
 ```bash
-./docker/restart-syncs.sh
+./docker/restart-writers.sh
 ```
+This creates timestamped queues (e.g., `postgres-20251111-143022.*`) for clean performance comparisons.
 
 **Check service status:**
 ```bash
