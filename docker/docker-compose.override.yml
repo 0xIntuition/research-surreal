@@ -75,19 +75,26 @@ services:
     environment:
       RUST_LOG: "surreal_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
+      # RabbitMQ configuration
       RABBITMQ_URL: amqp://admin:admin@rabbitmq:5672
+      RABBITMQ_EXCHANGES: "atom_created,triple_created,deposited,redeemed,share_price_changed"
+      QUEUE_PREFIX: "surreal"
+      PREFETCH_COUNT: "20"
+      # SurrealDB configuration
       SURREAL_URL: ws://surrealdb:8000/rpc
       SURREAL_USER: "root"
       SURREAL_PASS: "root"
       SURREAL_NS: "rindexer"
       SURREAL_DB: "i7n_surreal"
-      CONSUMER_GROUP: surreal-${CONSUMER_GROUP_SUFFIX:-sync}
-      CONSUMER_NAME: ${CONSUMER_NAME:-main-consumer}
+      # Processing configuration
       TOKIO_WORKER_THREADS: "2"
       BATCH_SIZE: "10"
-      PROCESSING_INTERVAL_MS: "500"
-      RECONNECT_DELAY_MS: "2000"
+      BATCH_TIMEOUT_MS: "5000"
+      WORKERS: "2"
+      PROCESSING_TIMEOUT_MS: "30000"
       MAX_RETRIES: "5"
+      CIRCUIT_BREAKER_THRESHOLD: "5"
+      CIRCUIT_BREAKER_TIMEOUT_MS: "60000"
       # HTTP server configuration
       HTTP_PORT: "18210"
     ports:

@@ -8,14 +8,14 @@ use tracing::{debug, error, info, warn};
 use super::circuit_breaker::CircuitBreaker;
 use super::types::PipelineHealth;
 use crate::config::Config;
-use crate::consumer::redis_stream::RedisStreamConsumer;
+use crate::consumer::rabbitmq_consumer::RabbitMQConsumer;
 use crate::error::{Result, SyncError};
 use crate::monitoring::metrics::Metrics;
 use crate::sync::surreal_client::SurrealClient;
 
 pub struct EventProcessingPipeline {
     config: Config,
-    redis_consumer: Arc<RedisStreamConsumer>,
+    rabbitmq_consumer: Arc<RabbitMQConsumer>,
     surreal_client: Arc<SurrealClient>,
     circuit_breaker: Arc<CircuitBreaker>,
     pub metrics: Arc<Metrics>,
@@ -28,12 +28,12 @@ impl EventProcessingPipeline {
     pub async fn new(config: Config) -> Result<Self> {
         info!("Initializing event processing pipeline");
 
-        let redis_consumer = Arc::new(
-            RedisStreamConsumer::new(
-                &config.redis_url,
-                &config.stream_names,
-                &config.consumer_group,
-                &config.consumer_name,
+        let rabbitmq_consumer = Arc::new(
+            RabbitMQConsumer::new(
+                &config.rabbitmq_url,
+                &config.queue_prefix,
+                &config.exchanges,
+                config.prefetch_count,
             )
             .await?,
         );
@@ -61,7 +61,7 @@ impl EventProcessingPipeline {
 
         Ok(Self {
             config,
-            redis_consumer,
+            rabbitmq_consumer,
             surreal_client,
             circuit_breaker,
             metrics,
@@ -85,7 +85,7 @@ impl EventProcessingPipeline {
         info!("Starting event processing pipeline");
 
         // Set initial health status
-        self.metrics.set_redis_health(true).await;
+        self.metrics.set_rabbitmq_health(true).await;
         self.metrics.set_surreal_health(true).await;
 
         // Start processing loops
@@ -124,10 +124,10 @@ impl EventProcessingPipeline {
     pub async fn health(&self) -> PipelineHealth {
         let snapshot = self.metrics.get_snapshot().await;
         PipelineHealth {
-            healthy: snapshot.redis_healthy
+            healthy: snapshot.rabbitmq_healthy
                 && snapshot.surreal_healthy
                 && !self.circuit_breaker.is_open(),
-            redis_consumer_healthy: snapshot.redis_healthy,
+            redis_consumer_healthy: snapshot.rabbitmq_healthy,
             surreal_sync_healthy: snapshot.surreal_healthy,
             circuit_breaker_closed: !self.circuit_breaker.is_open(),
             last_check: chrono::Utc::now(),
@@ -135,7 +135,7 @@ impl EventProcessingPipeline {
                 total_events_processed: snapshot.total_events_processed,
                 total_events_failed: snapshot.total_events_failed,
                 circuit_breaker_state: self.circuit_breaker.get_state(),
-                redis_consumer_health: snapshot.redis_healthy,
+                redis_consumer_health: snapshot.rabbitmq_healthy,
                 surreal_sync_health: snapshot.surreal_healthy,
             },
         }
@@ -153,7 +153,7 @@ impl EventProcessingPipeline {
     }
 
     async fn spawn_worker(&self, worker_id: usize) -> tokio::task::JoinHandle<()> {
-        let redis_consumer = self.redis_consumer.clone();
+        let rabbitmq_consumer = self.rabbitmq_consumer.clone();
         let surreal_client = self.surreal_client.clone();
         let circuit_breaker = self.circuit_breaker.clone();
         let metrics = self.metrics.clone();
@@ -168,7 +168,7 @@ impl EventProcessingPipeline {
                 tokio::select! {
                     _ = batch_interval.tick() => {
                         if let Err(e) = Self::process_batch(
-                            &redis_consumer,
+                            &rabbitmq_consumer,
                             &surreal_client,
                             &circuit_breaker,
                             &metrics,
@@ -176,7 +176,7 @@ impl EventProcessingPipeline {
                         ).await {
                             error!("Worker {} batch processing error: {}", worker_id, e);
                             circuit_breaker.record_failure().await;
-                            metrics.set_redis_health(false).await;
+                            metrics.set_rabbitmq_health(false).await;
                         }
                     }
                     _ = cancellation_token.cancelled() => {
@@ -189,7 +189,7 @@ impl EventProcessingPipeline {
     }
 
     async fn process_batch(
-        redis_consumer: &RedisStreamConsumer,
+        rabbitmq_consumer: &RabbitMQConsumer,
         surreal_client: &SurrealClient,
         circuit_breaker: &CircuitBreaker,
         metrics: &Metrics,
@@ -198,12 +198,12 @@ impl EventProcessingPipeline {
         // Check circuit breaker
         circuit_breaker.check().await?;
 
-        // Consume messages from Redis
+        // Consume messages from RabbitMQ
         debug!(
             "About to call consume_batch with batch_size: {}",
             config.batch_size
         );
-        let messages = redis_consumer.consume_batch(config.batch_size).await?;
+        let messages = rabbitmq_consumer.consume_batch(config.batch_size).await?;
         debug!("consume_batch returned {} messages", messages.len());
         if messages.is_empty() {
             debug!("No messages received, returning early");
@@ -223,14 +223,14 @@ impl EventProcessingPipeline {
 
             match result {
                 Ok(_) => {
-                    if let Err(e) = redis_consumer
-                        .ack_message(&message.source_stream, &message.redis_message_id)
-                        .await
-                    {
-                        warn!(
-                            "Failed to acknowledge message {} from stream {}: {}",
-                            message.redis_message_id, message.source_stream, e
-                        );
+                    // Only ack if this message has an acker (last in batch from a RabbitMQ delivery)
+                    if let Some(ref acker) = message.acker {
+                        if let Err(e) = rabbitmq_consumer.ack_message(acker).await {
+                            warn!(
+                                "Failed to acknowledge message from queue {}: {}",
+                                message.source_stream, e
+                            );
+                        }
                     }
                     successful += 1;
                 }
@@ -247,6 +247,14 @@ impl EventProcessingPipeline {
                         "Event network: {}, signature: {}",
                         message.event.network, message.event.event_signature_hash
                     );
+
+                    // Nack message with requeue=true for transient errors (only if this message has an acker)
+                    if let Some(ref acker) = message.acker {
+                        if let Err(nack_err) = rabbitmq_consumer.nack_message(acker, true).await {
+                            error!("Failed to nack message: {}", nack_err);
+                        }
+                    }
+
                     failed += 1;
                 }
             }

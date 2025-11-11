@@ -42,9 +42,9 @@ lazy_static! {
         "Peak events processing rate per second"
     )
     .unwrap();
-    static ref REDIS_HEALTHY_GAUGE: Gauge = Gauge::new(
-        "surreal_writer_redis_healthy",
-        "Redis connection health status (1=healthy, 0=unhealthy)"
+    static ref RABBITMQ_HEALTHY_GAUGE: Gauge = Gauge::new(
+        "surreal_writer_rabbitmq_healthy",
+        "RabbitMQ connection health status (1=healthy, 0=unhealthy)"
     )
     .unwrap();
     static ref SURREAL_HEALTHY_GAUGE: Gauge = Gauge::new(
@@ -73,7 +73,7 @@ pub struct Metrics {
     peak_events_per_second: Arc<RwLock<f64>>,
 
     // Health status
-    redis_healthy: Arc<RwLock<bool>>,
+    rabbitmq_healthy: Arc<RwLock<bool>>,
     surreal_healthy: Arc<RwLock<bool>>,
 }
 
@@ -99,7 +99,7 @@ impl Metrics {
             .register(Box::new(PEAK_EVENTS_PER_SECOND_GAUGE.clone()))
             .ok();
         REGISTRY
-            .register(Box::new(REDIS_HEALTHY_GAUGE.clone()))
+            .register(Box::new(RABBITMQ_HEALTHY_GAUGE.clone()))
             .ok();
         REGISTRY
             .register(Box::new(SURREAL_HEALTHY_GAUGE.clone()))
@@ -114,7 +114,7 @@ impl Metrics {
             last_event_time: Arc::new(RwLock::new(None)),
             events_per_second: Arc::new(RwLock::new(0.0)),
             peak_events_per_second: Arc::new(RwLock::new(0.0)),
-            redis_healthy: Arc::new(RwLock::new(false)),
+            rabbitmq_healthy: Arc::new(RwLock::new(false)),
             surreal_healthy: Arc::new(RwLock::new(false)),
         }
     }
@@ -171,9 +171,9 @@ impl Metrics {
         }
     }
 
-    pub async fn set_redis_health(&self, healthy: bool) {
-        *self.redis_healthy.write().await = healthy;
-        REDIS_HEALTHY_GAUGE.set(if healthy { 1.0 } else { 0.0 });
+    pub async fn set_rabbitmq_health(&self, healthy: bool) {
+        *self.rabbitmq_healthy.write().await = healthy;
+        RABBITMQ_HEALTHY_GAUGE.set(if healthy { 1.0 } else { 0.0 });
     }
 
     pub async fn set_surreal_health(&self, healthy: bool) {
@@ -195,7 +195,7 @@ impl Metrics {
             total_batches_processed: self.batches_processed.load(Ordering::Relaxed),
             events_per_second: *self.events_per_second.read().await,
             peak_events_per_second: *self.peak_events_per_second.read().await,
-            redis_healthy: *self.redis_healthy.read().await,
+            rabbitmq_healthy: *self.rabbitmq_healthy.read().await,
             surreal_healthy: *self.surreal_healthy.read().await,
             uptime_seconds: uptime,
             start_time: self.start_time,
@@ -225,7 +225,7 @@ pub struct MetricsSnapshot {
     pub total_batches_processed: u64,
     pub events_per_second: f64,
     pub peak_events_per_second: f64,
-    pub redis_healthy: bool,
+    pub rabbitmq_healthy: bool,
     pub surreal_healthy: bool,
     pub uptime_seconds: u64,
     pub start_time: DateTime<Utc>,

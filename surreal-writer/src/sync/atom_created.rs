@@ -58,12 +58,12 @@ pub async fn handle_atom_created(
     let decoded_atom_data = hex::decode(&event.atom_data)
         .map_err(|e| {
             error!("Failed to decode atom_data from hex: {}", e);
-            SyncError::ParseError(format!("Invalid hex in atom_data: {}", e))
+            SyncError::ParseError(format!("Invalid hex in atom_data: {e}"))
         })
         .and_then(|bytes| {
             String::from_utf8(bytes).map_err(|e| {
                 error!("Failed to convert atom_data to UTF-8 string: {}", e);
-                SyncError::ParseError(format!("Invalid UTF-8 in atom_data: {}", e))
+                SyncError::ParseError(format!("Invalid UTF-8 in atom_data: {e}"))
             })
         })?;
 

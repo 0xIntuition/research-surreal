@@ -8,9 +8,8 @@ pub fn parse_hex_to_u64(hex_str: &str) -> Result<u64> {
         hex_str
     };
 
-    u64::from_str_radix(cleaned, 16).map_err(|e| {
-        SyncError::ParseError(format!("Failed to parse hex string '{}': {}", hex_str, e))
-    })
+    u64::from_str_radix(cleaned, 16)
+        .map_err(|e| SyncError::ParseError(format!("Failed to parse hex string '{hex_str}': {e}")))
 }
 
 pub fn parse_hex_timestamp_to_datetime(hex_str: &str) -> Result<DateTime<Utc>> {
@@ -18,8 +17,7 @@ pub fn parse_hex_timestamp_to_datetime(hex_str: &str) -> Result<DateTime<Utc>> {
 
     DateTime::from_timestamp(timestamp_u64 as i64, 0).ok_or_else(|| {
         SyncError::ParseError(format!(
-            "Failed to convert timestamp '{}' to datetime",
-            timestamp_u64
+            "Failed to convert timestamp '{timestamp_u64}' to datetime"
         ))
     })
 }
