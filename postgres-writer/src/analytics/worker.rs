@@ -1,39 +1,22 @@
 // Analytics worker implementation
-// Consumes term update messages from RabbitMQ and updates analytics tables
+// Consumes term update messages from mpsc channel and updates analytics tables
 
 use super::processor::update_analytics_tables;
-use crate::{
-    consumer::{rabbitmq_consumer::RabbitMQConsumer, TermUpdateMessage},
-    error::Result,
-    monitoring::metrics::Metrics,
-    Config,
-};
+use crate::{error::Result, monitoring::metrics::Metrics, Config};
 use sqlx::PgPool;
 use std::sync::Arc;
+use tokio::sync::mpsc::UnboundedReceiver;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
 
 pub async fn start_analytics_worker(
-    config: Config,
+    _config: Config,
     pool: PgPool,
     metrics: Arc<Metrics>,
+    mut term_update_rx: UnboundedReceiver<String>,
     cancellation_token: CancellationToken,
 ) -> Result<()> {
-    info!("Starting analytics worker");
-
-    // Create RabbitMQ consumer for term_updates queue
-    let consumer = RabbitMQConsumer::new(
-        &config.rabbitmq_url,
-        &config.queue_prefix,
-        &[config.analytics_exchange.clone()],
-        config.prefetch_count,
-    )
-    .await?;
-
-    info!(
-        "Analytics worker connected to RabbitMQ, consuming from queue '{}.{}'",
-        config.queue_prefix, config.analytics_exchange
-    );
+    info!("Starting analytics worker (consuming from mpsc channel)");
 
     let mut total_processed = 0u64;
     let start_time = std::time::Instant::now();
@@ -46,10 +29,9 @@ pub async fn start_analytics_worker(
     const INITIAL_BACKOFF_SECS: u64 = 1;
     const MAX_CONSECUTIVE_FAILURES: u32 = 10;
 
-    // Rate limiting configuration
-    let max_messages_per_second = config.max_messages_per_second;
-    let min_batch_interval_ms = config.min_batch_interval_ms;
-    let mut last_batch_time = std::time::Instant::now();
+    // Batch collection settings
+    const MAX_BATCH_SIZE: usize = 100;
+    const BATCH_TIMEOUT_MS: u64 = 100; // Collect for up to 100ms before processing
 
     // Main processing loop
     loop {
@@ -58,7 +40,13 @@ pub async fn start_analytics_worker(
                 info!("Analytics worker received shutdown signal");
                 break;
             }
-            result = process_batch(&consumer, &pool, &metrics, &config) => {
+            result = collect_and_process_batch(
+                &mut term_update_rx,
+                &pool,
+                &metrics,
+                MAX_BATCH_SIZE,
+                BATCH_TIMEOUT_MS,
+            ) => {
                 match result {
                     Ok(processed_count) => {
                         if processed_count > 0 {
@@ -77,48 +65,14 @@ pub async fn start_analytics_worker(
                                 processed_count, total_processed, rate
                             );
 
-                            // Update queue depth metric
-                            let queue_name = format!("{}.{}", config.queue_prefix, config.analytics_exchange);
-                            if let Ok(queue_depth) = consumer.get_queue_depth(&queue_name).await {
-                                metrics.record_analytics_messages_pending(queue_depth as i64);
-                            }
-
                             // Log periodic summary
                             if last_summary_time.elapsed().as_secs() >= SUMMARY_INTERVAL_SECS {
-                                if let Ok(queue_depth) = consumer.get_queue_depth(&queue_name).await {
-                                    info!(
-                                        "Analytics summary for queue '{}': processed {} msgs total ({:.1} msg/s avg), {} pending",
-                                        queue_name, total_processed, rate, queue_depth
-                                    );
-                                } else {
-                                    info!(
-                                        "Analytics summary for queue '{}': processed {} msgs total ({:.1} msg/s avg)",
-                                        queue_name, total_processed, rate
-                                    );
-                                }
+                                info!(
+                                    "Analytics summary: processed {} term updates total ({:.1} msg/s avg)",
+                                    total_processed, rate
+                                );
                                 last_summary_time = std::time::Instant::now();
                             }
-
-                            // Rate limiting
-                            let rate_limit_delay_ms = if max_messages_per_second > 0 {
-                                let ms_per_message = 1000.0 / max_messages_per_second as f64;
-                                (ms_per_message * processed_count as f64) as u64
-                            } else {
-                                0
-                            };
-
-                            let required_delay_ms = std::cmp::max(min_batch_interval_ms, rate_limit_delay_ms);
-                            let batch_elapsed = last_batch_time.elapsed();
-                            if batch_elapsed.as_millis() < required_delay_ms as u128 {
-                                let sleep_ms = required_delay_ms - batch_elapsed.as_millis() as u64;
-                                debug!(
-                                    "Rate limiting: sleeping {}ms (batch_interval={}, rate_limit_delay={}, actual={})",
-                                    sleep_ms, min_batch_interval_ms, rate_limit_delay_ms, required_delay_ms
-                                );
-                                tokio::time::sleep(tokio::time::Duration::from_millis(sleep_ms)).await;
-                            }
-
-                            last_batch_time = std::time::Instant::now();
                         }
                     }
                     Err(e) => {
@@ -156,51 +110,65 @@ pub async fn start_analytics_worker(
     Ok(())
 }
 
-async fn process_batch(
-    consumer: &RabbitMQConsumer,
+/// Collect term updates from mpsc channel and process them in batches
+async fn collect_and_process_batch(
+    term_update_rx: &mut UnboundedReceiver<String>,
     pool: &PgPool,
     metrics: &Arc<Metrics>,
-    _config: &Config,
+    max_batch_size: usize,
+    batch_timeout_ms: u64,
 ) -> Result<usize> {
-    // Consume messages from RabbitMQ
-    let messages = consumer.consume_batch(100).await?; // Process 100 messages at a time
+    let mut term_ids = Vec::with_capacity(max_batch_size);
+    let timeout = tokio::time::Duration::from_millis(batch_timeout_ms);
 
-    if messages.is_empty() {
-        // Record empty batch to ensure gauge shows 0 during idle periods
-        metrics.record_analytics_batch_size(0);
-        return Ok(0);
+    // Collect first message (blocking wait)
+    let first_term_id = match term_update_rx.recv().await {
+        Some(term_id) => term_id,
+        None => {
+            // Channel closed, no more messages
+            debug!("Term update channel closed");
+            return Ok(0);
+        }
+    };
+    term_ids.push(first_term_id);
+
+    // Try to collect more messages up to batch size with timeout
+    let deadline = tokio::time::Instant::now() + timeout;
+    while term_ids.len() < max_batch_size {
+        match tokio::time::timeout_at(deadline, term_update_rx.recv()).await {
+            Ok(Some(term_id)) => term_ids.push(term_id),
+            Ok(None) => {
+                // Channel closed
+                debug!("Term update channel closed");
+                break;
+            }
+            Err(_) => {
+                // Timeout - process what we have
+                break;
+            }
+        }
     }
 
     // Record batch size
-    metrics.record_analytics_batch_size(messages.len());
+    metrics.record_analytics_batch_size(term_ids.len());
 
-    debug!("Received {} messages from analytics queue", messages.len());
+    debug!(
+        "Processing batch of {} term updates from mpsc channel",
+        term_ids.len()
+    );
 
     let mut successful = 0;
     let mut failed = 0;
 
-    // Process each message
-    for message in messages {
+    // Process each term update
+    for term_id in term_ids {
         let start_time = std::time::Instant::now();
 
-        // Parse the term update message from the event data
-        let term_update: TermUpdateMessage =
-            match serde_json::from_value(message.event.event_data.clone()) {
-                Ok(update) => update,
-                Err(e) => {
-                    error!("Failed to parse term update message: {}", e);
-                    // NACK with requeue=false for malformed messages
-                    if let Some(ref acker) = message.acker {
-                        if let Err(nack_err) = consumer.nack_message(acker, false).await {
-                            warn!("Failed to nack malformed message: {}", nack_err);
-                        } else {
-                            metrics.record_analytics_message_failure();
-                        }
-                    }
-                    failed += 1;
-                    continue;
-                }
-            };
+        // Create a simple term update message
+        let term_update = crate::consumer::TermUpdateMessage {
+            term_id: term_id.clone(),
+            timestamp: chrono::Utc::now().timestamp(),
+        };
 
         match update_analytics_tables(pool, metrics, &term_update).await {
             Ok(()) => {
@@ -210,43 +178,28 @@ async fn process_batch(
                 // Record successful consumption
                 metrics.record_analytics_message_consumed();
 
-                debug!(
-                    "Successfully updated analytics for term {}",
-                    term_update.term_id
-                );
-
-                // ACK the message
-                if let Some(ref acker) = message.acker {
-                    if let Err(e) = consumer.ack_message(acker).await {
-                        warn!("Failed to ack message: {}", e);
-                    }
-                }
+                debug!("Successfully updated analytics for term {}", term_id);
                 successful += 1;
             }
             Err(e) => {
                 // Record failure
                 metrics.record_analytics_message_failure();
 
-                warn!(
-                    "Failed to update analytics for term {}: {}. Message will be requeued.",
-                    term_update.term_id, e
-                );
-
-                // NACK with requeue=true for processing failures
-                if let Some(ref acker) = message.acker {
-                    if let Err(nack_err) = consumer.nack_message(acker, true).await {
-                        warn!("Failed to nack message: {}", nack_err);
-                    }
-                }
+                warn!("Failed to update analytics for term {}: {}", term_id, e);
                 failed += 1;
+                // Note: With mpsc channel, we don't have retry semantics
+                // Failed updates are simply logged and counted
             }
         }
     }
 
     debug!(
-        "Batch complete for analytics queue: {} successful, {} failed (requeued)",
+        "Batch complete: {} successful, {} failed",
         successful, failed
     );
+
+    // Record pending messages metric (0 since mpsc doesn't have a queue depth)
+    metrics.record_analytics_messages_pending(0);
 
     Ok(successful + failed)
 }

@@ -362,8 +362,11 @@ impl RabbitMQConsumer {
     }
 
     /// Get the list of queue names being consumed
-    pub fn get_queue_names(&self) -> Vec<&str> {
-        self.exchanges.iter().map(|e| e.as_str()).collect()
+    pub fn get_queue_names(&self) -> Vec<String> {
+        self.exchanges
+            .iter()
+            .map(|e| format!("{}.{}", self.queue_prefix, e))
+            .collect()
     }
 
     /// Get the depth (message count) of a queue

@@ -36,9 +36,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         config.batch_size, config.workers
     );
 
-    // Create pipeline
+    // Create mpsc channel for term updates (internal communication)
+    let (term_update_tx, term_update_rx) = tokio::sync::mpsc::unbounded_channel::<String>();
+    info!("Created mpsc channel for term updates (analytics worker)");
+
+    // Create pipeline with term update sender
     let pipeline = Arc::new(
-        EventProcessingPipeline::new(config.clone())
+        EventProcessingPipeline::new(config.clone(), Some(term_update_tx))
             .await
             .map_err(|e| {
                 error!("Failed to create pipeline: {e}");
@@ -46,7 +50,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             })?,
     );
 
-    // Start analytics worker
+    // Start analytics worker with term update receiver
     let analytics_config = config.clone();
     let analytics_pool = pipeline.get_pool().clone();
     let analytics_metrics = pipeline.metrics.clone();
@@ -57,6 +61,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             analytics_config,
             analytics_pool,
             analytics_metrics,
+            term_update_rx,
             analytics_token,
         )
         .await

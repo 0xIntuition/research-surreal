@@ -30,12 +30,6 @@ pub struct Config {
 
     // Shutdown settings
     pub shutdown_timeout_secs: u64,
-
-    // Analytics worker settings
-    pub analytics_exchange: String,
-    pub analytics_routing_key: String,
-    pub max_messages_per_second: u64,
-    pub min_batch_interval_ms: u64,
 }
 
 impl Config {
@@ -108,20 +102,6 @@ impl Config {
                 .unwrap_or_else(|_| "30".to_string())
                 .parse()
                 .unwrap_or(30),
-
-            // Analytics worker configuration
-            analytics_exchange: env::var("ANALYTICS_EXCHANGE")
-                .unwrap_or_else(|_| "term_updates".to_string()),
-            analytics_routing_key: env::var("ANALYTICS_ROUTING_KEY")
-                .unwrap_or_else(|_| "intuition.term_updates".to_string()),
-            max_messages_per_second: env::var("MAX_MESSAGES_PER_SECOND")
-                .unwrap_or_else(|_| "5000".to_string())
-                .parse()
-                .unwrap_or(5000),
-            min_batch_interval_ms: env::var("MIN_BATCH_INTERVAL_MS")
-                .unwrap_or_else(|_| "10".to_string())
-                .parse()
-                .unwrap_or(10),
         })
     }
 
@@ -191,19 +171,6 @@ impl Config {
         if self.shutdown_timeout_secs == 0 {
             return Err(SyncError::Config(
                 "Shutdown timeout must be greater than 0".to_string(),
-            ));
-        }
-
-        // Rate limiting validation
-        if self.max_messages_per_second == 0 {
-            return Err(SyncError::Config(
-                "Max messages per second must be greater than 0".to_string(),
-            ));
-        }
-
-        if self.min_batch_interval_ms == 0 {
-            return Err(SyncError::Config(
-                "Min batch interval must be greater than 0".to_string(),
             ));
         }
 

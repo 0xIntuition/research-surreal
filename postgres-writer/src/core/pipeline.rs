@@ -41,7 +41,10 @@ impl Clone for EventProcessingPipeline {
 }
 
 impl EventProcessingPipeline {
-    pub async fn new(config: Config) -> Result<Self> {
+    pub async fn new(
+        config: Config,
+        term_update_tx: Option<tokio::sync::mpsc::UnboundedSender<String>>,
+    ) -> Result<Self> {
         info!("Initializing event processing pipeline");
 
         let rabbitmq_consumer = Arc::new(
@@ -61,9 +64,7 @@ impl EventProcessingPipeline {
             PostgresClient::new(
                 &config.database_url,
                 config.database_pool_size as u32,
-                Some(&config.rabbitmq_url),
-                config.analytics_exchange.clone(),
-                config.analytics_routing_key.clone(),
+                term_update_tx,
                 metrics.clone(),
             )
             .await?,
@@ -340,7 +341,7 @@ impl EventProcessingPipeline {
             let mut last_event_count = 0u64;
 
             // Initialize metrics for all queues so they appear in Prometheus
-            for queue_name in rabbitmq_consumer.get_queue_names() {
+            for queue_name in &rabbitmq_consumer.get_queue_names() {
                 metrics.record_queue_message_acked(queue_name);
                 metrics.record_queue_message_nacked(queue_name);
             }
@@ -351,7 +352,7 @@ impl EventProcessingPipeline {
                         let snapshot = metrics.get_snapshot().await;
 
                         // Query queue metrics for each queue
-                        for queue_name in rabbitmq_consumer.get_queue_names() {
+                        for queue_name in &rabbitmq_consumer.get_queue_names() {
                             if let Ok(queue_depth) = rabbitmq_consumer.get_queue_depth(queue_name).await {
                                 metrics.record_queue_depth(queue_name, queue_depth as i64);
                                 debug!("Queue {} metrics - depth: {}", queue_name, queue_depth);
