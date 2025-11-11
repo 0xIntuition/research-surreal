@@ -4,22 +4,22 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-Research Backend is a high-performance blockchain event indexing and dual-database data pipeline for the Intuition protocol. It indexes blockchain events from the MultiVault contract, streams them through Redis, and synchronizes to both SurrealDB (NoSQL) and PostgreSQL (TimescaleDB) with real-time analytics.
+Research Backend is a high-performance blockchain event indexing and dual-database data pipeline for the Intuition protocol. It indexes blockchain events from the MultiVault contract, distributes them via RabbitMQ, and synchronizes to both SurrealDB (NoSQL) and PostgreSQL (TimescaleDB) with real-time analytics.
 
 ## Architecture
 
 The system follows this data flow:
 
 ```
-Blockchain → Rindexer → Redis Streams → Dual Writers → SurrealDB + PostgreSQL
+Blockchain → Rindexer → RabbitMQ Exchanges → Queues → Dual Writers → SurrealDB + PostgreSQL
 ```
 
 **Key Components:**
 - **Rindexer**: Indexes blockchain events from Intuition testnet (chain ID: 13579)
-- **Redis Streams**: Event buffering and distribution layer
-- **SurrealDB Writer**: Rust service consuming events → SurrealDB (NoSQL)
-- **PostgreSQL Writer**: Rust service consuming events → PostgreSQL (TimescaleDB)
-- **Analytics Layer**: Trigger-based updates and Rust cascade processor for aggregations in PostgreSQL
+- **RabbitMQ**: Event distribution via exchanges and queues with routing keys
+- **SurrealDB Writer**: Rust service consuming from `surreal.*` queues → SurrealDB (NoSQL)
+- **PostgreSQL Writer**: Rust service consuming from `postgres.*` queues → PostgreSQL (TimescaleDB)
+- **Analytics Layer**: Trigger-based updates, Rust cascade processor, and mpsc channels for term updates
 - **Monitoring**: Prometheus + Grafana for observability
 - **Web Dashboard**: Next.js 15 app for real-time metrics
 
@@ -129,13 +129,13 @@ This is the most complex component. Understanding its architecture is critical f
 
 ### Event Processing Flow
 
-1. **Event Consumption**: Events arrive from Redis streams
+1. **Event Consumption**: Events arrive from RabbitMQ queues
 2. **Event Table Insert**: Event written to immutable `*_events` table (idempotent via ON CONFLICT)
 3. **Trigger Execution**: PostgreSQL triggers update base tables (`atom`, `triple`, `position`, `vault`)
 4. **Cascade Processing**: Rust cascade processor updates aggregations (`vault` metrics, `term` totals)
 5. **Transaction Commit**: All changes committed atomically
-6. **Redis Publishing**: Term updates published to `term_updates` stream
-7. **Analytics Worker**: Separate thread processes term updates → analytics tables
+6. **Term Updates**: Term IDs sent via Tokio mpsc channel (in-process communication)
+7. **Analytics Worker**: Separate thread consumes from mpsc channel → analytics tables
 
 ### Table Hierarchy
 
@@ -177,8 +177,8 @@ postgres-writer/src/
 │   ├── pipeline.rs            # Event processing orchestration
 │   └── circuit_breaker.rs     # Reliability patterns
 ├── consumer/
-│   ├── redis_stream.rs        # Redis stream consumer
-│   └── redis_publisher.rs     # Publish term updates
+│   ├── rabbitmq_consumer.rs   # RabbitMQ queue consumer
+│   └── rabbitmq_publisher.rs  # Term update message types
 ├── sync/
 │   ├── postgres_client.rs     # Database client + cascade orchestration
 │   ├── event_handlers.rs      # Event routing
@@ -207,14 +207,15 @@ All services use ports in the **18000-18999 range**:
 | Port | Service |
 |------|---------|
 | 18100 | PostgreSQL |
-| 18101 | Redis |
-| 18102 | SurrealDB API |
+| 18101 | RabbitMQ (AMQP) |
+| 18102 | RabbitMQ Management UI |
+| 18103 | SurrealDB API |
 | 18200 | Rindexer GraphQL |
 | 18210 | SurrealDB Writer (health/metrics) |
 | 18211 | PostgreSQL Writer (health/metrics) |
 | 18300 | Web Dashboard |
 | 18301 | Surrealist (SurrealDB IDE) |
-| 18400 | RedisInsight |
+| 18401 | RabbitMQ Exporter |
 | 18500 | Prometheus |
 | 18501 | Grafana |
 
@@ -223,18 +224,18 @@ All services use ports in the **18000-18999 range**:
 ### Environment Variables
 
 **SurrealDB Writer:**
-- `REDIS_URL`, `SURREAL_URL`, `SURREAL_USER`, `SURREAL_PASS`
-- `REDIS_STREAMS`: Comma-separated stream names
-- `BATCH_SIZE=20`, `PROCESSING_INTERVAL_MS=100`
-- `CONSUMER_GROUP`, `CONSUMER_NAME`
+- `RABBITMQ_URL`, `SURREAL_URL`, `SURREAL_USER`, `SURREAL_PASS`
+- `EXCHANGES`: Comma-separated exchange names
+- `QUEUE_PREFIX=surreal`
+- `PREFETCH_COUNT=20`, `BATCH_SIZE=100`
 - `TOKIO_WORKER_THREADS=4`
 
 **PostgreSQL Writer:**
-- `REDIS_URL`, `DATABASE_URL`
-- `REDIS_STREAMS`: Comma-separated stream names
-- `BATCH_SIZE=20`, `BATCH_TIMEOUT_MS=5000`
-- `CONSUMER_GROUP`, `CONSUMER_GROUP_SUFFIX`
-- `ANALYTICS_STREAM_NAME=term_updates`
+- `RABBITMQ_URL`, `DATABASE_URL`
+- `EXCHANGES`: Comma-separated exchange names
+- `QUEUE_PREFIX=postgres`
+- `PREFETCH_COUNT=20`, `BATCH_SIZE=100`
+- Note: Term updates use Tokio mpsc channels (no RabbitMQ configuration needed)
 - `TOKIO_WORKER_THREADS=4`
 
 ### Blockchain Contract
@@ -284,11 +285,11 @@ SELECT pg_advisory_xact_lock(hash_value)
 4. Add routing in `src/sync/event_handlers.rs`
 5. Add migration for trigger (if needed)
 6. Add cascade logic in `src/processors/cascade.rs` (if needed)
-7. Update `REDIS_STREAMS` configuration
+7. Update `EXCHANGES` configuration
 
 ## Testing Strategy
 
-- Use `testcontainers` for Redis and PostgreSQL in tests
+- Use `testcontainers` for RabbitMQ and PostgreSQL in tests
 - Tests run in Docker containers (requires `DOCKER_HOST` env var)
 - Use `serial_test` crate for tests that cannot run concurrently
 - Mock data via `fake` crate
@@ -306,10 +307,10 @@ This service runs on Dokploy with:
 
 ## Technology Stack
 
-**Backend**: Rust (edition 2021), Tokio async runtime, sqlx (PostgreSQL), redis, surrealdb
+**Backend**: Rust (edition 2021), Tokio async runtime, sqlx (PostgreSQL), lapin (RabbitMQ), surrealdb
 **Frontend**: Next.js 15, TypeScript, React 18, Tailwind CSS
-**Infrastructure**: Docker, Docker Compose, TimescaleDB (PostgreSQL 17), Redis 7, SurrealDB (RocksDB)
-**Monitoring**: Prometheus, Grafana
+**Infrastructure**: Docker, Docker Compose, TimescaleDB (PostgreSQL 17), RabbitMQ 3.13, SurrealDB (RocksDB)
+**Monitoring**: Prometheus, Grafana, RabbitMQ Exporter
 **Indexing**: Rindexer (blockchain indexer)
 
 ## References
