@@ -148,7 +148,7 @@
       },
       "targets": [
         {
-          "expr": "postgres_writer_redis_healthy",
+          "expr": "postgres_writer_rabbitmq_healthy",
           "interval": "",
           "legendFormat": "Redis",
           "refId": "A"

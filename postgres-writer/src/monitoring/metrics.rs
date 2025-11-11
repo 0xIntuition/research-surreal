@@ -626,9 +626,10 @@ impl Metrics {
         DATABASE_OPERATIONS_COUNTER.reset();
         CASCADE_FAILURES_COUNTER.reset();
 
-        // Reset stream metrics (Vec types)
-        STREAM_MESSAGES_CLAIMED_COUNTER.reset();
-        STREAM_MESSAGES_CONSUMED_COUNTER.reset();
+        // Reset RabbitMQ queue metrics (Vec types)
+        MESSAGES_CONSUMED_COUNTER.reset();
+        MESSAGES_ACKED_COUNTER.reset();
+        MESSAGES_NACKED_COUNTER.reset();
 
         // Reset histogram vectors
         EVENT_PROCESSING_DURATION_BY_TYPE_HISTOGRAM.reset();
@@ -637,7 +638,7 @@ impl Metrics {
         // Reset simple gauges
         EVENTS_PER_SECOND_GAUGE.set(0.0);
         PEAK_EVENTS_PER_SECOND_GAUGE.set(0.0);
-        REDIS_HEALTHY_GAUGE.set(0.0);
+        RABBITMQ_HEALTHY_GAUGE.set(0.0);
         POSTGRES_HEALTHY_GAUGE.set(0.0);
         UPTIME_GAUGE.set(0.0);
 
@@ -647,11 +648,10 @@ impl Metrics {
         POOL_CONNECTIONS_IDLE_GAUGE.set(0.0);
         POOL_UTILIZATION_GAUGE.set(0.0);
 
-        // Reset stream gauge vectors
-        STREAM_LAG_GAUGE.reset();
-        STREAM_PENDING_MESSAGES_GAUGE.reset();
-        STREAM_BATCH_SIZE_GAUGE.reset();
-        STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.reset();
+        // Reset RabbitMQ queue gauge vectors
+        QUEUE_DEPTH_GAUGE.reset();
+        QUEUE_BATCH_SIZE_GAUGE.reset();
+        QUEUE_LAST_MESSAGE_TIMESTAMP_GAUGE.reset();
 
         // Reset analytics worker metrics
         ANALYTICS_MESSAGES_CONSUMED_COUNTER.reset();
