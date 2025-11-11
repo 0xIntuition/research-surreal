@@ -48,7 +48,7 @@ async fn test_deposits_processed_correctly_despite_out_of_order_arrival() {
 
     // Step 3: Start pipeline
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -171,7 +171,7 @@ async fn test_share_price_changes_use_latest_block() {
 
     // Start pipeline
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({

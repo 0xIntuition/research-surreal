@@ -378,10 +378,6 @@ impl TestHarness {
             circuit_breaker_timeout_ms: 60000,
             http_port: 0,
             shutdown_timeout_secs: 30,
-            analytics_exchange: "term_updates".to_string(),
-            analytics_routing_key: "intuition.term_updates".to_string(),
-            max_messages_per_second: 5000,
-            min_batch_interval_ms: 10,
         }
     }
 

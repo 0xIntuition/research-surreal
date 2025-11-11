@@ -35,7 +35,7 @@ async fn test_concurrent_deposits_to_same_vault_maintain_consistency() {
     // Start pipeline with single worker first to debug
     let config = harness.config_with_workers(1);
 
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -149,7 +149,7 @@ async fn test_concurrent_deposits_and_redeems_maintain_consistency() {
     // Start pipeline
     let config = harness.config_with_workers(3);
 
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -249,7 +249,7 @@ async fn test_position_count_updates_correctly_with_concurrent_deposits() {
     // Start pipeline
     let config = harness.config_with_workers(1);
 
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
