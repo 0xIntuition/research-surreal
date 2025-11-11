@@ -194,9 +194,9 @@ groups:
             sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m]))
             /
             (sum(rate(pg_stat_database_blks_hit{datname="storage"}[5m])) +
-             sum(rate(pg_stat_database_blks_read{datname="storage"}[5m])) > 0)
+             sum(rate(pg_stat_database_blks_read{datname="storage"}[5m])))
           )
-          OR 0
+          or on() vector(0)
 
       # Database size growth rate (bytes per second over 1h)
       - record: postgres:database_size_growth_rate
