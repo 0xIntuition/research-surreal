@@ -39,31 +39,45 @@ contracts:
       - name: Redeemed
       - name: SharePriceChanged
     streams:
-      redis:
-        connection_uri: ${REDIS_URL}
-        streams:
-          - stream_name: "intuition_testnet_atom_created"
+      rabbitmq:
+        url: ${RABBITMQ_URL}
+        exchanges:
+          - exchange: atom_created
+            exchange_type: direct
+            routing_key: intuition.atom_created
             networks:
               - intuition-testnet
             events:
-              - event_name: "AtomCreated"
-          - stream_name: "intuition_testnet_triple_created"
+              - event_name: AtomCreated
+
+          - exchange: triple_created
+            exchange_type: direct
+            routing_key: intuition.triple_created
             networks:
               - intuition-testnet
             events:
-              - event_name: "TripleCreated"
-          - stream_name: "intuition_testnet_deposited"
+              - event_name: TripleCreated
+
+          - exchange: deposited
+            exchange_type: direct
+            routing_key: intuition.deposited
             networks:
               - intuition-testnet
             events:
-              - event_name: "Deposited"
-          - stream_name: "intuition_testnet_redeemed"
+              - event_name: Deposited
+
+          - exchange: redeemed
+            exchange_type: direct
+            routing_key: intuition.redeemed
             networks:
               - intuition-testnet
             events:
-              - event_name: "Redeemed"
-          - stream_name: "intuition_testnet_share_price_changed"
+              - event_name: Redeemed
+
+          - exchange: share_price_changed
+            exchange_type: direct
+            routing_key: intuition.share_price_changed
             networks:
               - intuition-testnet
             events:
-              - event_name: "SharePriceChanged"
+              - event_name: SharePriceChanged
