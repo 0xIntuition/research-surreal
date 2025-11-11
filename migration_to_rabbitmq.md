@@ -1,7 +1,8 @@
 # Migration Plan: Redis Streams → RabbitMQ
 
-**Status**: Planning Phase
+**Status**: In Progress - Steps 1-3 ✅ Completed, Step 4 🔄 Next
 **Created**: 2025-11-11
+**Updated**: 2025-11-11 (after Step 3 completion)
 **Goal**: Replace Redis Streams with RabbitMQ for blockchain event distribution and internal messaging
 
 ---
@@ -266,22 +267,26 @@ Blockchain → Rindexer → RabbitMQ Exchanges (5) → Queues → Dual Consumers
 
 ---
 
-### Step 3: SurrealDB Writer Migration
+### Step 3: SurrealDB Writer Migration ✅ **COMPLETED**
 
 **Objective**: Migrate SurrealDB writer from Redis to RabbitMQ (simpler service, good test case)
 
-**Files to Create**:
-- `surreal-writer/src/consumer/rabbitmq_consumer.rs`
+**Files Created**:
+- `surreal-writer/src/consumer/rabbitmq_consumer.rs` (363 lines)
 
-**Files to Modify**:
+**Files Modified**:
 - `surreal-writer/src/consumer/mod.rs`
 - `surreal-writer/src/core/pipeline.rs`
+- `surreal-writer/src/core/types.rs` (StreamMessage with optional acker)
 - `surreal-writer/src/config.rs`
 - `surreal-writer/src/main.rs`
+- `surreal-writer/src/error.rs` (removed Redis-specific errors)
+- `surreal-writer/src/monitoring/metrics.rs` (renamed Redis → RabbitMQ)
 - `surreal-writer/Cargo.toml`
+- `docker/docker-compose.override.yml` (added RabbitMQ infrastructure)
 
-**Files to Delete**:
-- `surreal-writer/src/consumer/redis_stream.rs`
+**Files Deleted**:
+- `surreal-writer/src/consumer/redis_stream.rs` (418 lines removed)
 
 **Key Implementation Details**:
 
@@ -297,14 +302,20 @@ Blockchain → Rindexer → RabbitMQ Exchanges (5) → Queues → Dual Consumers
    ```
 
 3. **Create RabbitMQ consumer** (`rabbitmq_consumer.rs`):
-   - Connect to RabbitMQ with connection pooling
-   - Create channel per worker
-   - Declare queues: `surreal.atom_created`, `surreal.triple_created`, etc.
-   - Bind queues to exchanges with routing keys
-   - Set prefetch count (equivalent to batch size)
+   - **Multi-Channel Architecture**: Create one channel per queue (5 channels total)
+   - Each channel has independent prefetch limit (20 messages)
+   - Declare exchanges with `durable: false` (match rindexer settings)
+   - Declare queues: `surreal.atom_created`, `surreal.triple_created`, etc. with `durable: true`
+   - Bind queues to exchanges with routing keys: `intuition.atom_created`, etc.
    - Implement `basic_consume` with manual acknowledgment
-   - Handle messages: deserialize → process → ack/nack
-   - Implement reconnection logic with exponential backoff
+   - **Non-blocking batch collection**: 10ms timeout per message, round-robin across queues
+   - **Array event data handling** (CRITICAL):
+     - Rindexer can publish multiple blockchain events in a single RabbitMQ message as JSON array
+     - Must expand 1 RabbitMQ delivery → N StreamMessages
+     - Only the last StreamMessage gets the acker
+     - RabbitMQ delivery is ACKed only after ALL blockchain events are processed
+   - **Poison message rejection**: Malformed JSON → nack with requeue=false
+   - Implement reconnection logic (Note: exponential backoff not yet implemented)
 
 4. **Update configuration** (`config.rs`):
    ```rust
@@ -312,10 +323,16 @@ Blockchain → Rindexer → RabbitMQ Exchanges (5) → Queues → Dual Consumers
        pub rabbitmq_url: String,
        pub queue_prefix: String,  // "surreal"
        pub exchanges: Vec<String>, // ["atom_created", "triple_created", ...]
-       pub prefetch_count: u16,   // equivalent to batch_size
+       pub prefetch_count: u16,   // RabbitMQ flow control (20)
+       pub batch_size: usize,     // Application batching (100)
        // ... rest of config
    }
    ```
+
+   **Important**: `prefetch_count` and `batch_size` are separate concepts:
+   - `prefetch_count`: RabbitMQ QoS setting - max unacked messages per channel
+   - `batch_size`: Application-level batching for processing efficiency
+   - This separation allows independent tuning of network vs application performance
 
 5. **Update pipeline** (`pipeline.rs`):
    - Replace `RedisStreamConsumer` with `RabbitMQConsumer`
@@ -328,39 +345,242 @@ Blockchain → Rindexer → RabbitMQ Exchanges (5) → Queues → Dual Consumers
 - Redis XACK → RabbitMQ basic_ack
 - Redis consumer group → Queue competing consumers
 
+**StreamMessage Structure** (updated in `types.rs`):
+```rust
+pub struct StreamMessage {
+    pub id: String,
+    pub event: RindexerEvent,
+    pub source_stream: String,
+    pub acker: Option<lapin::acker::Acker>,  // Only present on last message in array
+}
+```
+
+**Array Event Data Handling** (implemented in `rabbitmq_consumer.rs`):
+```rust
+// Rindexer can publish multiple events in a single message
+let event: RindexerEvent = serde_json::from_str(&json_str)?;
+
+if let Some(array) = event.event_data.as_array() {
+    let last_index = array.len() - 1;
+    for (index, event_data) in array.iter().enumerate() {
+        messages.push(StreamMessage {
+            id: format!("{queue_name}-{index}"),
+            event: individual_event,
+            source_stream: queue_name.to_string(),
+            // ⭐ Only attach acker to the LAST message
+            acker: if index == last_index {
+                Some(acker.clone())
+            } else {
+                None
+            },
+        });
+    }
+}
+```
+
 **Error Handling**:
-- On processing error: `basic_nack` with requeue=true
-- On fatal error: `basic_nack` with requeue=false (dead letter queue)
+```rust
+// Malformed message (parse error) - don't requeue poison messages
+delivery.acker.nack(BasicNackOptions {
+    requeue: false,  // Move to DLQ if configured
+    multiple: false,
+}).await?;
+
+// Processing error (SurrealDB error, transient failures)
+rabbitmq_consumer.nack_message(acker, true).await?;  // Requeue for retry
+```
+- **Poison message detection**: Malformed JSON → nack with `requeue: false`
+- **Transient errors**: Database errors, timeouts → nack with `requeue: true`
 - Circuit breaker pattern remains the same
+- **Note**: Dead letter queue not explicitly configured (gap from plan)
 
 **Validation**:
-- [ ] Build: `cargo build`
-- [ ] Unit tests: `cargo test`
-- [ ] Start service: `docker compose up surreal-writer`
-- [ ] Verify messages consumed from RabbitMQ
-- [ ] Check SurrealDB for inserted records
-- [ ] Monitor metrics at http://localhost:18210/metrics
+- [x] Build: `cargo build` ✅
+- [x] Unit tests: `cargo test` ✅
+- [x] Start service: `docker compose up surreal-writer` ✅
+- [x] Verify messages consumed from RabbitMQ ✅
+- [x] Check SurrealDB for inserted records ✅
+- [x] Monitor metrics at http://localhost:18210/metrics ✅
 
 **Dependencies**: Steps 1, 2
 
-**Estimated Effort**: 4-6 hours
+**Actual Effort**: Successfully completed
+
+**Implementation Commit**: `f6bd743` - 465 additions, 500 deletions across 13 files
+
+---
+
+### Key Patterns from Step 3 to Reuse in Step 4
+
+These patterns were proven during the SurrealDB writer implementation and should be directly applied to the PostgreSQL writer:
+
+#### 1. Array Event Data Handling (CRITICAL!)
+
+**Pattern**:
+```rust
+fn parse_message(&self, data: &[u8], queue_name: &str, acker: &lapin::acker::Acker)
+    -> Result<Vec<StreamMessage>>
+{
+    let event: RindexerEvent = serde_json::from_str(&json_str)?;
+
+    if let Some(array) = event.event_data.as_array() {
+        let last_index = array.len() - 1;
+        for (index, event_data) in array.iter().enumerate() {
+            messages.push(StreamMessage {
+                acker: if index == last_index { Some(acker.clone()) } else { None },
+                // ...
+            });
+        }
+    }
+}
+```
+
+**Why**: Rindexer publishes multiple blockchain events in a single RabbitMQ message. One RabbitMQ delivery can expand to N StreamMessages. Only acknowledge after ALL events are processed.
+
+**Impact**: Critical for correctness - ensures atomic processing of event batches.
+
+---
+
+#### 2. Multi-Channel Architecture
+
+**Pattern**:
+```rust
+for (exchange, routing_key) in exchanges.iter().zip(routing_keys.iter()) {
+    let channel = connection.create_channel().await?;
+    channel.basic_qos(prefetch_count, BasicQosOptions::default()).await?;
+    let consumer = channel.basic_consume(&queue_name, ...).await?;
+    channels.push(Arc::new(Mutex::new(channel)));
+    consumers.push(Arc::new(Mutex::new(consumer)));
+}
+```
+
+**Why**:
+- Enables parallel consumption from multiple queues
+- Each channel has independent flow control (prefetch)
+- No head-of-line blocking between event types
+
+**Impact**: Better throughput and fairness across event types.
+
+---
+
+#### 3. Non-Blocking Batch Collection
+
+**Pattern**:
+```rust
+for consumer in &self.consumers {
+    for _ in 0..batch_size {
+        match tokio::time::timeout(Duration::from_millis(10), consumer.next()).await {
+            Ok(Some(Ok(delivery))) => { /* process */ },
+            Err(_) => break, // Timeout - move to next queue
+        }
+    }
+}
+```
+
+**Why**:
+- 10ms timeout prevents starvation when one queue is empty
+- Round-robin across all queues up to batch_size
+- Low latency, responsive batch collection
+
+**Impact**: Fair processing across queues, no blocking on empty queues.
+
+---
+
+#### 4. Batch-Level Acknowledgment
+
+**Pattern**:
+```rust
+for message in messages {
+    let result = process_event(&message.event).await;
+
+    if let Some(ref acker) = message.acker {
+        match result {
+            Ok(_) => acker.ack(BasicAckOptions::default()).await?,
+            Err(_) => acker.nack(BasicNackOptions { requeue: true, ... }).await?,
+        }
+    }
+}
+```
+
+**Why**:
+- One RabbitMQ message = atomic unit of work
+- If any event fails, entire batch is redelivered
+- Guarantees at-least-once delivery semantics
+
+**Impact**: Critical for correctness with array event data.
+
+---
+
+#### 5. Poison Message Rejection
+
+**Pattern**:
+```rust
+match serde_json::from_str::<RindexerEvent>(&json_str) {
+    Ok(event) => { /* process */ },
+    Err(e) => {
+        // Malformed message - don't requeue
+        delivery.acker.nack(BasicNackOptions {
+            requeue: false,
+            multiple: false,
+        }).await?;
+    }
+}
+```
+
+**Why**:
+- Prevents infinite retry loops on unparseable messages
+- Moves to dead letter queue (if configured)
+- Protects queue from being blocked by poison messages
+
+**Impact**: Operational safety and reliability.
+
+---
+
+#### 6. Separation of Prefetch and Batch Size
+
+**Pattern**:
+```rust
+pub struct Config {
+    pub prefetch_count: u16,   // RabbitMQ flow control (20)
+    pub batch_size: usize,     // Application batching (100)
+}
+```
+
+**Why**:
+- `prefetch_count` controls memory usage and network flow
+- `batch_size` controls application processing efficiency
+- Independent tuning of network vs application performance
+
+**Impact**: Flexible performance tuning.
 
 ---
 
 ### Step 4: PostgreSQL Writer Migration
 
-**Objective**: Migrate PostgreSQL writer from Redis to RabbitMQ + replace term_updates stream with mpsc channel
+**Objective**: Migrate PostgreSQL writer from Redis to RabbitMQ for event consumption AND analytics worker
+
+**Strategy**:
+1. **Event Consumption**: Same as Step 3 - consume from RabbitMQ queues instead of Redis streams
+2. **Analytics Worker**: Migrate from Redis `term_updates` stream to RabbitMQ queue
+   - postgres-writer publishes term updates to `term_updates` exchange
+   - Analytics worker consumes from `postgres.term_updates` queue
+   - Uses same RabbitMQ consumer pattern as main pipeline
 
 **Files to Create**:
-- `postgres-writer/src/consumer/rabbitmq_consumer.rs`
+- `postgres-writer/src/consumer/rabbitmq_consumer.rs` (similar to surreal-writer)
+- `postgres-writer/src/consumer/rabbitmq_publisher.rs` (replaces redis_publisher.rs)
 
 **Files to Modify**:
 - `postgres-writer/src/consumer/mod.rs`
 - `postgres-writer/src/core/pipeline.rs`
-- `postgres-writer/src/analytics/worker.rs`
+- `postgres-writer/src/core/types.rs` (StreamMessage with optional acker)
+- `postgres-writer/src/analytics/worker.rs` (consume from RabbitMQ instead of Redis)
 - `postgres-writer/src/config.rs`
 - `postgres-writer/src/main.rs`
+- `postgres-writer/src/error.rs` (remove Redis-specific errors)
+- `postgres-writer/src/monitoring/metrics.rs` (rename Redis → RabbitMQ)
 - `postgres-writer/Cargo.toml`
+- `docker/docker-compose.override.yml` (postgres-writer service config)
 
 **Files to Delete**:
 - `postgres-writer/src/consumer/redis_stream.rs`
@@ -368,61 +588,94 @@ Blockchain → Rindexer → RabbitMQ Exchanges (5) → Queues → Dual Consumers
 
 **Key Implementation Details**:
 
+**IMPORTANT**: Apply all patterns from "Key Patterns from Step 3" section above, especially:
+- Array event data handling (critical!)
+- Multi-channel architecture
+- Non-blocking batch collection with 10ms timeout
+- Batch-level acknowledgment
+- Poison message rejection
+
 1. **Add dependencies** to `Cargo.toml`:
    ```toml
    [dependencies]
-   lapin = "2.3"
-   tokio = { version = "1", features = ["sync"] }  # for mpsc
+   lapin = "2.3"  # RabbitMQ client (same as surreal-writer)
+   # Note: tokio mpsc not needed - analytics worker uses RabbitMQ queue instead
    ```
 
-2. **Create RabbitMQ consumer** (similar to SurrealDB writer):
-   - Same approach as Step 3
+2. **Create RabbitMQ consumer** (`rabbitmq_consumer.rs`):
+   - **Copy implementation from surreal-writer** and adapt queue prefix
+   - Multi-channel architecture (one channel per queue)
    - Queues: `postgres.atom_created`, `postgres.triple_created`, etc.
+   - Array event data handling (1 RabbitMQ delivery → N StreamMessages)
+   - Non-blocking batch collection (10ms timeout)
+   - Poison message rejection (malformed JSON → requeue=false)
 
-3. **Replace term_updates with mpsc channel** (`pipeline.rs`):
+3. **Create RabbitMQ publisher** (`rabbitmq_publisher.rs`):
    ```rust
-   use tokio::sync::mpsc;
+   pub struct RabbitMQPublisher {
+       connection: Arc<Connection>,
+       channel: Arc<Mutex<Channel>>,
+       exchange: String,
+       routing_key: String,
+   }
 
-   pub async fn run_event_processors(
-       config: Arc<Config>,
-       postgres_client: Arc<PostgresClient>,
-   ) -> Result<()> {
-       // Create mpsc channel for term updates
-       let (term_tx, term_rx) = mpsc::unbounded_channel();
+   impl RabbitMQPublisher {
+       pub async fn new(rabbitmq_url: &str, exchange: &str, routing_key: &str) -> Result<Self> {
+           let connection = Connection::connect(rabbitmq_url, ConnectionProperties::default()).await?;
+           let channel = connection.create_channel().await?;
 
-       // Pass sender to event processors
-       let processors = spawn_rabbitmq_consumers(
-           config.clone(),
-           postgres_client.clone(),
-           term_tx,
-       );
+           // Declare exchange (durable=false to match rindexer)
+           channel.exchange_declare(
+               exchange,
+               lapin::ExchangeKind::Direct,
+               ExchangeDeclareOptions {
+                   durable: false,
+                   auto_delete: false,
+                   ..Default::default()
+               },
+               FieldTable::default(),
+           ).await?;
 
-       // Pass receiver to analytics worker
-       let analytics_worker = spawn_analytics_worker(
-           config.clone(),
-           postgres_client.clone(),
-           term_rx,
-       );
+           Ok(Self {
+               connection: Arc::new(connection),
+               channel: Arc::new(Mutex::new(channel)),
+               exchange: exchange.to_string(),
+               routing_key: routing_key.to_string(),
+           })
+       }
 
-       // ... rest of orchestration
+       pub async fn publish(&self, message: &TermUpdateMessage) -> Result<()> {
+           let payload = serde_json::to_vec(message)?;
+           let channel = self.channel.lock().await;
+
+           channel.basic_publish(
+               &self.exchange,
+               &self.routing_key,
+               BasicPublishOptions::default(),
+               &payload,
+               BasicProperties::default(),
+           ).await?;
+
+           Ok(())
+       }
    }
    ```
 
-4. **Update cascade processor** to send term updates:
+4. **Update cascade processor** (`processors/cascade.rs`):
    ```rust
    // In vault_updater.rs and term_updater.rs
    pub async fn update_vault(
        client: &PostgresClient,
        event: &Event,
-       term_tx: &mpsc::UnboundedSender<TermUpdateMessage>,
+       publisher: &RabbitMQPublisher,
    ) -> Result<()> {
        // ... existing logic
 
-       // Send term update via channel instead of Redis
-       term_tx.send(TermUpdateMessage {
+       // Publish term update to RabbitMQ instead of Redis
+       publisher.publish(&TermUpdateMessage {
            term_id,
            timestamp: Utc::now(),
-       })?;
+       }).await?;
 
        Ok(())
    }
@@ -433,60 +686,192 @@ Blockchain → Rindexer → RabbitMQ Exchanges (5) → Queues → Dual Consumers
    pub async fn run_analytics_worker(
        config: Arc<Config>,
        postgres_client: Arc<PostgresClient>,
-       mut term_rx: mpsc::UnboundedReceiver<TermUpdateMessage>,
    ) -> Result<()> {
+       // Create RabbitMQ consumer for term_updates queue
+       let consumer = RabbitMQConsumer::new(
+           &config.rabbitmq_url,
+           vec!["term_updates".to_string()],
+           &config.queue_prefix,  // "postgres"
+           config.prefetch_count,
+       ).await?;
+
        loop {
-           // Batch collection with timeout
-           let mut batch = Vec::new();
+           // Use same batch collection pattern as main pipeline
+           let messages = consumer.consume_batch(config.batch_size).await?;
 
-           // First message (blocking)
-           if let Some(msg) = term_rx.recv().await {
-               batch.push(msg);
-           } else {
-               break; // Channel closed
+           if messages.is_empty() {
+               tokio::time::sleep(Duration::from_millis(100)).await;
+               continue;
            }
 
-           // Collect more messages (non-blocking, with timeout)
-           let deadline = Instant::now() + Duration::from_millis(100);
-           while batch.len() < config.batch_size && Instant::now() < deadline {
-               match tokio::time::timeout(Duration::from_millis(10), term_rx.recv()).await {
-                   Ok(Some(msg)) => batch.push(msg),
-                   Ok(None) => break, // Channel closed
-                   Err(_) => break,   // Timeout
-               }
-           }
+           // Extract term update messages
+           let term_updates: Vec<TermUpdateMessage> = messages.iter()
+               .filter_map(|msg| serde_json::from_value(msg.event.event_data.clone()).ok())
+               .collect();
 
            // Process batch
-           process_term_updates(postgres_client.as_ref(), batch).await?;
+           if let Err(e) = process_term_updates(postgres_client.as_ref(), term_updates).await {
+               error!("Failed to process term updates: {}", e);
+               // Nack all messages with requeue=true
+               for msg in &messages {
+                   if let Some(ref acker) = msg.acker {
+                       consumer.nack_message(acker, true).await?;
+                   }
+               }
+           } else {
+               // Ack all messages
+               for msg in &messages {
+                   if let Some(ref acker) = msg.acker {
+                       consumer.ack_message(acker).await?;
+                   }
+               }
+           }
        }
-
-       Ok(())
    }
    ```
 
 6. **Update configuration** (`config.rs`):
-   - Remove: `REDIS_URL`, `REDIS_STREAMS`, `CONSUMER_GROUP`, `ANALYTICS_STREAM_NAME`
-   - Add: `RABBITMQ_URL`, `QUEUE_PREFIX`, `EXCHANGES`
+   ```rust
+   pub struct Config {
+       // RabbitMQ settings
+       pub rabbitmq_url: String,
+       pub exchanges: Vec<String>,  // Event exchanges
+       pub queue_prefix: String,    // "postgres"
+       pub prefetch_count: u16,     // 20
+       pub batch_size: usize,       // 100
 
-**Benefits of mpsc Channel**:
-- **Performance**: No network overhead, faster communication
-- **Simplicity**: No need for Redis connection/serialization
-- **Reliability**: Backpressure handled by Tokio runtime
-- **Testability**: Easy to mock in tests
+       // Analytics settings
+       pub analytics_exchange: String,  // "term_updates"
+       pub analytics_routing_key: String,  // "intuition.term_updates"
+
+       // ... rest of config (PostgreSQL, processing, circuit breaker, HTTP)
+   }
+   ```
+
+   Remove: `REDIS_URL`, `REDIS_STREAMS`, `CONSUMER_GROUP`, `ANALYTICS_STREAM_NAME`
+   Add: `RABBITMQ_URL`, `QUEUE_PREFIX`, `EXCHANGES`, `ANALYTICS_EXCHANGE`, `ANALYTICS_ROUTING_KEY`
+
+**Benefits of RabbitMQ over mpsc Channel**:
+- **Decoupling**: Analytics worker can be a separate service in the future
+- **Persistence**: Messages survive process restarts
+- **Monitoring**: Visibility into term update queue depth
+- **Consistency**: Same messaging infrastructure for all communication
+- **Reliability**: At-least-once delivery semantics
+
+---
+
+#### PostgreSQL-Specific Considerations
+
+**Error Classification and Requeue Strategy**:
+
+```rust
+// Error categories for requeue decisions
+match error {
+    // PERMANENT ERRORS - Do NOT requeue (requeue=false)
+    Error::Parse(_) => {
+        // Malformed JSON - poison message
+        nack(requeue: false)
+    }
+    Error::Database(ref db_err) if is_constraint_violation(db_err) => {
+        // Duplicate key, FK violation - won't succeed on retry
+        nack(requeue: false)
+    }
+
+    // TRANSIENT ERRORS - Requeue for retry (requeue=true)
+    Error::Database(ref db_err) if is_connection_error(db_err) => {
+        // Connection lost, timeout, deadlock
+        nack(requeue: true)
+    }
+    Error::CircuitBreakerOpen => {
+        // Temporary circuit breaker - retry later
+        nack(requeue: true)
+    }
+
+    // Default: Requeue transient errors
+    _ => nack(requeue: true)
+}
+
+fn is_constraint_violation(err: &sqlx::Error) -> bool {
+    matches!(err, sqlx::Error::Database(db_err) if
+        db_err.code() == Some("23505") || // unique_violation
+        db_err.code() == Some("23503")    // foreign_key_violation
+    )
+}
+
+fn is_connection_error(err: &sqlx::Error) -> bool {
+    matches!(err,
+        sqlx::Error::PoolTimedOut |
+        sqlx::Error::PoolClosed |
+        sqlx::Error::Io(_) |
+        sqlx::Error::Database(db_err) if db_err.code() == Some("40P01") // deadlock_detected
+    )
+}
+```
+
+**Acknowledgment Strategy with Transactions**:
+
+The postgres-writer uses **separate transactions** for event insertion and cascade updates:
+
+```rust
+async fn process_event(
+    message: &StreamMessage,
+    postgres_client: &PostgresClient,
+    publisher: &RabbitMQPublisher,
+) -> Result<()> {
+    // Transaction 1: Insert event (idempotent via ON CONFLICT)
+    postgres_client.insert_event(&message.event).await?;
+    // Triggers fire here, updating base tables
+
+    // Transaction 2: Cascade updates (vault metrics, term totals)
+    postgres_client.process_cascade(&message.event, publisher).await?;
+
+    // ACK only after BOTH transactions succeed
+    if let Some(ref acker) = message.acker {
+        acker.ack(BasicAckOptions::default()).await?;
+    }
+
+    Ok(())
+}
+```
+
+**Why this works safely**:
+1. **Event insert is idempotent** (`ON CONFLICT DO UPDATE`)
+2. If cascade fails, message is nack'd → RabbitMQ redelivers
+3. On redelivery, event insert succeeds (duplicate) → cascade retries
+4. Triggers use `is_event_newer()` to handle out-of-order events
+5. Advisory locks prevent race conditions in cascade processor
+
+**Ordering Guarantees**:
+- RabbitMQ queues are FIFO within a single consumer
+- Multiple workers may process messages out of order
+- **Existing safeguard**: `is_event_newer()` helper in triggers handles this
+- No changes needed to out-of-order event handling
+
+---
 
 **Validation**:
 - [ ] Build: `cargo build`
 - [ ] Run migrations: `sqlx migrate run`
 - [ ] Unit tests: `cargo test`
 - [ ] Start service: `docker compose up postgres-writer`
-- [ ] Verify messages consumed from RabbitMQ
+- [ ] Verify messages consumed from RabbitMQ (event queues)
 - [ ] Check PostgreSQL for inserted records
-- [ ] Verify analytics tables updated (via mpsc channel)
+- [ ] Verify analytics tables updated (via RabbitMQ queue)
 - [ ] Monitor metrics at http://localhost:18211/metrics
+- [ ] Check term_updates queue has messages
+- [ ] Verify analytics worker processes term updates
 
-**Dependencies**: Steps 1, 2, 3 (optional - can be parallel)
+**Dependencies**: Steps 1, 2, 3
 
-**Estimated Effort**: 6-8 hours
+**Estimated Effort**: 8-12 hours
+
+**Rationale for increased estimate**:
+- More complex than surreal-writer (cascade processor, analytics worker)
+- Two RabbitMQ patterns: consumer (events) + publisher/consumer (term_updates)
+- Error classification requires PostgreSQL-specific logic
+- Transaction boundary considerations with acknowledgment
+- More comprehensive testing (cascade + analytics)
+- Benefits from Step 3 patterns, but additional complexity offsets time savings
 
 ---
 
@@ -744,17 +1129,19 @@ If migration fails or issues arise:
 
 ## Timeline Estimate
 
-**Total Effort**: 20-30 hours
+**Total Effort**: 22-34 hours
 
-| Step | Effort | Can Parallelize |
-|------|--------|-----------------|
-| 1. Docker Infrastructure | 1-2h | No (foundation) |
-| 2. Rindexer Config | 1h | No (depends on 1) |
-| 3. SurrealDB Writer | 4-6h | No (test case first) |
-| 4. PostgreSQL Writer | 6-8h | After step 3 |
-| 5. Testing | 3-4h | After step 4 |
-| 6. Monitoring | 2-3h | Can parallelize with 5 |
-| 7. Documentation | 2-3h | Can parallelize with 6 |
+| Step | Effort | Status | Notes |
+|------|--------|--------|-------|
+| 1. Docker Infrastructure | 1-2h | ✅ Completed | Foundation |
+| 2. Rindexer Config | 1h | ✅ Completed | Depends on 1 |
+| 3. SurrealDB Writer | 4-6h | ✅ Completed | Test case first |
+| 4. PostgreSQL Writer | 8-12h | 🔄 Next | More complex (cascade + analytics) |
+| 5. Testing | 3-4h | ⏳ Pending | After step 4 |
+| 6. Monitoring | 2-3h | ⏳ Pending | Can parallelize with 5 |
+| 7. Documentation | 2-3h | ⏳ Pending | Can parallelize with 6 |
+
+**Steps 1-3 Completed**: Docker + Rindexer + SurrealDB Writer fully migrated to RabbitMQ
 
 **Recommended Approach**: Complete steps sequentially, testing thoroughly after each step.
 
@@ -762,12 +1149,25 @@ If migration fails or issues arise:
 
 ## Notes
 
-- Focus on **Step 1** first (Docker infrastructure)
+**Implementation Status**:
+- ✅ Steps 1-3 completed successfully (commit `f6bd743`)
+- 🔄 Step 4 (PostgreSQL Writer) is next priority
+- Step 3 revealed critical patterns that must be applied to Step 4
+
+**Key Discoveries from Step 3**:
+- **Array event data handling** is critical - rindexer can publish multiple blockchain events in a single RabbitMQ message
+- Multi-channel architecture (one channel per queue) works well for parallel consumption
+- Non-blocking batch collection with 10ms timeout prevents starvation
+- Poison message detection (malformed JSON → requeue=false) provides operational safety
+- Prefetch count (20) and batch size (100) should be kept separate for independent tuning
+- See "Key Patterns from Step 3" section for detailed patterns to reuse
+
+**Migration Strategy**:
 - Each step should be tested before proceeding to next
-- Use SurrealDB writer as simpler test case before PostgreSQL writer
-- The mpsc channel replacement for term_updates is a significant simplification
+- SurrealDB writer served as simpler test case before PostgreSQL writer
 - Maintain idempotency and retry semantics throughout migration
 - RabbitMQ's automatic redelivery is simpler than Redis XCLAIM pattern
+- Analytics worker migrated to RabbitMQ instead of mpsc channel for consistency
 
 ---
 
@@ -782,4 +1182,10 @@ If migration fails or issues arise:
 
 ---
 
-**Next Session**: Start with Step 1 - Docker Infrastructure Setup
+**Next Session**: Step 4 - PostgreSQL Writer Migration
+
+**Preparation**:
+1. Review "Key Patterns from Step 3" section thoroughly
+2. Study surreal-writer/src/consumer/rabbitmq_consumer.rs implementation
+3. Understand transaction boundaries and acknowledgment strategy
+4. Plan for both event consumption AND analytics worker migration
