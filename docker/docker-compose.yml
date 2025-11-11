@@ -7,7 +7,7 @@ services:
       dockerfile: Dockerfile
     environment:
       RPC_URL: ${RPC_URL}
-      REDIS_URL: ${REDIS_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
     volumes:
       - ../rindexer/rindexer.yaml:/app/rindexer.yaml:ro
       - ../rindexer/abi:/app/abi:ro
@@ -100,7 +100,7 @@ services:
     environment:
       RUST_LOG: "surreal_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
-      REDIS_URL: ${REDIS_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
       SURREAL_URL: ${SURREAL_URL}
       SURREAL_USER: "root"
       SURREAL_PASS: "root"
@@ -114,7 +114,6 @@ services:
       RECONNECT_DELAY_MS: "5000"
       MAX_RETRIES: "3"
       HTTP_PORT: "8080"
-      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
       - "8080"
     depends_on:
@@ -159,7 +158,7 @@ services:
     environment:
       DATA_SOURCE_NAME: "postgresql://postgres:postgres@postgres:18100/storage?sslmode=disable"
     ports:
-      - "18103:9187"
+      - "18104:9187"
     depends_on:
       postgres:
         condition: service_healthy
@@ -172,24 +171,6 @@ services:
       timeout: 10s
       retries: 3
 
-  redis-exporter:
-    image: oliver006/redis_exporter:latest
-    environment:
-      # REDIS_ADDR expects host:port format, not full URL
-      # For production, set REDIS_EXPORTER_ADDR env var (e.g., "redishost:6379")
-      REDIS_ADDR: ${REDIS_EXPORTER_ADDR:-redis:6379}
-      REDIS_EXPORTER_LOG_FORMAT: "txt"
-    ports:
-      - "18104:9121"
-    restart: unless-stopped
-    networks:
-      - dokploy-network
-    healthcheck:
-      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9121/metrics"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-
   postgres-writer:
     build:
       context: ../postgres-writer
@@ -197,7 +178,7 @@ services:
     environment:
       RUST_LOG: "postgres_writer=info,tokio=warn"
       RUST_BACKTRACE: "1"
-      REDIS_URL: ${REDIS_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
       DATABASE_URL: ${DATABASE_URL}
       DATABASE_POOL_SIZE: "25"
       CONSUMER_GROUP: postgres-${CONSUMER_GROUP_SUFFIX:-sync}
@@ -214,7 +195,6 @@ services:
       SHUTDOWN_TIMEOUT_SECS: "30"
       MAX_MESSAGES_PER_SECOND: "10000"
       MIN_BATCH_INTERVAL_MS: "10"
-      REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
       - "8081"
     depends_on:
