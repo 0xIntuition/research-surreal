@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!("Starting Redis to PostgreSQL sync pipeline");
+    info!("Starting RabbitMQ to PostgreSQL sync pipeline");
 
     // Load configuration from environment
     let config = Config::from_env().map_err(|e| {
@@ -28,9 +28,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     info!("Configuration loaded successfully");
-    info!("Redis URL: {}", config.redis_url);
+    info!("RabbitMQ URL: {}", config.rabbitmq_url);
     info!("Database URL: {}", config.database_url);
-    info!("Streams: {:?}", config.stream_names);
+    info!("Exchanges: {:?}", config.exchanges);
     info!(
         "Batch size: {}, Workers: {}",
         config.batch_size, config.workers

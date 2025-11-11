@@ -39,9 +39,9 @@ lazy_static! {
         "postgres_writer_peak_events_per_second",
         "Peak events processing rate per second"
     ).unwrap();
-    static ref REDIS_HEALTHY_GAUGE: Gauge = Gauge::new(
-        "postgres_writer_redis_healthy",
-        "Redis connection health status (1=healthy, 0=unhealthy)"
+    static ref RABBITMQ_HEALTHY_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_rabbitmq_healthy",
+        "RabbitMQ connection health status (1=healthy, 0=unhealthy)"
     ).unwrap();
     static ref POSTGRES_HEALTHY_GAUGE: Gauge = Gauge::new(
         "postgres_writer_postgres_healthy",
@@ -70,48 +70,48 @@ lazy_static! {
         "Connection pool utilization as a percentage (0-100)"
     ).unwrap();
 
-    // Redis Streams metrics
-    static ref STREAM_LAG_GAUGE: IntGaugeVec = IntGaugeVec::new(
+    // RabbitMQ queue metrics
+    static ref QUEUE_DEPTH_GAUGE: IntGaugeVec = IntGaugeVec::new(
         Opts::new(
-            "postgres_writer_stream_lag",
-            "Estimated lag between last read message and stream end per stream"
+            "postgres_writer_queue_depth",
+            "Number of messages in queue"
         ),
-        &["stream_name"]
+        &["queue"]
     ).unwrap();
-    static ref STREAM_PENDING_MESSAGES_GAUGE: IntGaugeVec = IntGaugeVec::new(
+    static ref MESSAGES_CONSUMED_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "postgres_writer_stream_pending_messages",
-            "Number of pending messages (consumed but not ACKed) per stream"
+            "postgres_writer_messages_consumed_total",
+            "Total messages consumed from queue"
         ),
-        &["stream_name"]
+        &["queue"]
     ).unwrap();
-    static ref STREAM_MESSAGES_CLAIMED_COUNTER: CounterVec = CounterVec::new(
+    static ref MESSAGES_ACKED_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "postgres_writer_stream_messages_claimed_total",
-            "Total number of idle messages claimed from other consumers"
+            "postgres_writer_messages_acked_total",
+            "Total messages acknowledged"
         ),
-        &["stream_name"]
+        &["queue"]
     ).unwrap();
-    static ref STREAM_BATCH_SIZE_GAUGE: GaugeVec = GaugeVec::new(
+    static ref MESSAGES_NACKED_COUNTER: CounterVec = CounterVec::new(
         Opts::new(
-            "postgres_writer_stream_batch_size",
-            "Current batch size being processed per stream"
+            "postgres_writer_messages_nacked_total",
+            "Total messages negatively acknowledged"
         ),
-        &["stream_name"]
+        &["queue"]
     ).unwrap();
-    static ref STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE: GaugeVec = GaugeVec::new(
+    static ref QUEUE_BATCH_SIZE_GAUGE: GaugeVec = GaugeVec::new(
         Opts::new(
-            "postgres_writer_stream_last_message_timestamp",
-            "Unix timestamp of last processed message per stream"
+            "postgres_writer_queue_batch_size",
+            "Current batch size being processed per queue"
         ),
-        &["stream_name"]
+        &["queue"]
     ).unwrap();
-    static ref STREAM_MESSAGES_CONSUMED_COUNTER: CounterVec = CounterVec::new(
+    static ref QUEUE_LAST_MESSAGE_TIMESTAMP_GAUGE: GaugeVec = GaugeVec::new(
         Opts::new(
-            "postgres_writer_stream_messages_consumed_total",
-            "Total messages consumed from each stream"
+            "postgres_writer_queue_last_message_timestamp",
+            "Unix timestamp of last processed message per queue"
         ),
-        &["stream_name"]
+        &["queue"]
     ).unwrap();
 
     // Event type-specific metrics
@@ -203,12 +203,12 @@ lazy_static! {
     // Term updates publishing metrics
     static ref TERM_UPDATES_PUBLISHED_COUNTER: Counter = Counter::new(
         "postgres_writer_term_updates_published_total",
-        "Total number of term update messages published to Redis"
+        "Total number of term update messages published to RabbitMQ"
     ).unwrap();
     static ref TERM_UPDATES_PUBLISH_DURATION_HISTOGRAM: Histogram = Histogram::with_opts(
         prometheus::HistogramOpts::new(
             "postgres_writer_term_updates_publish_duration_seconds",
-            "Time spent publishing term updates to Redis"
+            "Time spent publishing term updates to RabbitMQ"
         ).buckets(vec![0.0001, 0.0005, 0.001, 0.005, 0.01, 0.05, 0.1, 0.5, 1.0])
     ).unwrap();
 }
@@ -227,7 +227,7 @@ pub struct Metrics {
     peak_events_per_second: Arc<RwLock<f64>>,
 
     // Health status
-    redis_healthy: Arc<RwLock<bool>>,
+    rabbitmq_healthy: Arc<RwLock<bool>>,
     postgres_healthy: Arc<RwLock<bool>>,
 }
 
@@ -254,8 +254,8 @@ impl Metrics {
             .register(Box::new(PEAK_EVENTS_PER_SECOND_GAUGE.clone()))
             .unwrap_or_else(|e| warn!("Failed to register PEAK_EVENTS_PER_SECOND_GAUGE: {}", e));
         REGISTRY
-            .register(Box::new(REDIS_HEALTHY_GAUGE.clone()))
-            .unwrap_or_else(|e| warn!("Failed to register REDIS_HEALTHY_GAUGE: {}", e));
+            .register(Box::new(RABBITMQ_HEALTHY_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register RABBITMQ_HEALTHY_GAUGE: {}", e));
         REGISTRY
             .register(Box::new(POSTGRES_HEALTHY_GAUGE.clone()))
             .unwrap_or_else(|e| warn!("Failed to register POSTGRES_HEALTHY_GAUGE: {}", e));
@@ -277,31 +277,29 @@ impl Metrics {
             .register(Box::new(POOL_UTILIZATION_GAUGE.clone()))
             .unwrap_or_else(|e| warn!("Failed to register POOL_UTILIZATION_GAUGE: {}", e));
 
-        // Register Redis Streams metrics
+        // Register RabbitMQ queue metrics
         REGISTRY
-            .register(Box::new(STREAM_LAG_GAUGE.clone()))
-            .unwrap_or_else(|e| warn!("Failed to register STREAM_LAG_GAUGE: {}", e));
+            .register(Box::new(QUEUE_DEPTH_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register QUEUE_DEPTH_GAUGE: {}", e));
         REGISTRY
-            .register(Box::new(STREAM_PENDING_MESSAGES_GAUGE.clone()))
-            .unwrap_or_else(|e| warn!("Failed to register STREAM_PENDING_MESSAGES_GAUGE: {}", e));
+            .register(Box::new(MESSAGES_CONSUMED_COUNTER.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register MESSAGES_CONSUMED_COUNTER: {}", e));
         REGISTRY
-            .register(Box::new(STREAM_MESSAGES_CLAIMED_COUNTER.clone()))
-            .unwrap_or_else(|e| warn!("Failed to register STREAM_MESSAGES_CLAIMED_COUNTER: {}", e));
+            .register(Box::new(MESSAGES_ACKED_COUNTER.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register MESSAGES_ACKED_COUNTER: {}", e));
         REGISTRY
-            .register(Box::new(STREAM_BATCH_SIZE_GAUGE.clone()))
-            .unwrap_or_else(|e| warn!("Failed to register STREAM_BATCH_SIZE_GAUGE: {}", e));
+            .register(Box::new(MESSAGES_NACKED_COUNTER.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register MESSAGES_NACKED_COUNTER: {}", e));
         REGISTRY
-            .register(Box::new(STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE.clone()))
+            .register(Box::new(QUEUE_BATCH_SIZE_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register QUEUE_BATCH_SIZE_GAUGE: {}", e));
+        REGISTRY
+            .register(Box::new(QUEUE_LAST_MESSAGE_TIMESTAMP_GAUGE.clone()))
             .unwrap_or_else(|e| {
                 warn!(
-                    "Failed to register STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE: {}",
+                    "Failed to register QUEUE_LAST_MESSAGE_TIMESTAMP_GAUGE: {}",
                     e
                 )
-            });
-        REGISTRY
-            .register(Box::new(STREAM_MESSAGES_CONSUMED_COUNTER.clone()))
-            .unwrap_or_else(|e| {
-                warn!("Failed to register STREAM_MESSAGES_CONSUMED_COUNTER: {}", e)
             });
 
         // Register event type-specific metrics
@@ -401,7 +399,7 @@ impl Metrics {
             last_event_time: Arc::new(RwLock::new(None)),
             events_per_second: Arc::new(RwLock::new(0.0)),
             peak_events_per_second: Arc::new(RwLock::new(0.0)),
-            redis_healthy: Arc::new(RwLock::new(false)),
+            rabbitmq_healthy: Arc::new(RwLock::new(false)),
             postgres_healthy: Arc::new(RwLock::new(false)),
         }
     }
@@ -458,9 +456,9 @@ impl Metrics {
         }
     }
 
-    pub async fn set_redis_health(&self, healthy: bool) {
-        *self.redis_healthy.write().await = healthy;
-        REDIS_HEALTHY_GAUGE.set(if healthy { 1.0 } else { 0.0 });
+    pub async fn set_rabbitmq_health(&self, healthy: bool) {
+        *self.rabbitmq_healthy.write().await = healthy;
+        RABBITMQ_HEALTHY_GAUGE.set(if healthy { 1.0 } else { 0.0 });
     }
 
     pub async fn set_postgres_health(&self, healthy: bool) {
@@ -482,40 +480,36 @@ impl Metrics {
         *self.last_event_time.write().await = Some(Utc::now());
     }
 
-    // Redis Streams metrics methods
-    pub fn record_stream_lag(&self, stream_name: &str, lag: i64) {
-        STREAM_LAG_GAUGE.with_label_values(&[stream_name]).set(lag);
+    // RabbitMQ queue metrics methods
+    pub fn record_queue_depth(&self, queue: &str, depth: i64) {
+        QUEUE_DEPTH_GAUGE.with_label_values(&[queue]).set(depth);
     }
 
-    pub fn record_stream_pending_messages(&self, stream_name: &str, count: i64) {
-        STREAM_PENDING_MESSAGES_GAUGE
-            .with_label_values(&[stream_name])
-            .set(count);
-    }
-
-    pub fn record_stream_messages_claimed(&self, stream_name: &str, count: u64) {
-        STREAM_MESSAGES_CLAIMED_COUNTER
-            .with_label_values(&[stream_name])
+    pub fn record_queue_messages_consumed(&self, queue: &str, count: usize) {
+        MESSAGES_CONSUMED_COUNTER
+            .with_label_values(&[queue])
             .inc_by(count as f64);
     }
 
-    pub fn record_stream_batch_size(&self, stream_name: &str, size: usize) {
-        STREAM_BATCH_SIZE_GAUGE
-            .with_label_values(&[stream_name])
+    pub fn record_queue_message_acked(&self, queue: &str) {
+        MESSAGES_ACKED_COUNTER.with_label_values(&[queue]).inc();
+    }
+
+    pub fn record_queue_message_nacked(&self, queue: &str) {
+        MESSAGES_NACKED_COUNTER.with_label_values(&[queue]).inc();
+    }
+
+    pub fn record_queue_batch_size(&self, queue: &str, size: usize) {
+        QUEUE_BATCH_SIZE_GAUGE
+            .with_label_values(&[queue])
             .set(size as f64);
     }
 
-    pub fn record_stream_last_message_timestamp(&self, stream_name: &str) {
+    pub fn record_queue_last_message_timestamp(&self, queue: &str) {
         let timestamp = Utc::now().timestamp() as f64;
-        STREAM_LAST_MESSAGE_TIMESTAMP_GAUGE
-            .with_label_values(&[stream_name])
+        QUEUE_LAST_MESSAGE_TIMESTAMP_GAUGE
+            .with_label_values(&[queue])
             .set(timestamp);
-    }
-
-    pub fn record_stream_messages_consumed(&self, stream_name: &str, count: usize) {
-        STREAM_MESSAGES_CONSUMED_COUNTER
-            .with_label_values(&[stream_name])
-            .inc_by(count as f64);
     }
 
     // Event type-specific metrics methods
@@ -603,7 +597,7 @@ impl Metrics {
             total_batches_processed: self.batches_processed.load(Ordering::Relaxed),
             events_per_second: *self.events_per_second.read().await,
             peak_events_per_second: *self.peak_events_per_second.read().await,
-            redis_healthy: *self.redis_healthy.read().await,
+            rabbitmq_healthy: *self.rabbitmq_healthy.read().await,
             postgres_healthy: *self.postgres_healthy.read().await,
             uptime_seconds: uptime,
             start_time: self.start_time,
@@ -687,7 +681,7 @@ pub struct MetricsSnapshot {
     pub total_batches_processed: u64,
     pub events_per_second: f64,
     pub peak_events_per_second: f64,
-    pub redis_healthy: bool,
+    pub rabbitmq_healthy: bool,
     pub postgres_healthy: bool,
     pub uptime_seconds: u64,
     pub start_time: DateTime<Utc>,

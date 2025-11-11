@@ -1,26 +1,35 @@
 use anyhow::Result;
+use lapin::{
+    options::{
+        BasicPublishOptions, ExchangeDeclareOptions, QueueBindOptions, QueueDeclareOptions,
+        QueuePurgeOptions,
+    },
+    types::FieldTable,
+    BasicProperties, Connection, ConnectionProperties, ExchangeKind,
+};
 use postgres_writer::core::types::RindexerEvent;
-use redis::aio::MultiplexedConnection;
 use sqlx::{postgres::PgPoolOptions, PgPool};
 use testcontainers::{runners::AsyncRunner, ContainerAsync};
-use testcontainers_modules::{postgres::Postgres, redis::Redis};
+use testcontainers_modules::{postgres::Postgres, rabbitmq::RabbitMq};
 
 pub struct TestHarness {
-    _redis_container: ContainerAsync<Redis>,
+    _rabbitmq_container: ContainerAsync<RabbitMq>,
     _postgres_container: ContainerAsync<Postgres>,
-    redis_url: String,
+    rabbitmq_url: String,
     database_url: String,
     test_db_name: String,
     pool: Option<PgPool>,
+    exchanges: Vec<String>,
+    queue_prefix: String,
 }
 
 impl TestHarness {
     /// Creates a new test environment with isolated containers
     pub async fn new() -> Result<Self> {
-        // Start Redis container
-        let redis_container = Redis.start().await?;
-        let redis_port = redis_container.get_host_port_ipv4(6379).await?;
-        let redis_url = format!("redis://127.0.0.1:{redis_port}");
+        // Start RabbitMQ container
+        let rabbitmq_container = RabbitMq::default().start().await?;
+        let rabbitmq_port = rabbitmq_container.get_host_port_ipv4(5672).await?;
+        let rabbitmq_url = format!("amqp://guest:guest@127.0.0.1:{rabbitmq_port}");
 
         // Start PostgreSQL container
         let postgres_container = Postgres::default()
@@ -35,17 +44,32 @@ impl TestHarness {
         let test_db_name = format!("test_{}", uuid::Uuid::new_v4().simple());
         let database_url = format!("postgres://test:test@127.0.0.1:{postgres_port}/{test_db_name}");
 
+        let exchanges = vec![
+            "atom_created".to_string(),
+            "triple_created".to_string(),
+            "deposited".to_string(),
+            "redeemed".to_string(),
+            "share_price_changed".to_string(),
+            "term_updates".to_string(),
+        ];
+        let queue_prefix = "test".to_string();
+
         let harness = Self {
-            _redis_container: redis_container,
+            _rabbitmq_container: rabbitmq_container,
             _postgres_container: postgres_container,
-            redis_url,
+            rabbitmq_url,
             database_url: database_url.clone(),
             test_db_name: test_db_name.clone(),
             pool: None,
+            exchanges,
+            queue_prefix,
         };
 
         // Create test database and run migrations
         harness.setup_database().await?;
+
+        // Setup RabbitMQ exchanges and queues
+        harness.setup_rabbitmq().await?;
 
         Ok(harness)
     }
@@ -92,14 +116,79 @@ impl TestHarness {
         Ok(())
     }
 
-    /// Clears all data from Redis and PostgreSQL
-    pub async fn clear_data(&mut self) -> Result<()> {
-        // Clear Redis streams
-        let client = redis::Client::open(self.redis_url.as_str())?;
-        let mut con = client.get_multiplexed_async_connection().await?;
+    /// Sets up RabbitMQ exchanges and queues
+    async fn setup_rabbitmq(&self) -> Result<()> {
+        let connection =
+            Connection::connect(&self.rabbitmq_url, ConnectionProperties::default()).await?;
+        let channel = connection.create_channel().await?;
 
-        // Delete all streams
-        redis::cmd("FLUSHDB").query_async::<()>(&mut con).await?;
+        // Declare exchanges
+        for exchange in &self.exchanges {
+            channel
+                .exchange_declare(
+                    exchange,
+                    ExchangeKind::Direct,
+                    ExchangeDeclareOptions {
+                        durable: false,
+                        auto_delete: false,
+                        internal: false,
+                        nowait: false,
+                        passive: false,
+                    },
+                    FieldTable::default(),
+                )
+                .await?;
+        }
+
+        // Declare queues and bind them to exchanges
+        for exchange in &self.exchanges {
+            let queue_name = format!("{}.{}", self.queue_prefix, exchange);
+            let routing_key = format!("intuition.{}", exchange);
+
+            channel
+                .queue_declare(
+                    &queue_name,
+                    QueueDeclareOptions {
+                        durable: true,
+                        exclusive: false,
+                        auto_delete: false,
+                        nowait: false,
+                        passive: false,
+                    },
+                    FieldTable::default(),
+                )
+                .await?;
+
+            channel
+                .queue_bind(
+                    &queue_name,
+                    exchange,
+                    &routing_key,
+                    QueueBindOptions::default(),
+                    FieldTable::default(),
+                )
+                .await?;
+        }
+
+        connection.close(0, "Setup complete").await?;
+        Ok(())
+    }
+
+    /// Clears all data from RabbitMQ queues and PostgreSQL
+    pub async fn clear_data(&mut self) -> Result<()> {
+        // Clear RabbitMQ queues
+        let connection =
+            Connection::connect(&self.rabbitmq_url, ConnectionProperties::default()).await?;
+        let channel = connection.create_channel().await?;
+
+        for exchange in &self.exchanges {
+            let queue_name = format!("{}.{}", self.queue_prefix, exchange);
+            channel
+                .queue_purge(&queue_name, QueuePurgeOptions::default())
+                .await?;
+        }
+
+        connection.close(0, "Clear complete").await?;
 
         // Clear PostgreSQL tables efficiently in a single transaction
         // Using CASCADE handles all foreign key constraints automatically
@@ -143,35 +232,45 @@ impl TestHarness {
         Ok(self.pool.as_ref().unwrap())
     }
 
-    /// Gets Redis connection
-    pub async fn get_redis_connection(&self) -> Result<MultiplexedConnection> {
-        let client = redis::Client::open(self.redis_url.as_str())?;
-        client
-            .get_multiplexed_async_connection()
-            .await
-            .map_err(Into::into)
-    }
-
-    /// Publishes events to Redis stream using pipelining for better performance
-    pub async fn publish_events(&self, stream: &str, events: Vec<RindexerEvent>) -> Result<()> {
-        let mut con = self.get_redis_connection().await?;
-
-        // Use Redis pipeline to batch all XADD commands into a single round trip
-        // This is much faster than sending each command individually
-        let mut pipe = redis::pipe();
+    /// Publishes events to RabbitMQ exchange
+    /// If exchange is "rindexer_producer", events are automatically routed to the correct exchange based on event_name
+    pub async fn publish_events(&self, exchange: &str, events: Vec<RindexerEvent>) -> Result<()> {
+        let connection =
+            Connection::connect(&self.rabbitmq_url, ConnectionProperties::default()).await?;
+        let channel = connection.create_channel().await?;
 
         for event in events {
-            let json = serde_json::to_string(&event)?;
-            pipe.cmd("XADD")
-                .arg(stream)
-                .arg("*") // Auto-generate ID
-                .arg("data")
-                .arg(json);
+            // Route events to the correct exchange based on event_name
+            let target_exchange = if exchange == "rindexer_producer" {
+                // Auto-route based on event name
+                match event.event_name.as_str() {
+                    "AtomCreated" => "atom_created",
+                    "TripleCreated" => "triple_created",
+                    "Deposited" => "deposited",
+                    "Redeemed" => "redeemed",
+                    "SharePriceChanged" => "share_price_changed",
+                    _ => return Err(anyhow::anyhow!("Unknown event type: {}", event.event_name)),
+                }
+            } else {
+                exchange
+            };
+
+            let routing_key = format!("intuition.{}", target_exchange);
+            let payload = serde_json::to_vec(&event)?;
+
+            channel
+                .basic_publish(
+                    target_exchange,
+                    &routing_key,
+                    BasicPublishOptions::default(),
+                    &payload,
+                    BasicProperties::default(),
+                )
+                .await?
+                .await?; // Wait for confirmation
         }
 
-        // Execute all commands at once
-        pipe.query_async::<()>(&mut con).await?;
-
+        connection.close(0, "Publish complete").await?;
         Ok(())
     }
 
@@ -253,8 +352,8 @@ impl TestHarness {
         Ok(())
     }
 
-    pub fn redis_url(&self) -> &str {
-        &self.redis_url
+    pub fn rabbitmq_url(&self) -> &str {
+        &self.rabbitmq_url
     }
 
     pub fn database_url(&self) -> &str {
@@ -264,12 +363,12 @@ impl TestHarness {
     /// Creates a default Config for testing
     pub fn default_config(&self) -> postgres_writer::config::Config {
         postgres_writer::config::Config {
-            redis_url: self.redis_url().to_string(),
+            rabbitmq_url: self.rabbitmq_url().to_string(),
             database_url: self.database_url().to_string(),
             database_pool_size: 10,
-            stream_names: vec!["rindexer_producer".to_string()],
-            consumer_group: "test-group".to_string(),
-            consumer_name: "test-consumer".to_string(),
+            exchanges: self.exchanges.clone(),
+            queue_prefix: self.queue_prefix.clone(),
+            prefetch_count: 20,
             batch_size: 10,
             batch_timeout_ms: 1000,
             workers: 1,
@@ -279,8 +378,8 @@ impl TestHarness {
             circuit_breaker_timeout_ms: 60000,
             http_port: 0,
             shutdown_timeout_secs: 30,
-            consumer_group_suffix: None,
-            analytics_stream_name: "term_updates".to_string(),
+            analytics_exchange: "term_updates".to_string(),
+            analytics_routing_key: "intuition.term_updates".to_string(),
             max_messages_per_second: 5000,
             min_batch_interval_ms: 10,
         }
@@ -305,7 +404,7 @@ mod tests {
     #[tokio::test]
     async fn test_harness_creation() {
         let harness = TestHarness::new().await.unwrap();
-        assert!(!harness.redis_url().is_empty());
+        assert!(!harness.rabbitmq_url().is_empty());
         assert!(!harness.database_url().is_empty());
     }
 

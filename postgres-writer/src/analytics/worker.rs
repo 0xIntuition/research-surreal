@@ -1,21 +1,17 @@
 // Analytics worker implementation
-// Consumes term update messages from Redis and updates analytics tables
+// Consumes term update messages from RabbitMQ and updates analytics tables
 
 use super::processor::update_analytics_tables;
 use crate::{
-    consumer::TermUpdateMessage,
-    error::{Result, SyncError},
+    consumer::{rabbitmq_consumer::RabbitMQConsumer, TermUpdateMessage},
+    error::Result,
     monitoring::metrics::Metrics,
     Config,
 };
-use redis::{aio::MultiplexedConnection, Client};
 use sqlx::PgPool;
-use std::collections::HashMap;
 use std::sync::Arc;
 use tokio_util::sync::CancellationToken;
 use tracing::{debug, error, info, warn};
-
-const ANALYTICS_CONSUMER_GROUP_PREFIX: &str = "analytics";
 
 pub async fn start_analytics_worker(
     config: Config,
@@ -25,63 +21,19 @@ pub async fn start_analytics_worker(
 ) -> Result<()> {
     info!("Starting analytics worker");
 
-    // Connect to Redis
-    let redis_client = Client::open(config.redis_url.clone()).map_err(SyncError::Redis)?;
-    let mut redis_conn = redis_client
-        .get_multiplexed_async_connection()
-        .await
-        .map_err(SyncError::Redis)?;
-
-    info!("Analytics worker connected to Redis");
-
-    // Build consumer group name with suffix
-    let consumer_group = match &config.consumer_group_suffix {
-        Some(suffix) => format!("{ANALYTICS_CONSUMER_GROUP_PREFIX}-{suffix}"),
-        None => format!("{ANALYTICS_CONSUMER_GROUP_PREFIX}-worker"),
-    };
-
-    let consumer_name = config.consumer_name.clone();
-    let stream_name = config.analytics_stream_name.clone();
+    // Create RabbitMQ consumer for term_updates queue
+    let consumer = RabbitMQConsumer::new(
+        &config.rabbitmq_url,
+        &config.queue_prefix,
+        &[config.analytics_exchange.clone()],
+        config.prefetch_count,
+    )
+    .await?;
 
     info!(
-        "Analytics worker using stream '{}', consumer group '{}', and consumer name '{}'",
-        stream_name, consumer_group, consumer_name
+        "Analytics worker connected to RabbitMQ, consuming from queue '{}.{}'",
+        config.queue_prefix, config.analytics_exchange
     );
-
-    // Ensure consumer group exists
-    let result: std::result::Result<String, redis::RedisError> = redis::cmd("XGROUP")
-        .arg("CREATE")
-        .arg(&stream_name)
-        .arg(&consumer_group)
-        .arg("0")
-        .arg("MKSTREAM")
-        .query_async(&mut redis_conn)
-        .await;
-
-    match result {
-        Ok(_) => info!("Created consumer group '{}'", consumer_group),
-        Err(e) if e.to_string().contains("BUSYGROUP") => {
-            debug!("Consumer group '{}' already exists", consumer_group)
-        }
-        Err(e) => {
-            error!("Failed to create consumer group: {}", e);
-            return Err(SyncError::Redis(e));
-        }
-    }
-
-    // Log initial stream state
-    match get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await {
-        Ok(pending) => {
-            info!(
-                "Analytics worker started, {} pending messages in stream",
-                pending
-            );
-        }
-        Err(e) => {
-            info!("Analytics worker started, processing messages...");
-            debug!("Could not get initial pending count: {}", e);
-        }
-    }
 
     let mut total_processed = 0u64;
     let start_time = std::time::Instant::now();
@@ -95,14 +47,8 @@ pub async fn start_analytics_worker(
     const MAX_CONSECUTIVE_FAILURES: u32 = 10;
 
     // Rate limiting configuration
-    // Strategy: Enforce a minimum delay between batches to respect both:
-    // 1. Configured minimum batch interval (prevents too-frequent batches)
-    // 2. Maximum messages per second rate limit (prevents system overload)
-    //
-    // The actual delay used is the maximum of these two constraints.
     let max_messages_per_second = config.max_messages_per_second;
     let min_batch_interval_ms = config.min_batch_interval_ms;
-
     let mut last_batch_time = std::time::Instant::now();
 
     // Main processing loop
@@ -112,7 +58,7 @@ pub async fn start_analytics_worker(
                 info!("Analytics worker received shutdown signal");
                 break;
             }
-            result = process_batch(&mut redis_conn, &pool, &metrics, &stream_name, &consumer_group, &consumer_name) => {
+            result = process_batch(&consumer, &pool, &metrics, &config) => {
                 match result {
                     Ok(processed_count) => {
                         if processed_count > 0 {
@@ -131,48 +77,37 @@ pub async fn start_analytics_worker(
                                 processed_count, total_processed, rate
                             );
 
-                            // Update pending count metric on every batch for real-time monitoring
-                            let pending_count = get_stream_pending_count(&mut redis_conn, &stream_name, &consumer_group).await.ok();
-                            if let Some(pending) = pending_count {
-                                metrics.record_analytics_messages_pending(pending as i64);
+                            // Update queue depth metric
+                            let queue_name = format!("{}.{}", config.queue_prefix, config.analytics_exchange);
+                            if let Ok(queue_depth) = consumer.get_queue_depth(&queue_name).await {
+                                metrics.record_analytics_messages_pending(queue_depth as i64);
                             }
 
                             // Log periodic summary
                             if last_summary_time.elapsed().as_secs() >= SUMMARY_INTERVAL_SECS {
-                                match pending_count {
-                                    Some(pending) => {
-                                        info!(
-                                            "Analytics summary for stream '{}': processed {} msgs total ({:.1} msg/s avg), {} pending",
-                                            stream_name, total_processed, rate, pending
-                                        );
-                                    }
-                                    None => {
-                                        info!(
-                                            "Analytics summary for stream '{}': processed {} msgs total ({:.1} msg/s avg)",
-                                            stream_name, total_processed, rate
-                                        );
-                                        debug!("Failed to get pending count for summary");
-                                    }
+                                if let Ok(queue_depth) = consumer.get_queue_depth(&queue_name).await {
+                                    info!(
+                                        "Analytics summary for queue '{}': processed {} msgs total ({:.1} msg/s avg), {} pending",
+                                        queue_name, total_processed, rate, queue_depth
+                                    );
+                                } else {
+                                    info!(
+                                        "Analytics summary for queue '{}': processed {} msgs total ({:.1} msg/s avg)",
+                                        queue_name, total_processed, rate
+                                    );
                                 }
-
                                 last_summary_time = std::time::Instant::now();
                             }
 
-                            // Rate limiting: enforce delay based on both batch interval and rate limit
-                            // Calculate required delay to respect rate limit for this batch
+                            // Rate limiting
                             let rate_limit_delay_ms = if max_messages_per_second > 0 {
-                                // Calculate minimum ms per message based on rate limit
                                 let ms_per_message = 1000.0 / max_messages_per_second as f64;
-                                // For this batch size, we need to ensure adequate spacing
                                 (ms_per_message * processed_count as f64) as u64
                             } else {
-                                0 // No rate limiting if set to 0
+                                0
                             };
 
-                            // Use the maximum of configured minimum interval and rate-based delay
                             let required_delay_ms = std::cmp::max(min_batch_interval_ms, rate_limit_delay_ms);
-
-                            // Enforce the delay if needed
                             let batch_elapsed = last_batch_time.elapsed();
                             if batch_elapsed.as_millis() < required_delay_ms as u128 {
                                 let sleep_ms = required_delay_ms - batch_elapsed.as_millis() as u64;
@@ -193,7 +128,6 @@ pub async fn start_analytics_worker(
                             consecutive_failures, MAX_CONSECUTIVE_FAILURES, e
                         );
 
-                        // Calculate exponential backoff: 1s, 2s, 4s, 8s, 16s, 32s, 60s (max)
                         let backoff_secs = std::cmp::min(
                             INITIAL_BACKOFF_SECS * 2u64.pow(consecutive_failures.saturating_sub(1)),
                             MAX_BACKOFF_SECS
@@ -205,13 +139,11 @@ pub async fn start_analytics_worker(
                         );
                         tokio::time::sleep(tokio::time::Duration::from_secs(backoff_secs)).await;
 
-                        // If we've hit max consecutive failures, log a critical error
                         if consecutive_failures >= MAX_CONSECUTIVE_FAILURES {
                             error!(
                                 "Analytics worker has failed {} times consecutively. Continuing with max backoff.",
                                 MAX_CONSECUTIVE_FAILURES
                             );
-                            // Continue processing but keep the backoff at maximum
                             consecutive_failures = MAX_CONSECUTIVE_FAILURES;
                         }
                     }
@@ -224,59 +156,14 @@ pub async fn start_analytics_worker(
     Ok(())
 }
 
-/// Get the number of pending messages in the stream for this consumer group
-async fn get_stream_pending_count(
-    redis_conn: &mut MultiplexedConnection,
-    stream_name: &str,
-    consumer_group: &str,
-) -> Result<u64> {
-    // XPENDING returns summary: [min_id, max_id, count, consumers]
-    let result: redis::Value = redis::cmd("XPENDING")
-        .arg(stream_name)
-        .arg(consumer_group)
-        .query_async(redis_conn)
-        .await
-        .map_err(SyncError::Redis)?;
-
-    // Parse the third element which is the pending count
-    if let redis::Value::Array(ref arr) = result {
-        if arr.len() >= 3 {
-            if let redis::Value::Int(count) = arr[2] {
-                return Ok(count as u64);
-            }
-        }
-    }
-
-    Ok(0)
-}
-
 async fn process_batch(
-    redis_conn: &mut MultiplexedConnection,
+    consumer: &RabbitMQConsumer,
     pool: &PgPool,
     metrics: &Arc<Metrics>,
-    stream_name: &str,
-    consumer_group: &str,
-    consumer_name: &str,
+    _config: &Config,
 ) -> Result<usize> {
-    // Read messages from stream
-    let mut cmd = redis::cmd("XREADGROUP");
-    cmd.arg("GROUP")
-        .arg(consumer_group)
-        .arg(consumer_name)
-        .arg("COUNT")
-        .arg(100) // Process 100 messages at a time
-        .arg("BLOCK")
-        .arg(5000) // Block for 5 seconds
-        .arg("STREAMS")
-        .arg(stream_name)
-        .arg(">"); // Only new messages
-
-    let result: redis::Value = cmd
-        .query_async(redis_conn)
-        .await
-        .map_err(SyncError::Redis)?;
-
-    let messages = parse_messages(result)?;
+    // Consume messages from RabbitMQ
+    let messages = consumer.consume_batch(100).await?; // Process 100 messages at a time
 
     if messages.is_empty() {
         // Record empty batch to ensure gauge shows 0 during idle periods
@@ -287,29 +174,35 @@ async fn process_batch(
     // Record batch size
     metrics.record_analytics_batch_size(messages.len());
 
-    let first_msg_id = messages
-        .first()
-        .map(|(id, _)| id.as_str())
-        .unwrap_or("none");
-    let last_msg_id = messages.last().map(|(id, _)| id.as_str()).unwrap_or("none");
-
-    debug!(
-        "Received {} messages from stream '{}' (IDs: {} ... {})",
-        messages.len(),
-        stream_name,
-        first_msg_id,
-        last_msg_id
-    );
+    debug!("Received {} messages from analytics queue", messages.len());
 
     let mut successful = 0;
     let mut failed = 0;
-    let mut messages_to_ack = Vec::new();
 
     // Process each message
-    for (message_id, term_update) in &messages {
+    for message in messages {
         let start_time = std::time::Instant::now();
 
-        match update_analytics_tables(pool, metrics, term_update).await {
+        // Parse the term update message from the event data
+        let term_update: TermUpdateMessage =
+            match serde_json::from_value(message.event.event_data.clone()) {
+                Ok(update) => update,
+                Err(e) => {
+                    error!("Failed to parse term update message: {}", e);
+                    // NACK with requeue=false for malformed messages
+                    if let Some(ref acker) = message.acker {
+                        if let Err(nack_err) = consumer.nack_message(acker, false).await {
+                            warn!("Failed to nack malformed message: {}", nack_err);
+                        } else {
+                            metrics.record_analytics_message_failure();
+                        }
+                    }
+                    failed += 1;
+                    continue;
+                }
+            };
+
+        match update_analytics_tables(pool, metrics, &term_update).await {
             Ok(()) => {
                 // Record processing duration
                 metrics.record_analytics_processing_duration(start_time.elapsed());
@@ -321,7 +214,13 @@ async fn process_batch(
                     "Successfully updated analytics for term {}",
                     term_update.term_id
                 );
-                messages_to_ack.push(message_id);
+
+                // ACK the message
+                if let Some(ref acker) = message.acker {
+                    if let Err(e) = consumer.ack_message(acker).await {
+                        warn!("Failed to ack message: {}", e);
+                    }
+                }
                 successful += 1;
             }
             Err(e) => {
@@ -329,89 +228,25 @@ async fn process_batch(
                 metrics.record_analytics_message_failure();
 
                 warn!(
-                    "Failed to update analytics for term {} (message_id: {}): {}. Message will NOT be ACK'd and will be retried.",
-                    term_update.term_id, message_id, e
+                    "Failed to update analytics for term {}: {}. Message will be requeued.",
+                    term_update.term_id, e
                 );
+
+                // NACK with requeue=true for processing failures
+                if let Some(ref acker) = message.acker {
+                    if let Err(nack_err) = consumer.nack_message(acker, true).await {
+                        warn!("Failed to nack message: {}", nack_err);
+                    }
+                }
                 failed += 1;
-                // Don't add to messages_to_ack - this message will be retried
             }
         }
-    }
-
-    // Only ACK successful messages
-    for message_id in &messages_to_ack {
-        let _: u64 = redis::cmd("XACK")
-            .arg(stream_name)
-            .arg(consumer_group)
-            .arg(message_id)
-            .query_async(redis_conn)
-            .await
-            .map_err(SyncError::Redis)?;
     }
 
     debug!(
-        "Batch complete for stream '{}': {} successful, {} failed (will retry)",
-        stream_name, successful, failed
+        "Batch complete for analytics queue: {} successful, {} failed (requeued)",
+        successful, failed
     );
 
-    Ok(messages.len())
-}
-
-fn parse_messages(value: redis::Value) -> Result<Vec<(String, TermUpdateMessage)>> {
-    let mut messages = Vec::new();
-
-    if let redis::Value::Array(streams) = value {
-        for stream in streams {
-            if let redis::Value::Array(stream_data) = stream {
-                if stream_data.len() >= 2 {
-                    if let redis::Value::Array(stream_messages) = &stream_data[1] {
-                        for message in stream_messages {
-                            if let Some((id, term_update)) = parse_single_message(message)? {
-                                messages.push((id, term_update));
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(messages)
-}
-
-fn parse_single_message(message: &redis::Value) -> Result<Option<(String, TermUpdateMessage)>> {
-    if let redis::Value::Array(message_data) = message {
-        if message_data.len() >= 2 {
-            let message_id = match &message_data[0] {
-                redis::Value::BulkString(id) => String::from_utf8_lossy(id).to_string(),
-                _ => return Ok(None),
-            };
-
-            if let redis::Value::Array(fields) = &message_data[1] {
-                let mut field_map = HashMap::new();
-
-                for chunk in fields.chunks(2) {
-                    if chunk.len() == 2 {
-                        let key = match &chunk[0] {
-                            redis::Value::BulkString(k) => String::from_utf8_lossy(k).to_string(),
-                            _ => continue,
-                        };
-                        let value = match &chunk[1] {
-                            redis::Value::BulkString(v) => String::from_utf8_lossy(v).to_string(),
-                            _ => continue,
-                        };
-                        field_map.insert(key, value);
-                    }
-                }
-
-                if let Some(data) = field_map.get("data") {
-                    let term_update: TermUpdateMessage =
-                        serde_json::from_str(data).map_err(SyncError::Serde)?;
-                    return Ok(Some((message_id, term_update)));
-                }
-            }
-        }
-    }
-
-    Ok(None)
+    Ok(successful + failed)
 }

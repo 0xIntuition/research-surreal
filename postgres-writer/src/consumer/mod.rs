@@ -1,5 +1,5 @@
-pub mod redis_publisher;
-pub mod redis_stream;
+pub mod rabbitmq_consumer;
+pub mod rabbitmq_publisher;
 
-pub use redis_publisher::{RedisPublisher, TermUpdateMessage};
-pub use redis_stream::RedisStreamConsumer;
+pub use rabbitmq_consumer::RabbitMQConsumer;
+pub use rabbitmq_publisher::{RabbitMQPublisher, TermUpdateMessage};

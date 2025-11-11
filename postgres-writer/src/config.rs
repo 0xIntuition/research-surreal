@@ -4,11 +4,11 @@ use std::env;
 
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Config {
-    // Redis settings
-    pub redis_url: String,
-    pub stream_names: Vec<String>,
-    pub consumer_group: String,
-    pub consumer_name: String,
+    // RabbitMQ settings
+    pub rabbitmq_url: String,
+    pub exchanges: Vec<String>,
+    pub queue_prefix: String,
+    pub prefetch_count: u16,
 
     // PostgreSQL settings
     pub database_url: String,
@@ -32,8 +32,8 @@ pub struct Config {
     pub shutdown_timeout_secs: u64,
 
     // Analytics worker settings
-    pub consumer_group_suffix: Option<String>,
-    pub analytics_stream_name: String,
+    pub analytics_exchange: String,
+    pub analytics_routing_key: String,
     pub max_messages_per_second: u64,
     pub min_batch_interval_ms: u64,
 }
@@ -41,18 +41,21 @@ pub struct Config {
 impl Config {
     pub fn from_env() -> Result<Self> {
         Ok(Config {
-            // Redis configuration
-            redis_url: env::var("REDIS_URL")
-                .unwrap_or_else(|_| "redis://127.0.0.1:6379".to_string()),
-            stream_names: env::var("REDIS_STREAMS")
-                .unwrap_or_else(|_| "rindexer_producer".to_string())
+            // RabbitMQ configuration
+            rabbitmq_url: env::var("RABBITMQ_URL")
+                .unwrap_or_else(|_| "amqp://admin:admin@localhost:5672".to_string()),
+            exchanges: env::var("EXCHANGES")
+                .unwrap_or_else(|_| {
+                    "atom_created,triple_created,deposited,redeemed,share_price_changed".to_string()
+                })
                 .split(',')
                 .map(|s| s.trim().to_string())
                 .collect(),
-            consumer_group: env::var("CONSUMER_GROUP")
-                .unwrap_or_else(|_| "postgres-sync".to_string()),
-            consumer_name: env::var("CONSUMER_NAME")
-                .unwrap_or_else(|_| format!("consumer-{}", uuid::Uuid::new_v4())),
+            queue_prefix: env::var("QUEUE_PREFIX").unwrap_or_else(|_| "postgres".to_string()),
+            prefetch_count: env::var("PREFETCH_COUNT")
+                .unwrap_or_else(|_| "20".to_string())
+                .parse()
+                .unwrap_or(20),
 
             // PostgreSQL configuration
             database_url: env::var("DATABASE_URL")
@@ -107,23 +110,10 @@ impl Config {
                 .unwrap_or(30),
 
             // Analytics worker configuration
-            consumer_group_suffix: env::var("CONSUMER_GROUP_SUFFIX").ok(),
-            analytics_stream_name: {
-                let base_name = env::var("ANALYTICS_STREAM_NAME")
-                    .unwrap_or_else(|_| "term_updates".to_string());
-
-                // If CONSUMER_GROUP_SUFFIX is provided and the stream name is the default,
-                // append the suffix to create a unique stream per restart cycle
-                if let Ok(ref suffix) = env::var("CONSUMER_GROUP_SUFFIX") {
-                    if base_name == "term_updates" {
-                        format!("{base_name}-{suffix}")
-                    } else {
-                        base_name
-                    }
-                } else {
-                    base_name
-                }
-            },
+            analytics_exchange: env::var("ANALYTICS_EXCHANGE")
+                .unwrap_or_else(|_| "term_updates".to_string()),
+            analytics_routing_key: env::var("ANALYTICS_ROUTING_KEY")
+                .unwrap_or_else(|_| "intuition.term_updates".to_string()),
             max_messages_per_second: env::var("MAX_MESSAGES_PER_SECOND")
                 .unwrap_or_else(|_| "5000".to_string())
                 .parse()
@@ -136,10 +126,17 @@ impl Config {
     }
 
     pub fn validate(&self) -> Result<()> {
-        // Stream validation
-        if self.stream_names.is_empty() {
+        // Exchange validation
+        if self.exchanges.is_empty() {
             return Err(SyncError::Config(
-                "At least one stream name is required".to_string(),
+                "At least one exchange is required".to_string(),
+            ));
+        }
+
+        // Prefetch count validation
+        if self.prefetch_count == 0 {
+            return Err(SyncError::Config(
+                "Prefetch count must be greater than 0".to_string(),
             ));
         }
 

@@ -6,7 +6,7 @@ use tracing::{debug, error, info, warn};
 
 use super::event_handlers;
 use super::utils::{ensure_hex_prefix, to_eip55_address};
-use crate::consumer::RedisPublisher;
+use crate::consumer::RabbitMQPublisher;
 use crate::core::types::{RindexerEvent, TransactionInformation};
 use crate::error::{Result, SyncError};
 use crate::monitoring::Metrics;
@@ -15,8 +15,8 @@ use crate::processors::CascadeProcessor;
 pub struct PostgresClient {
     pool: PgPool,
     cascade_processor: CascadeProcessor,
-    // TODO: Redis Publisher Lock Contention Issue
-    // PERFORMANCE BOTTLENECK: The Mutex wrapper around RedisPublisher creates a serialization
+    // TODO: RabbitMQ Publisher Lock Contention Issue
+    // PERFORMANCE BOTTLENECK: The Mutex wrapper around RabbitMQPublisher creates a serialization
     // point that impacts throughput under high load. All concurrent cascade operations must
     // wait to acquire this lock when publishing term updates, reducing parallelism.
     //
@@ -28,11 +28,11 @@ pub struct PostgresClient {
     //    an unbounded/bounded channel. This provides better isolation and eliminates lock
     //    contention entirely. Event handlers send term updates via channel.send() which is
     //    lock-free.
-    // 2. DashMap Approach: Replace Mutex with DashMap<(), RedisPublisher> or similar
+    // 2. DashMap Approach: Replace Mutex with DashMap<(), RabbitMQPublisher> or similar
     //    concurrent data structure for lock-free access patterns.
     //
     // Reference: PR #11 review comment (2025-11-02)
-    redis_publisher: Option<Mutex<RedisPublisher>>,
+    rabbitmq_publisher: Option<Mutex<RabbitMQPublisher>>,
     metrics: Arc<Metrics>,
 }
 
@@ -40,8 +40,9 @@ impl PostgresClient {
     pub async fn new(
         database_url: &str,
         pool_size: u32,
-        redis_url: Option<&str>,
-        analytics_stream_name: String,
+        rabbitmq_url: Option<&str>,
+        analytics_exchange: String,
+        analytics_routing_key: String,
         metrics: Arc<Metrics>,
     ) -> Result<Self> {
         // Create connection pool
@@ -88,12 +89,19 @@ impl PostgresClient {
             }
         }
 
-        // Initialize Redis publisher if URL provided
-        let redis_publisher = if let Some(url) = redis_url {
-            match RedisPublisher::new(url, analytics_stream_name, metrics.clone()).await {
+        // Initialize RabbitMQ publisher if URL provided
+        let rabbitmq_publisher = if let Some(url) = rabbitmq_url {
+            match RabbitMQPublisher::new(
+                url,
+                &analytics_exchange,
+                &analytics_routing_key,
+                metrics.clone(),
+            )
+            .await
+            {
                 Ok(publisher) => Some(Mutex::new(publisher)),
                 Err(e) => {
-                    warn!("Failed to initialize Redis publisher: {}. Analytics updates will be disabled.", e);
+                    warn!("Failed to initialize RabbitMQ publisher: {}. Analytics updates will be disabled.", e);
                     None
                 }
             }
@@ -104,7 +112,7 @@ impl PostgresClient {
         Ok(Self {
             pool,
             cascade_processor: CascadeProcessor::new(),
-            redis_publisher,
+            rabbitmq_publisher,
             metrics,
         })
     }
@@ -184,15 +192,15 @@ impl PostgresClient {
         self.metrics
             .record_cascade_duration(event_type, cascade_start.elapsed());
 
-        // After successful commit, publish to Redis for analytics worker
-        if let Some(publisher_mutex) = &self.redis_publisher {
+        // After successful commit, publish to RabbitMQ for analytics worker
+        if let Some(publisher_mutex) = &self.rabbitmq_publisher {
             // Acquire lock and publish term updates
             // No database queries needed - analytics worker will query for affected triples
-            let mut publisher = publisher_mutex.lock().await;
+            let publisher = publisher_mutex.lock().await;
             for term_id in &term_ids {
                 if let Err(e) = publisher.publish_term_update(term_id).await {
-                    warn!("Failed to publish term update to Redis: {}", e);
-                    // Don't fail the whole operation if Redis publish fails
+                    warn!("Failed to publish term update to RabbitMQ: {}", e);
+                    // Don't fail the whole operation if RabbitMQ publish fails
                 }
             }
         }

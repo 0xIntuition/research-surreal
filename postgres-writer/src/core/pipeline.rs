@@ -9,14 +9,14 @@ use tracing::{debug, error, info, warn};
 use super::circuit_breaker::CircuitBreaker;
 use super::types::PipelineHealth;
 use crate::config::Config;
-use crate::consumer::redis_stream::RedisStreamConsumer;
+use crate::consumer::rabbitmq_consumer::RabbitMQConsumer;
 use crate::error::{Result, SyncError};
 use crate::monitoring::metrics::Metrics;
 use crate::sync::postgres_client::PostgresClient;
 
 pub struct EventProcessingPipeline {
     config: Config,
-    redis_consumer: Arc<RedisStreamConsumer>,
+    rabbitmq_consumer: Arc<RabbitMQConsumer>,
     postgres_client: Arc<PostgresClient>,
     circuit_breaker: Arc<CircuitBreaker>,
     pub metrics: Arc<Metrics>,
@@ -29,7 +29,7 @@ impl Clone for EventProcessingPipeline {
     fn clone(&self) -> Self {
         Self {
             config: self.config.clone(),
-            redis_consumer: self.redis_consumer.clone(),
+            rabbitmq_consumer: self.rabbitmq_consumer.clone(),
             postgres_client: self.postgres_client.clone(),
             circuit_breaker: self.circuit_breaker.clone(),
             metrics: self.metrics.clone(),
@@ -44,12 +44,12 @@ impl EventProcessingPipeline {
     pub async fn new(config: Config) -> Result<Self> {
         info!("Initializing event processing pipeline");
 
-        let redis_consumer = Arc::new(
-            RedisStreamConsumer::new(
-                &config.redis_url,
-                &config.stream_names,
-                &config.consumer_group,
-                &config.consumer_name,
+        let rabbitmq_consumer = Arc::new(
+            RabbitMQConsumer::new(
+                &config.rabbitmq_url,
+                &config.queue_prefix,
+                &config.exchanges,
+                config.prefetch_count,
             )
             .await?,
         );
@@ -61,8 +61,9 @@ impl EventProcessingPipeline {
             PostgresClient::new(
                 &config.database_url,
                 config.database_pool_size as u32,
-                Some(&config.redis_url),
-                config.analytics_stream_name.clone(),
+                Some(&config.rabbitmq_url),
+                config.analytics_exchange.clone(),
+                config.analytics_routing_key.clone(),
                 metrics.clone(),
             )
             .await?,
@@ -78,7 +79,7 @@ impl EventProcessingPipeline {
 
         Ok(Self {
             config,
-            redis_consumer,
+            rabbitmq_consumer,
             postgres_client,
             circuit_breaker,
             metrics,
@@ -102,7 +103,7 @@ impl EventProcessingPipeline {
         info!("Starting event processing pipeline");
 
         // Set initial health status
-        self.metrics.set_redis_health(true).await;
+        self.metrics.set_rabbitmq_health(true).await;
         self.metrics.set_postgres_health(true).await;
 
         // Start processing loops
@@ -146,10 +147,10 @@ impl EventProcessingPipeline {
         self.metrics.record_connection_pool_stats(&pool_stats);
 
         PipelineHealth {
-            healthy: snapshot.redis_healthy
+            healthy: snapshot.rabbitmq_healthy
                 && snapshot.postgres_healthy
                 && !self.circuit_breaker.is_open(),
-            redis_consumer_healthy: snapshot.redis_healthy,
+            rabbitmq_consumer_healthy: snapshot.rabbitmq_healthy,
             postgres_sync_healthy: snapshot.postgres_healthy,
             circuit_breaker_closed: !self.circuit_breaker.is_open(),
             last_check: chrono::Utc::now(),
@@ -157,7 +158,7 @@ impl EventProcessingPipeline {
                 total_events_processed: snapshot.total_events_processed,
                 total_events_failed: snapshot.total_events_failed,
                 circuit_breaker_state: self.circuit_breaker.get_state(),
-                redis_consumer_health: snapshot.redis_healthy,
+                rabbitmq_consumer_health: snapshot.rabbitmq_healthy,
                 postgres_sync_health: snapshot.postgres_healthy,
             },
         }
@@ -175,7 +176,7 @@ impl EventProcessingPipeline {
     }
 
     async fn spawn_worker(&self, worker_id: usize) -> tokio::task::JoinHandle<()> {
-        let redis_consumer = self.redis_consumer.clone();
+        let rabbitmq_consumer = self.rabbitmq_consumer.clone();
         let postgres_client = self.postgres_client.clone();
         let circuit_breaker = self.circuit_breaker.clone();
         let metrics = self.metrics.clone();
@@ -190,7 +191,7 @@ impl EventProcessingPipeline {
                 tokio::select! {
                     _ = batch_interval.tick() => {
                         if let Err(e) = Self::process_batch(
-                            &redis_consumer,
+                            &rabbitmq_consumer,
                             &postgres_client,
                             &circuit_breaker,
                             &metrics,
@@ -198,7 +199,7 @@ impl EventProcessingPipeline {
                         ).await {
                             error!("Worker {} batch processing error: {}", worker_id, e);
                             circuit_breaker.record_failure().await;
-                            metrics.set_redis_health(false).await;
+                            metrics.set_rabbitmq_health(false).await;
                         }
                     }
                     _ = cancellation_token.cancelled() => {
@@ -211,7 +212,7 @@ impl EventProcessingPipeline {
     }
 
     async fn process_batch(
-        redis_consumer: &RedisStreamConsumer,
+        rabbitmq_consumer: &RabbitMQConsumer,
         postgres_client: &PostgresClient,
         circuit_breaker: &CircuitBreaker,
         metrics: &Metrics,
@@ -220,76 +221,57 @@ impl EventProcessingPipeline {
         // Check circuit breaker
         circuit_breaker.check().await?;
 
-        // Consume messages from Redis
+        // Consume messages from RabbitMQ
         debug!(
             "About to call consume_batch with batch_size: {}",
             config.batch_size
         );
-        let batch_result = redis_consumer.consume_batch(config.batch_size).await?;
-        debug!(
-            "consume_batch returned {} messages ({} claimed)",
-            batch_result.messages.len(),
-            batch_result.claimed_count
-        );
-        if batch_result.messages.is_empty() {
+        let messages = rabbitmq_consumer.consume_batch(config.batch_size).await?;
+        debug!("consume_batch returned {} messages", messages.len());
+
+        if messages.is_empty() {
             debug!("No messages received, returning early");
             return Ok(());
         }
 
-        debug!(
-            "Processing batch of {} messages",
-            batch_result.messages.len()
-        );
+        debug!("Processing batch of {} messages", messages.len());
 
-        // Track per-stream metrics
-        let mut stream_message_counts: HashMap<String, usize> = HashMap::new();
-        let mut stream_claimed_counts: HashMap<String, usize> = HashMap::new();
+        // Track per-queue metrics
+        let mut queue_message_counts: HashMap<String, usize> = HashMap::new();
 
-        for msg in &batch_result.messages {
-            *stream_message_counts
+        for msg in &messages {
+            *queue_message_counts
                 .entry(msg.source_stream.clone())
                 .or_insert(0) += 1;
         }
 
-        // Track claimed messages per stream if any were claimed
-        if batch_result.claimed_count > 0 {
-            for msg in &batch_result.messages {
-                *stream_claimed_counts
-                    .entry(msg.source_stream.clone())
-                    .or_insert(0) += 1;
-            }
-        }
-
-        for (stream_name, count) in &stream_message_counts {
-            metrics.record_stream_batch_size(stream_name, *count);
-            metrics.record_stream_messages_consumed(stream_name, *count);
-            metrics.record_stream_last_message_timestamp(stream_name);
-        }
-
-        // Record claimed messages metric
-        for (stream_name, count) in &stream_claimed_counts {
-            metrics.record_stream_messages_claimed(stream_name, *count as u64);
+        for (queue_name, count) in &queue_message_counts {
+            metrics.record_queue_batch_size(queue_name, *count);
+            metrics.record_queue_messages_consumed(queue_name, *count);
+            metrics.record_queue_last_message_timestamp(queue_name);
         }
 
         // Process each message
         let mut successful = 0u64;
         let mut failed = 0u64;
 
-        for message in batch_result.messages {
+        for message in messages {
             let result = metrics
                 .time_async_operation(|| postgres_client.sync_event(&message.event))
                 .await;
 
             match result {
                 Ok(_) => {
-                    if let Err(e) = redis_consumer
-                        .ack_message(&message.source_stream, &message.redis_message_id)
-                        .await
-                    {
-                        warn!(
-                            "Failed to acknowledge message {} from stream {}: {}",
-                            message.redis_message_id, message.source_stream, e
-                        );
+                    // ACK the message if there's an acker
+                    if let Some(ref acker) = message.acker {
+                        if let Err(e) = rabbitmq_consumer.ack_message(acker).await {
+                            warn!(
+                                "Failed to acknowledge message from queue {}: {}",
+                                message.source_stream, e
+                            );
+                        } else {
+                            metrics.record_queue_message_acked(&message.source_stream);
+                        }
                     }
                     successful += 1;
                 }
@@ -306,6 +288,21 @@ impl EventProcessingPipeline {
                         "Event network: {}, signature: {}",
                         message.event.network, message.event.event_signature_hash
                     );
+
+                    // NACK the message with requeue based on error type
+                    if let Some(ref acker) = message.acker {
+                        let should_requeue = should_requeue_on_error(&e);
+                        if let Err(nack_err) =
+                            rabbitmq_consumer.nack_message(acker, should_requeue).await
+                        {
+                            warn!(
+                                "Failed to nack message from queue {}: {}",
+                                message.source_stream, nack_err
+                            );
+                        } else {
+                            metrics.record_queue_message_nacked(&message.source_stream);
+                        }
+                    }
                     failed += 1;
                 }
             }
@@ -332,7 +329,7 @@ impl EventProcessingPipeline {
 
     fn spawn_monitoring_task(&self) -> tokio::task::JoinHandle<()> {
         let metrics = self.metrics.clone();
-        let redis_consumer = self.redis_consumer.clone();
+        let rabbitmq_consumer = self.rabbitmq_consumer.clone();
         let postgres_client = self.postgres_client.clone();
         let cancellation_token = self.cancellation_token.clone();
 
@@ -342,9 +339,10 @@ impl EventProcessingPipeline {
             let mut last_check_time = std::time::Instant::now();
             let mut last_event_count = 0u64;
 
-            // Initialize claimed messages metric for all streams so it appears in Prometheus
-            for stream_name in redis_consumer.get_stream_names() {
-                metrics.record_stream_messages_claimed(stream_name, 0);
+            // Initialize metrics for all queues so they appear in Prometheus
+            for queue_name in rabbitmq_consumer.get_queue_names() {
+                metrics.record_queue_message_acked(queue_name);
+                metrics.record_queue_message_nacked(queue_name);
             }
 
             loop {
@@ -352,12 +350,11 @@ impl EventProcessingPipeline {
                     _ = interval.tick() => {
                         let snapshot = metrics.get_snapshot().await;
 
-                        // Query stream metrics for each stream
-                        for stream_name in redis_consumer.get_stream_names() {
-                            if let Ok((lag, pending_count)) = redis_consumer.get_stream_metrics(stream_name).await {
-                                metrics.record_stream_lag(stream_name, lag);
-                                metrics.record_stream_pending_messages(stream_name, pending_count);
-                                debug!("Stream {} metrics - lag: {}, pending: {}", stream_name, lag, pending_count);
+                        // Query queue metrics for each queue
+                        for queue_name in rabbitmq_consumer.get_queue_names() {
+                            if let Ok(queue_depth) = rabbitmq_consumer.get_queue_depth(queue_name).await {
+                                metrics.record_queue_depth(queue_name, queue_depth as i64);
+                                debug!("Queue {} metrics - depth: {}", queue_name, queue_depth);
                             }
                         }
 
@@ -415,5 +412,44 @@ impl EventProcessingPipeline {
     /// Get a clone of the cancellation token for shutdown coordination
     pub fn get_cancellation_token(&self) -> CancellationToken {
         self.cancellation_token.clone()
+    }
+}
+
+/// Determine if a message should be requeued based on the error type
+/// Returns true for transient errors (connection issues, timeouts)
+/// Returns false for permanent errors (parse errors, constraint violations)
+fn should_requeue_on_error(error: &SyncError) -> bool {
+    match error {
+        // Parse errors are permanent - malformed JSON won't succeed on retry
+        SyncError::Serde(_) => false,
+
+        // Database constraint violations are permanent
+        SyncError::Sqlx(sqlx::Error::Database(ref db_err)) => {
+            let code = db_err.code();
+            // PostgreSQL error codes for permanent failures
+            match code.as_deref() {
+                Some("23505") => false, // unique_violation
+                Some("23503") => false, // foreign_key_violation
+                Some("23502") => false, // not_null_violation
+                Some("23514") => false, // check_violation
+                Some("22P02") => false, // invalid_text_representation
+                _ => true,              // All other database errors are potentially transient
+            }
+        }
+
+        // Connection errors, pool timeouts, IO errors are transient
+        SyncError::Connection(_) => true,
+        SyncError::Sqlx(sqlx::Error::PoolTimedOut) => true,
+        SyncError::Sqlx(sqlx::Error::PoolClosed) => true,
+        SyncError::Sqlx(sqlx::Error::Io(_)) => true,
+
+        // Circuit breaker open is transient
+        SyncError::CircuitBreakerOpen => true,
+
+        // Processing errors - default to requeue for safety
+        SyncError::Processing(_) => true,
+
+        // All other errors - default to requeue
+        _ => true,
     }
 }
