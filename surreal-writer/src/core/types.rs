@@ -18,7 +18,7 @@ where
                 u64::from_str_radix(cleaned, 16).map_err(serde::de::Error::custom)?;
 
             let datetime = DateTime::from_timestamp(timestamp_u64 as i64, 0).ok_or_else(|| {
-                serde::de::Error::custom(format!("Invalid timestamp: {}", timestamp_u64))
+                serde::de::Error::custom(format!("Invalid timestamp: {timestamp_u64}"))
             })?;
 
             Ok(Some(datetime))
@@ -50,13 +50,13 @@ pub struct TransactionInformation {
     pub transaction_index: u64,
 }
 
-/// Redis stream message structure
-#[derive(Debug, Clone)]
+/// RabbitMQ message structure
+#[derive(Debug)]
 pub struct StreamMessage {
     pub id: String,
     pub event: RindexerEvent,
     pub source_stream: String,
-    pub redis_message_id: String, // The actual Redis message ID for acknowledgment
+    pub acker: Option<lapin::acker::Acker>, // RabbitMQ acker for acknowledgment (only on last message in batch)
 }
 
 /// Pipeline metrics for monitoring and observability

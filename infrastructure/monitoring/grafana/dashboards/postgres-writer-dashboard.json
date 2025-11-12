@@ -148,13 +148,13 @@
       },
       "targets": [
         {
-          "expr": "postgres_writer_redis_healthy",
+          "expr": "postgres_writer_rabbitmq_healthy",
           "interval": "",
-          "legendFormat": "Redis",
+          "legendFormat": "RabbitMQ",
           "refId": "A"
         }
       ],
-      "title": "Redis Health",
+      "title": "RabbitMQ Health",
       "type": "stat"
     },
     {

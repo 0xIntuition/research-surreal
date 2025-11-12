@@ -64,7 +64,7 @@ async fn test_interleaved_deposits_and_redeems_out_of_order() {
 
     // Step 3: Start pipeline
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -183,7 +183,7 @@ async fn test_same_block_different_log_indices_across_types() {
         .unwrap();
 
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -270,7 +270,7 @@ async fn test_multiple_interleaved_events_random_order() {
         .unwrap();
 
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -361,7 +361,7 @@ async fn test_multiple_redeems_to_zero_out_of_order() {
         .unwrap();
 
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -475,7 +475,7 @@ async fn test_redeem_before_deposit_edge_case() {
 
     // Step 3: Start pipeline
     let config = harness.default_config();
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({

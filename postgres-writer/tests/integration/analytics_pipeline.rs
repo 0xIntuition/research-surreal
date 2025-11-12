@@ -22,7 +22,7 @@ async fn test_atom_creation_initializes_term() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -117,7 +117,7 @@ async fn test_triple_creation_initializes_terms() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -200,7 +200,7 @@ async fn test_deposits_update_term_aggregations() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({
@@ -276,7 +276,7 @@ async fn test_share_price_changes_update_term_market_cap() {
     // Start pipeline
     let config = harness.default_config();
 
-    let pipeline = EventProcessingPipeline::new(config)
+    let pipeline = EventProcessingPipeline::new(config, None)
         .await
         .expect("Failed to create pipeline");
     let pipeline_handle = tokio::spawn({

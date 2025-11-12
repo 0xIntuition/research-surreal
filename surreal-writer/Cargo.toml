@@ -3,7 +3,7 @@ name = "surreal-writer"
 version = "0.1.0"
 edition = "2021"
 authors = ["Simonas"]
-description = "High-performance SurrealDB event writer with Redis stream consumption"
+description = "High-performance SurrealDB event writer with RabbitMQ consumption"
 license = "MIT OR Apache-2.0"
 
 [[bin]]
@@ -11,8 +11,8 @@ name = "surreal-writer"
 path = "src/main.rs"
 
 [dependencies]
-# Redis client with async support
-redis = { version = "0.27", features = ["tokio-comp", "streams"] }
+# RabbitMQ client with async support
+lapin = "2.3"
 
 # SurrealDB client
 surrealdb = { version = "2.3.7", features = ["kv-mem", "protocol-ws", "protocol-http"] }

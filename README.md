@@ -1,13 +1,13 @@
 # Research Backend
 
-A high-performance blockchain event indexing and dual-database data pipeline system for the Intuition protocol, featuring real-time synchronization between Redis streams and both SurrealDB and PostgreSQL with comprehensive monitoring and analytics.
+A high-performance blockchain event indexing and dual-database data pipeline system for the Intuition protocol, featuring real-time event distribution via RabbitMQ to both SurrealDB and PostgreSQL with comprehensive monitoring and analytics.
 
 ## Overview
 
 This project provides a complete data pipeline solution that:
 
 1. **Indexes blockchain events** from the Intuition testnet MultiVault contract using Rindexer
-2. **Streams events** to Redis for high-throughput processing
+2. **Distributes events** via RabbitMQ exchanges and queues for reliable message delivery
 3. **Synchronizes data** to dual storage backends:
    - **SurrealDB** for flexible NoSQL querying
    - **PostgreSQL** (TimescaleDB) for relational analytics and time-series data
@@ -18,12 +18,17 @@ This project provides a complete data pipeline solution that:
 ## Architecture
 
 ```
-┌───────────┐    ┌──────────┐    ┌──────────────┐
-│ Blockchain│───▶│ Rindexer │───▶│Redis Streams │
-└───────────┘    └──────────┘    └──────┬───────┘
-                                         │
-                         ┌───────────────┴───────────────┐
-                         ▼                               ▼
+┌───────────┐    ┌──────────┐    ┌──────────────────┐
+│ Blockchain│───▶│ Rindexer │───▶│RabbitMQ Exchanges│
+└───────────┘    └──────────┘    └────────┬─────────┘
+                                           │
+                           ┌───────────────┴───────────────┐
+                           ▼                               ▼
+                ┌─────────────────┐           ┌─────────────────┐
+                │   surreal.*     │           │   postgres.*    │
+                │    Queues       │           │    Queues       │
+                └────────┬────────┘           └────────┬────────┘
+                         ▼                             ▼
               ┌──────────────────┐          ┌──────────────────┐
               │  SurrealDB       │          │   PostgreSQL     │
               │    Writer        │          │     Writer       │
@@ -34,10 +39,10 @@ This project provides a complete data pipeline solution that:
               │   (NoSQL)   │              │  (TimescaleDB)   │
               └──────┬──────┘              └────────┬─────────┘
                      │                              │
-                     │                              ▼
+                     │                              ▼ (mpsc channel)
                      │                    ┌──────────────────┐
-                     │                    │  Materialized    │
-                     │                    │     Views        │
+                     │                    │   Analytics      │
+                     │                    │     Worker       │
                      │                    └────────┬─────────┘
                      └──────────┬─────────────────┘
                                 ▼
@@ -63,14 +68,15 @@ This project provides a complete data pipeline solution that:
 - **Contract**: MultiVault (0x2Ece8D4dEdcB9918A398528f3fa4688b1d2CAB91)
 - **Network**: Intuition Testnet (Chain ID: 13579)
 - **Events**: AtomCreated, TripleCreated, Deposited, Redeemed, SharePriceChanged
-- **Output**: Redis streams for real-time processing
+- **Output**: RabbitMQ exchanges for reliable event distribution
 - **Start Block**: 8092570
 - **Port**: 18200 (GraphQL endpoint)
 
 ### 2. SurrealDB Writer (Rust)
 - **Purpose**: High-performance event processor for NoSQL storage
 - **Features**:
-  - Multi-stream Redis consumer with batching (size: 20, interval: 100ms)
+  - Multi-queue RabbitMQ consumer with batching (prefetch: 20, batch: 100)
+  - Array event data handling (multiple blockchain events per RabbitMQ message)
   - Circuit breaker for reliability
   - Prometheus metrics integration
   - Health check endpoints on port 18210
@@ -82,11 +88,12 @@ This project provides a complete data pipeline solution that:
 ### 3. PostgreSQL Writer (Rust)
 - **Purpose**: High-performance event processor for relational analytics
 - **Features**:
-  - Event-driven architecture with Redis stream consumption
+  - Event-driven architecture with RabbitMQ queue consumption
+  - Multi-channel architecture (one channel per queue) for parallel consumption
   - Async PostgreSQL integration via sqlx
   - Database migration management with trigger-based updates
   - Cascade processor for complex aggregations
-  - Analytics worker for triple-level tables
+  - Analytics worker using Tokio mpsc channels for term updates
   - Prometheus metrics integration
   - Health check endpoints on port 18211
   - Transaction-aware event storage
@@ -129,7 +136,7 @@ This project provides a complete data pipeline solution that:
 
 ### 7. Admin & IDE Tools
 - **Surrealist**: SurrealDB database IDE on port 18301
-- **RedisInsight**: RedisDB admin UI on port 18400
+- **RabbitMQ Management**: RabbitMQ admin UI on port 18102
 - **Drizzle Studio**: PostgreSQL database IDE available at https://local.drizzle.studio/
 
 ### 8. Monitoring Stack
@@ -170,11 +177,11 @@ docker compose up -d
 | **Web Dashboard** | http://localhost:18300/ | Real-time metrics visualization |
 | **Grafana** | http://localhost:18501/ | Monitoring dashboards |
 | **Surrealist** | http://localhost:18301/ | SurrealDB IDE |
-| **RedisInsight** | http://localhost:18400/ | RedisDB admin interface |
+| **RabbitMQ Management** | http://localhost:18102/ | RabbitMQ admin interface (admin/admin) |
 | **Drizzle Studio** | https://local.drizzle.studio/ | PostgreSQL database IDE |
 | **Prometheus** | http://localhost:18500/ | Metrics storage |
 | **Rindexer** | http://localhost:18200/ | GraphQL API for indexed events |
-| **SurrealDB API** | http://localhost:18102/ | Direct database access |
+| **SurrealDB API** | http://localhost:18103/ | Direct database access |
 | **SurrealDB Writer Health** | http://localhost:18210/health | Health check endpoint |
 | **PostgreSQL Writer Health** | http://localhost:18211/health | Health check endpoint |
 
@@ -184,10 +191,10 @@ This project uses a structured port numbering scheme in the **18000-18999 range*
 
 | Port Range | Service Type | Services |
 |------------|--------------|----------|
-| **18100-18199** | Databases | PostgreSQL (18100), Redis (18101), SurrealDB (18102) |
+| **18100-18199** | Databases | PostgreSQL (18100), RabbitMQ (18101), RabbitMQ Management (18102), SurrealDB (18103) |
 | **18200-18299** | Backend APIs | Rindexer (18200), SurrealDB Writer (18210), PostgreSQL Writer (18211) |
 | **18300-18399** | Frontend/UI | Web Dashboard (18300), Surrealist (18301) |
-| **18400-18499** | Admin Tools | RedisInsight (18400) |
+| **18400-18499** | Exporters | RabbitMQ Exporter (18401) |
 | **18500-18599** | Monitoring | Prometheus (18500), Grafana (18501) |
 
 This scheme:
@@ -218,23 +225,28 @@ This scheme:
 
 1. **Blockchain Events**: MultiVault contract emits events on Intuition testnet (starting from block 8092570)
 2. **Event Indexing**: Rindexer captures and processes events via RPC
-3. **Stream Processing**: Events are pushed to Redis streams by category:
-   - `intuition_testnet_atom_created`
-   - `intuition_testnet_triple_created`
-   - `intuition_testnet_deposited`
-   - `intuition_testnet_redeemed`
-   - `intuition_testnet_share_price_changed`
-4. **Dual-Path Processing**:
-   - **SurrealDB Writer**: Consumes and batches events (20/batch, 100ms interval) → SurrealDB
-   - **PostgreSQL Writer**: Consumes and batches events (20/batch, 5000ms timeout) → PostgreSQL
-5. **Analytics Processing**: PostgreSQL triggers and Rust cascade processor compute real-time aggregations
-6. **Data Storage**:
+3. **Event Distribution**: Events are published to RabbitMQ exchanges by category:
+   - `atom_created` (routing key: `intuition.atom_created`)
+   - `triple_created` (routing key: `intuition.triple_created`)
+   - `deposited` (routing key: `intuition.deposited`)
+   - `redeemed` (routing key: `intuition.redeemed`)
+   - `share_price_changed` (routing key: `intuition.share_price_changed`)
+4. **Queue Consumption**: Separate queues per service for competing consumer pattern:
+   - **SurrealDB Writer**: `surreal.atom_created`, `surreal.triple_created`, etc. (prefetch: 20, batch: 100)
+   - **PostgreSQL Writer**: `postgres.atom_created`, `postgres.triple_created`, etc. (prefetch: 20, batch: 100)
+5. **Dual-Path Processing**:
+   - **SurrealDB Writer**: Consumes from RabbitMQ queues → SurrealDB (multi-channel architecture)
+   - **PostgreSQL Writer**: Consumes from RabbitMQ queues → PostgreSQL (multi-channel architecture)
+6. **Analytics Processing**:
+   - PostgreSQL triggers and Rust cascade processor compute real-time aggregations
+   - Term updates flow via Tokio mpsc channels (in-process communication) to analytics worker
+7. **Data Storage**:
    - SurrealDB stores events in flexible NoSQL format
    - PostgreSQL stores events in relational tables with full transaction context
-7. **Visualization**:
+8. **Visualization**:
    - Web dashboard queries SurrealDB for real-time metrics
    - Grafana visualizes Prometheus metrics from both sync services
-8. **Monitoring**: Prometheus collects metrics every 15 seconds from all services
+9. **Monitoring**: Prometheus collects metrics every 15 seconds from all services including RabbitMQ exporter
 
 
 ## Technology Stack
@@ -242,7 +254,7 @@ This scheme:
 ### Backend
 - **Language**: Rust (Edition 2021)
 - **Async Runtime**: Tokio 1.41 (4 worker threads, configurable)
-- **Redis**: redis 0.27 with Tokio streams
+- **Message Queue**: lapin 2.3 (RabbitMQ client)
 - **SurrealDB**: surrealdb 2.3.7 with WebSocket & HTTP
 - **PostgreSQL**: sqlx 0.8 (async, migrations, TimescaleDB)
 - **HTTP Server**: Warp 0.3
@@ -259,18 +271,21 @@ This scheme:
 ### Infrastructure
 - **Container**: Docker with multi-stage builds, cargo-chef optimization
 - **Orchestration**: Docker Compose with Dokploy integration
-- **Databases**: PostgreSQL 17.5 (TimescaleDB), SurrealDB (RocksDB), Redis 7
-- **Monitoring**: Prometheus, Grafana
+- **Databases**: PostgreSQL 17.5 (TimescaleDB), SurrealDB (RocksDB)
+- **Message Broker**: RabbitMQ 3.13 with management plugin
+- **Monitoring**: Prometheus, Grafana, RabbitMQ Exporter
 - **Proxy**: Traefik (production)
 
 ## Performance Characteristics
 
-### Batch Processing
-- **SurrealDB Sync**: 20 events per batch, 100ms interval
-- **PostgreSQL Sync**: 20 events per batch, 5000ms timeout (configurable)
+### Message Processing
+- **RabbitMQ QoS**: 20 messages prefetch per channel (flow control)
+- **Application Batching**: 100 events per batch with 10ms timeout (non-blocking collection)
+- **Multi-Channel Architecture**: One RabbitMQ channel per queue for parallel consumption
 
 ### Concurrency
 - 4 Tokio worker threads per sync service (configurable via `TOKIO_WORKER_THREADS`)
+- Multi-channel consumption for parallel queue processing
 - Circuit breaker pattern for fault tolerance
 - Configurable max retries (default: 3)
 
@@ -299,9 +314,10 @@ See `.env.example` files in:
 
 Key configuration:
 ```bash
-REDIS_URL=redis://redis:6379
+RABBITMQ_URL=amqp://admin:admin@rabbitmq:5672
 SURREALDB_URL=ws://surrealdb:8000
 DATABASE_URL=postgresql://user:pass@postgres:5432/dbname
+PREFETCH_COUNT=20
 BATCH_SIZE=100
 WORKER_COUNT=4
 MAX_RETRIES=3

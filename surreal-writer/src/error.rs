@@ -2,9 +2,6 @@ use thiserror::Error;
 
 #[derive(Debug, Error)]
 pub enum SyncError {
-    #[error("Redis error: {0}")]
-    Redis(#[from] redis::RedisError),
-
     #[error("SurrealDB error: {0}")]
     Surreal(Box<surrealdb::Error>),
 

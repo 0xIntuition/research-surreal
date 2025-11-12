@@ -69,7 +69,7 @@ impl HttpServer {
                     let response = json!({
                         "events_processed": health.metrics.total_events_processed,
                         "events_failed": health.metrics.total_events_failed,
-                        "redis_healthy": health.redis_consumer_healthy,
+                        "rabbitmq_healthy": health.rabbitmq_consumer_healthy,
                         "postgres_healthy": health.postgres_sync_healthy,
                         "uptime_seconds": snapshot.uptime_seconds,
                         "events_per_second": snapshot.events_per_second,

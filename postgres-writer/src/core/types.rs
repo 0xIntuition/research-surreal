@@ -50,20 +50,13 @@ pub struct TransactionInformation {
     pub transaction_index: u64,
 }
 
-/// Redis stream message structure
+/// RabbitMQ message structure
 #[derive(Debug, Clone)]
 pub struct StreamMessage {
     pub id: String,
     pub event: RindexerEvent,
     pub source_stream: String,
-    pub redis_message_id: String, // The actual Redis message ID for acknowledgment
-}
-
-/// Result of a batch consumption operation
-#[derive(Debug, Clone)]
-pub struct BatchConsumptionResult {
-    pub messages: Vec<StreamMessage>,
-    pub claimed_count: usize, // Number of messages that were claimed from idle state
+    pub acker: Option<lapin::acker::Acker>, // Only present on last message in array
 }
 
 /// Pipeline metrics for monitoring and observability
@@ -72,7 +65,7 @@ pub struct PipelineMetrics {
     pub total_events_processed: u64,
     pub total_events_failed: u64,
     pub circuit_breaker_state: String,
-    pub redis_consumer_health: bool,
+    pub rabbitmq_consumer_health: bool,
     pub postgres_sync_health: bool,
 }
 
@@ -80,7 +73,7 @@ pub struct PipelineMetrics {
 #[derive(Debug, Clone, Serialize)]
 pub struct PipelineHealth {
     pub healthy: bool,
-    pub redis_consumer_healthy: bool,
+    pub rabbitmq_consumer_healthy: bool,
     pub postgres_sync_healthy: bool,
     pub circuit_breaker_closed: bool,
     pub last_check: DateTime<Utc>,

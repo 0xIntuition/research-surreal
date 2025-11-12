@@ -11,8 +11,8 @@ name = "postgres-writer"
 path = "src/main.rs"
 
 [dependencies]
-# Redis client with async support
-redis = { version = "0.27", features = ["tokio-comp", "streams"] }
+# RabbitMQ client with async support
+lapin = "2.3"
 
 # PostgreSQL client with async support and migrations
 sqlx = { version = "0.8", features = ["runtime-tokio", "postgres", "macros", "migrate", "chrono", "uuid"] }
@@ -62,7 +62,7 @@ alloy-primitives = "0.8"
 [dev-dependencies]
 # Test containers for isolated environments
 testcontainers = "0.21"
-testcontainers-modules = { version = "0.9", features = ["redis", "postgres"] }
+testcontainers-modules = { version = "0.9", features = ["postgres", "rabbitmq"] }
 
 # Test utilities
 tokio-test = "0.4"

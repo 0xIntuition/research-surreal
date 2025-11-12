@@ -14,7 +14,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
-    info!("Starting Redis to SurrealDB sync pipeline");
+    info!("Starting RabbitMQ to SurrealDB sync pipeline");
 
     // Load configuration from environment
     let config = Config::from_env().map_err(|e| {
@@ -28,12 +28,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     })?;
 
     info!("Configuration loaded successfully");
-    info!("Redis URL: {}", config.redis_url);
+    info!("RabbitMQ URL: {}", config.rabbitmq_url);
     info!("SurrealDB URL: {}", config.surreal_url);
-    info!("Streams: {:?}", config.stream_names);
+    info!("Exchanges: {:?}", config.exchanges);
+    info!("Queue prefix: {}", config.queue_prefix);
     info!(
-        "Batch size: {}, Workers: {}",
-        config.batch_size, config.workers
+        "Batch size: {}, Workers: {}, Prefetch: {}",
+        config.batch_size, config.workers, config.prefetch_count
     );
 
     // Create pipeline

@@ -1,3 +1,3 @@
-pub mod redis_stream;
+pub mod rabbitmq_consumer;
 
-pub use redis_stream::RedisStreamConsumer;
+pub use rabbitmq_consumer::RabbitMQConsumer;
