@@ -122,14 +122,14 @@ impl TestHarness {
             Connection::connect(&self.rabbitmq_url, ConnectionProperties::default()).await?;
         let channel = connection.create_channel().await?;
 
-        // Declare exchanges
+        // Declare exchanges (durable: false to match production RabbitMQConsumer)
         for exchange in &self.exchanges {
             channel
                 .exchange_declare(
                     exchange,
                     ExchangeKind::Direct,
                     ExchangeDeclareOptions {
-                        durable: true,
+                        durable: false,
                         auto_delete: false,
                         internal: false,
                         nowait: false,

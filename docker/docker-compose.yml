@@ -1,4 +1,4 @@
-name: rindexer-surreal
+name: intuition-rindexer
 
 services:
   rindexer:

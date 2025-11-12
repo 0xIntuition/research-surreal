@@ -1,5 +1,6 @@
 use futures::StreamExt;
 use lapin::{options::*, types::FieldTable, Channel, Connection, ConnectionProperties, Consumer};
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use tokio::sync::Mutex;
 use tracing::{debug, error, info, warn};
@@ -15,6 +16,7 @@ pub struct RabbitMQConsumer {
     queue_prefix: String,
     exchanges: Vec<String>,
     routing_keys: Vec<String>,
+    last_start_index: AtomicUsize,
 }
 
 impl RabbitMQConsumer {
@@ -147,6 +149,7 @@ impl RabbitMQConsumer {
             queue_prefix: queue_prefix.to_string(),
             exchanges: exchanges.to_vec(),
             routing_keys,
+            last_start_index: AtomicUsize::new(0),
         })
     }
 
@@ -154,59 +157,108 @@ impl RabbitMQConsumer {
         debug!("consume_batch called with batch_size: {}", batch_size);
 
         let mut messages = Vec::new();
+        let num_consumers = self.consumers.len();
 
-        // Try to consume from each consumer
-        for (idx, consumer_mutex) in self.consumers.iter().enumerate() {
-            let queue_name = format!("{}.{}", self.queue_prefix, self.exchanges[idx]);
+        if num_consumers == 0 {
+            return Ok(messages);
+        }
 
-            let mut consumer = consumer_mutex.lock().await;
+        // Weighted round-robin: take up to 100 messages from each queue per cycle
+        const CHUNK_SIZE: usize = 100;
 
-            // Collect messages from this consumer (non-blocking)
-            for _ in 0..batch_size {
-                // Try to get a message with a short timeout
-                match tokio::time::timeout(tokio::time::Duration::from_millis(10), consumer.next())
+        // Get starting index and rotate for next call
+        let start_index = self.last_start_index.fetch_add(1, Ordering::Relaxed) % num_consumers;
+
+        debug!(
+            "Starting weighted round-robin from queue index {} (rotated)",
+            start_index
+        );
+
+        // Keep cycling through queues until we have enough messages or all queues are exhausted
+        let mut all_queues_empty = false;
+        let mut cycle_count = 0;
+
+        while messages.len() < batch_size && !all_queues_empty {
+            all_queues_empty = true;
+            cycle_count += 1;
+
+            // Iterate through all queues starting from start_index
+            for offset in 0..num_consumers {
+                let idx = (start_index + offset) % num_consumers;
+                let queue_name = format!("{}.{}", self.queue_prefix, self.exchanges[idx]);
+
+                let mut consumer = self.consumers[idx].lock().await;
+
+                // Take up to CHUNK_SIZE messages from this queue (or until batch is full)
+                let messages_to_take = std::cmp::min(CHUNK_SIZE, batch_size - messages.len());
+                let initial_count = messages.len();
+
+                for _ in 0..messages_to_take {
+                    // Try to get a message with a short timeout
+                    match tokio::time::timeout(
+                        tokio::time::Duration::from_millis(10),
+                        consumer.next(),
+                    )
                     .await
-                {
-                    Ok(Some(Ok(delivery))) => {
-                        // Parse the message
-                        match self.parse_message(&delivery.data, &queue_name, &delivery.acker) {
-                            Ok(mut parsed_messages) => {
-                                debug!(
-                                    "Parsed {} messages from delivery on queue {}",
-                                    parsed_messages.len(),
-                                    queue_name
-                                );
-                                messages.append(&mut parsed_messages);
-                            }
-                            Err(e) => {
-                                error!("Failed to parse message from queue {}: {}", queue_name, e);
-                                // Reject the message (don't requeue malformed messages)
-                                if let Err(nack_err) = delivery
-                                    .acker
-                                    .nack(BasicNackOptions {
-                                        requeue: false,
-                                        multiple: false,
-                                    })
-                                    .await
-                                {
-                                    error!("Failed to nack message: {}", nack_err);
+                    {
+                        Ok(Some(Ok(delivery))) => {
+                            // Parse the message
+                            match self.parse_message(&delivery.data, &queue_name, &delivery.acker) {
+                                Ok(mut parsed_messages) => {
+                                    debug!(
+                                        "Parsed {} messages from delivery on queue {}",
+                                        parsed_messages.len(),
+                                        queue_name
+                                    );
+                                    messages.append(&mut parsed_messages);
+                                    all_queues_empty = false;
+                                }
+                                Err(e) => {
+                                    error!(
+                                        "Failed to parse message from queue {}: {}",
+                                        queue_name, e
+                                    );
+                                    // Reject the message (don't requeue malformed messages)
+                                    if let Err(nack_err) = delivery
+                                        .acker
+                                        .nack(BasicNackOptions {
+                                            requeue: false,
+                                            multiple: false,
+                                        })
+                                        .await
+                                    {
+                                        error!("Failed to nack message: {}", nack_err);
+                                    }
                                 }
                             }
                         }
+                        Ok(Some(Err(e))) => {
+                            error!("Error receiving message from queue {}: {}", queue_name, e);
+                            break;
+                        }
+                        Ok(None) => {
+                            // Stream closed
+                            warn!("Consumer stream closed for queue {}", queue_name);
+                            break;
+                        }
+                        Err(_) => {
+                            // Timeout - no more messages available from this queue
+                            break;
+                        }
                     }
-                    Ok(Some(Err(e))) => {
-                        error!("Error receiving message from queue {}: {}", queue_name, e);
+
+                    // Stop if we've collected enough messages
+                    if messages.len() >= batch_size {
                         break;
                     }
-                    Ok(None) => {
-                        // Stream closed
-                        warn!("Consumer stream closed for queue {}", queue_name);
-                        break;
-                    }
-                    Err(_) => {
-                        // Timeout - no more messages available
-                        break;
-                    }
+                }
+
+                let collected = messages.len() - initial_count;
+                if collected > 0 {
+                    debug!(
+                        "Collected {} messages from queue {} (cycle {})",
+                        collected, queue_name, cycle_count
+                    );
                 }
 
                 // Stop if we've collected enough messages
@@ -214,14 +266,13 @@ impl RabbitMQConsumer {
                     break;
                 }
             }
-
-            // Stop if we've collected enough messages
-            if messages.len() >= batch_size {
-                break;
-            }
         }
 
-        debug!("Consumed {} messages total", messages.len());
+        debug!(
+            "Consumed {} messages total across {} cycle(s)",
+            messages.len(),
+            cycle_count
+        );
         Ok(messages)
     }
 
