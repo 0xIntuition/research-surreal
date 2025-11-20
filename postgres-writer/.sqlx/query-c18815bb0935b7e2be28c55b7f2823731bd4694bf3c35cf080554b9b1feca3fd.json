@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO term_update_queue (term_id)\n            SELECT * FROM UNNEST($1::text[])\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "c18815bb0935b7e2be28c55b7f2823731bd4694bf3c35cf080554b9b1feca3fd"
+}

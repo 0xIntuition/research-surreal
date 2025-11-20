@@ -1,0 +1,26 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            SELECT\n                COUNT(*) as \"pending_count!\",\n                CAST(EXTRACT(EPOCH FROM (NOW() - MIN(created_at))) AS DOUBLE PRECISION) as \"oldest_pending_age_secs\"\n            FROM term_update_queue\n            WHERE processed_at IS NULL\n            ",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "pending_count!",
+        "type_info": "Int8"
+      },
+      {
+        "ordinal": 1,
+        "name": "oldest_pending_age_secs",
+        "type_info": "Float8"
+      }
+    ],
+    "parameters": {
+      "Left": []
+    },
+    "nullable": [
+      null,
+      null
+    ]
+  },
+  "hash": "931115f348b7d0670ba06154460f9f93704583e6304917aa7e335de1fbba4437"
+}
