@@ -61,8 +61,7 @@ impl EventProcessingPipeline {
             PostgresClient::new(
                 &config.database_url,
                 config.database_pool_size as u32,
-                Some(&config.redis_url),
-                config.analytics_stream_name.clone(),
+                true, // enable_analytics_queue
                 metrics.clone(),
             )
             .await?,

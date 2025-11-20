@@ -1,12 +1,11 @@
 use sqlx::postgres::{PgPool, PgPoolOptions};
 use std::sync::Arc;
-use tokio::sync::Mutex;
 use tokio::time::{sleep, Duration};
 use tracing::{debug, error, info, warn};
 
 use super::event_handlers;
 use super::utils::{ensure_hex_prefix, to_eip55_address};
-use crate::consumer::RedisPublisher;
+use crate::consumer::postgres_queue_publisher::TermQueuePublisher;
 use crate::core::types::{RindexerEvent, TransactionInformation};
 use crate::error::{Result, SyncError};
 use crate::monitoring::Metrics;
@@ -15,24 +14,7 @@ use crate::processors::CascadeProcessor;
 pub struct PostgresClient {
     pool: PgPool,
     cascade_processor: CascadeProcessor,
-    // TODO: Redis Publisher Lock Contention Issue
-    // PERFORMANCE BOTTLENECK: The Mutex wrapper around RedisPublisher creates a serialization
-    // point that impacts throughput under high load. All concurrent cascade operations must
-    // wait to acquire this lock when publishing term updates, reducing parallelism.
-    //
-    // Impact: Under high event throughput, multiple event handlers may process simultaneously
-    // but then queue at this single lock point, limiting overall system throughput.
-    //
-    // Recommended solutions:
-    // 1. MPSC Channel Approach: Create a dedicated publisher task that receives messages via
-    //    an unbounded/bounded channel. This provides better isolation and eliminates lock
-    //    contention entirely. Event handlers send term updates via channel.send() which is
-    //    lock-free.
-    // 2. DashMap Approach: Replace Mutex with DashMap<(), RedisPublisher> or similar
-    //    concurrent data structure for lock-free access patterns.
-    //
-    // Reference: PR #11 review comment (2025-11-02)
-    redis_publisher: Option<Mutex<RedisPublisher>>,
+    term_queue_publisher: Option<TermQueuePublisher>,
     metrics: Arc<Metrics>,
 }
 
@@ -40,8 +22,7 @@ impl PostgresClient {
     pub async fn new(
         database_url: &str,
         pool_size: u32,
-        redis_url: Option<&str>,
-        analytics_stream_name: String,
+        enable_analytics_queue: bool,
         metrics: Arc<Metrics>,
     ) -> Result<Self> {
         // Create connection pool
@@ -88,23 +69,18 @@ impl PostgresClient {
             }
         }
 
-        // Initialize Redis publisher if URL provided
-        let redis_publisher = if let Some(url) = redis_url {
-            match RedisPublisher::new(url, analytics_stream_name, metrics.clone()).await {
-                Ok(publisher) => Some(Mutex::new(publisher)),
-                Err(e) => {
-                    warn!("Failed to initialize Redis publisher: {}. Analytics updates will be disabled.", e);
-                    None
-                }
-            }
+        // Initialize term queue publisher if enabled
+        let term_queue_publisher = if enable_analytics_queue {
+            Some(TermQueuePublisher::new(pool.clone()))
         } else {
+            info!("Analytics queue disabled");
             None
         };
 
         Ok(Self {
             pool,
             cascade_processor: CascadeProcessor::new(),
-            redis_publisher,
+            term_queue_publisher,
             metrics,
         })
     }
@@ -184,16 +160,11 @@ impl PostgresClient {
         self.metrics
             .record_cascade_duration(event_type, cascade_start.elapsed());
 
-        // After successful commit, publish to Redis for analytics worker
-        if let Some(publisher_mutex) = &self.redis_publisher {
-            // Acquire lock and publish term updates
-            // No database queries needed - analytics worker will query for affected triples
-            let mut publisher = publisher_mutex.lock().await;
-            for term_id in &term_ids {
-                if let Err(e) = publisher.publish_term_update(term_id).await {
-                    warn!("Failed to publish term update to Redis: {}", e);
-                    // Don't fail the whole operation if Redis publish fails
-                }
+        // After successful commit, publish to queue for analytics worker
+        if let Some(publisher) = &self.term_queue_publisher {
+            if let Err(e) = publisher.publish_batch(term_ids.clone()).await {
+                error!("Failed to publish term updates to queue: {}", e);
+                // Don't fail the whole operation if queue publish fails
             }
         }
 

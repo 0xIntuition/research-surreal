@@ -33,9 +33,13 @@ pub struct Config {
 
     // Analytics worker settings
     pub consumer_group_suffix: Option<String>,
-    pub analytics_stream_name: String,
     pub max_messages_per_second: u64,
     pub min_batch_interval_ms: u64,
+
+    // Queue settings
+    pub queue_poll_interval_ms: u64,
+    pub queue_retention_hours: i32,
+    pub max_retry_attempts: i32,
 }
 
 impl Config {
@@ -108,22 +112,6 @@ impl Config {
 
             // Analytics worker configuration
             consumer_group_suffix: env::var("CONSUMER_GROUP_SUFFIX").ok(),
-            analytics_stream_name: {
-                let base_name = env::var("ANALYTICS_STREAM_NAME")
-                    .unwrap_or_else(|_| "term_updates".to_string());
-
-                // If CONSUMER_GROUP_SUFFIX is provided and the stream name is the default,
-                // append the suffix to create a unique stream per restart cycle
-                if let Ok(ref suffix) = env::var("CONSUMER_GROUP_SUFFIX") {
-                    if base_name == "term_updates" {
-                        format!("{base_name}-{suffix}")
-                    } else {
-                        base_name
-                    }
-                } else {
-                    base_name
-                }
-            },
             max_messages_per_second: env::var("MAX_MESSAGES_PER_SECOND")
                 .unwrap_or_else(|_| "5000".to_string())
                 .parse()
@@ -132,6 +120,20 @@ impl Config {
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
                 .unwrap_or(10),
+
+            // Queue configuration
+            queue_poll_interval_ms: env::var("QUEUE_POLL_INTERVAL_MS")
+                .unwrap_or_else(|_| "100".to_string())
+                .parse()
+                .unwrap_or(100),
+            queue_retention_hours: env::var("QUEUE_RETENTION_HOURS")
+                .unwrap_or_else(|_| "24".to_string())
+                .parse()
+                .unwrap_or(24),
+            max_retry_attempts: env::var("MAX_RETRY_ATTEMPTS")
+                .unwrap_or_else(|_| "3".to_string())
+                .parse()
+                .unwrap_or(3),
         })
     }
 

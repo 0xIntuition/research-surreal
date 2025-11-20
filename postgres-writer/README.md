@@ -25,8 +25,8 @@ This service is the core data synchronization component of the Intuition protoco
 2. **Maintains event tables** for audit and historical queries
 3. **Updates derived tables** using PostgreSQL triggers for simple transformations
 4. **Performs complex aggregations** in Rust for multi-level data relationships
-5. **Publishes term updates** to Redis for eventual consistency in analytics tables
-6. **Runs an analytics worker** that processes term updates and maintains triple-level aggregations
+5. **Publishes term updates** to a PostgreSQL queue for eventual consistency in analytics tables
+6. **Runs an analytics worker** that polls the queue and maintains triple-level aggregations
 
 ### Key Features
 
@@ -104,15 +104,16 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
                   │
                   ▼ (after commit)
 ┌─────────────────────────────────────────────────────────┐
-│           RedisPublisher                                 │
-│  Publishes term_id to "term_updates" stream             │
+│           TermQueuePublisher                             │
+│  Inserts term_id into "term_update_queue" table         │
 └─────────────────┬───────────────────────────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────────────────────────┐
 │         Analytics Worker (separate thread)               │
 │                                                          │
-│  Consumes from "term_updates" stream                    │
+│  Polls "term_update_queue" table                        │
+│  (FOR UPDATE SKIP LOCKED)                               │
 │                                                          │
 │  Updates analytics tables:                              │
 │  - triple_vault (pro + counter vault combined)          │
@@ -134,20 +135,29 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
    - Batches messages for efficiency
    - Acknowledges processed messages
 
-3. **PostgresClient** (`src/sync/postgres_client.rs:12`)
+3. **PostgresClient** (`src/sync/postgres_client.rs:15`)
    - Manages database connection pool
    - Processes events and triggers cascade
-   - Publishes term updates to Redis
+   - Publishes term updates to PostgreSQL queue
 
 4. **CascadeProcessor** (`src/processors/cascade.rs:19`)
    - Updates vault metrics from positions
    - Updates term metrics from vaults
    - Uses advisory locks to prevent race conditions
 
-5. **Analytics Worker** (`src/analytics/worker.rs:15`)
-   - Separate thread consuming term updates
+5. **TermQueuePublisher** (`src/consumer/postgres_queue_publisher.rs`)
+   - Publishes term updates to queue table
+   - Batch inserts using UNNEST for efficiency
+
+6. **TermQueueConsumer** (`src/consumer/postgres_queue_consumer.rs`)
+   - Polls queue using FOR UPDATE SKIP LOCKED
+   - Tracks retry attempts and failures
+   - Automatic cleanup of old processed messages
+
+7. **Analytics Worker** (`src/analytics/worker.rs:17`)
+   - Separate thread polling term update queue
    - Updates triple-level analytics tables
-   - Retries failed updates
+   - Retries failed updates with backoff
 
 ## Data Flow
 
@@ -164,10 +174,11 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
    - Recalculates `vault.market_cap` from current price
    - Aggregates `term.total_assets` and `term.total_market_cap` from all vaults
 5. **Transaction commits**
-6. **Publish to Redis** `term_updates` stream
-7. **Analytics worker** eventually processes update
+6. **Publish to queue** `term_update_queue` table
+7. **Analytics worker** eventually polls and processes update
    - Aggregates triple vault data
    - Updates predicate/object aggregates
+   - Marks message as processed
 
 ### Flow for SharePriceChanged Events
 
@@ -181,7 +192,7 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
    - Recalculates `vault.market_cap`
    - Aggregates `term` totals from all vaults
 5. **Transaction commits**
-6. **Publish to Redis** and **analytics worker** processes
+6. **Publish to queue** and **analytics worker** eventually processes
 
 ### Flow for AtomCreated Events
 
@@ -322,10 +333,10 @@ The system intentionally uses **separate transactions** for event insertion and 
 
 The system is vulnerable only in extreme edge cases:
 
-1. **Process crash between transactions + Redis message loss**
+1. **Process crash between transactions + queue insert failure**
    - Event committed, cascade never runs
-   - Message lost before Redis persists it
-   - **Mitigation**: Redis persistence (AOF), analytics worker backfill
+   - Queue insert fails before committing
+   - **Mitigation**: PostgreSQL durability, analytics worker backfill
 
 2. **Database corruption or hardware failure**
    - Would affect any transaction strategy
@@ -452,7 +463,11 @@ The separate transaction design provides better performance-safety tradeoff for 
 | `CIRCUIT_BREAKER_TIMEOUT_MS` | `60000` | Circuit breaker timeout |
 | `HTTP_PORT` | `8080` | HTTP server port for health/metrics |
 | `CONSUMER_GROUP_SUFFIX` | *(optional)* | Suffix for analytics worker consumer group |
-| `ANALYTICS_STREAM_NAME` | `term_updates` | Redis stream name for term updates (appends suffix if using CONSUMER_GROUP_SUFFIX) |
+| `QUEUE_POLL_INTERVAL_MS` | `100` | How often to poll queue for new messages |
+| `QUEUE_RETENTION_HOURS` | `24` | Keep processed messages for N hours before cleanup |
+| `MAX_RETRY_ATTEMPTS` | `3` | Max attempts before giving up on a queue message |
+| `MAX_MESSAGES_PER_SECOND` | `5000` | Rate limit for analytics processing |
+| `MIN_BATCH_INTERVAL_MS` | `10` | Minimum delay between analytics batches |
 
 ### Example Configuration
 
@@ -556,8 +571,10 @@ src/
 │   ├── circuit_breaker.rs     # Circuit breaker implementation
 │   └── types.rs               # Core type definitions
 ├── consumer/
-│   ├── redis_stream.rs        # Redis stream consumer
-│   └── redis_publisher.rs     # Redis publisher for analytics
+│   ├── redis_stream.rs              # Redis stream consumer
+│   ├── redis_publisher.rs           # Redis publisher (legacy, kept for reference)
+│   ├── postgres_queue_publisher.rs  # PostgreSQL queue publisher
+│   └── postgres_queue_consumer.rs   # PostgreSQL queue consumer
 ├── sync/
 │   ├── postgres_client.rs     # PostgreSQL client and cascade orchestration
 │   ├── event_handlers.rs      # Event routing

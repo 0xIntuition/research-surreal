@@ -280,9 +280,11 @@ impl TestHarness {
             http_port: 0,
             shutdown_timeout_secs: 30,
             consumer_group_suffix: None,
-            analytics_stream_name: "term_updates".to_string(),
             max_messages_per_second: 5000,
             min_batch_interval_ms: 10,
+            queue_poll_interval_ms: 100,
+            queue_retention_hours: 24,
+            max_retry_attempts: 3,
         }
     }
 
