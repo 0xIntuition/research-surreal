@@ -147,6 +147,7 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
 
 5. **TermQueuePublisher** (`src/consumer/postgres_queue_publisher.rs`)
    - Publishes term updates to queue table
+   - Deduplicates term_ids before insertion to prevent redundant analytics processing
    - Batch inserts using UNNEST for efficiency
 
 6. **TermQueueConsumer** (`src/consumer/postgres_queue_consumer.rs`)

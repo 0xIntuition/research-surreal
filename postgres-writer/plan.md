@@ -908,11 +908,12 @@ If issues arise:
 ## Future Enhancements
 
 ### Potential Improvements
-1. **Deduplication**: Track last processed term state, skip redundant updates
-2. **Partitioning**: Partition queue table by created_at for faster cleanup
-3. **Priority queue**: Add priority column for critical term updates
-4. **Dead letter queue**: Separate table for permanently failed messages
-5. **Batch analytics**: Process multiple terms in single query for efficiency
+1. ✅ **Deduplication**: IMPLEMENTED - HashSet deduplication in `publish_batch` prevents duplicate term_ids within same batch
+2. **Time-window deduplication**: Track recently processed terms, skip updates within N seconds
+3. **Partitioning**: Partition queue table by created_at for faster cleanup
+4. **Priority queue**: Add priority column for critical term updates
+5. **Dead letter queue**: Separate table for permanently failed messages
+6. **Batch analytics**: Process multiple terms in single query for efficiency
 
 ### Alternative: PostgreSQL LISTEN/NOTIFY
 If queue table becomes bottleneck, consider hybrid:
@@ -969,7 +970,7 @@ If queue table becomes bottleneck, consider hybrid:
 1. ✅ **Queue retention period:** 24 hours acceptable? (Configurable via env var)
 2. ✅ **Max retry attempts:** 3 attempts reasonable? (Configurable via env var)
 3. ✅ **Polling interval:** 100ms good balance between latency and overhead?
-4. ⚠️ **Deduplication:** Should we deduplicate identical term_ids in queue? (Currently: no)
+4. ✅ **Deduplication:** IMPLEMENTED - HashSet deduplication in `publish_batch` prevents duplicate term_ids within same batch, reducing redundant analytics processing
 5. ⚠️ **Dead letter queue:** Create separate table for permanently failed messages? (Currently: no)
 6. ⚠️ **Partitioning:** Implement table partitioning from start? (Currently: no, add later if needed)
 
