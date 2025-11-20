@@ -1,8 +1,6 @@
-use crate::helpers::{DbAssertions, EventBuilder, TestHarness};
+use crate::helpers::{DbAssertions, EventBuilder, TestHarness, DEFAULT_CURVE_ID};
 use postgres_writer::core::pipeline::EventProcessingPipeline;
 use postgres_writer::sync::utils::calculate_counter_term_id;
-
-const DEFAULT_CURVE_ID: &str = "0x0000000000000000000000000000000000000000000000000000000000000001";
 
 /// Test that TripleCreated events create exactly 2 queue entries (term_id + counter_term_id)
 /// and that they are unique (not duplicated by the publisher)

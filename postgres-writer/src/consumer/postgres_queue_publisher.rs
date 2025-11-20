@@ -13,6 +13,7 @@ impl TermQueuePublisher {
     }
 
     /// Publish a single term update to the queue
+    /// Uses ON CONFLICT DO NOTHING to handle deduplication of unprocessed entries
     pub async fn publish_term_update(&self, term_id: &str) -> Result<(), sqlx::Error> {
         debug!("Publishing term update to queue: {}", term_id);
 
@@ -20,6 +21,7 @@ impl TermQueuePublisher {
             r#"
             INSERT INTO term_update_queue (term_id)
             VALUES ($1)
+            ON CONFLICT (term_id) WHERE processed_at IS NULL DO NOTHING
             "#,
             term_id
         )
@@ -30,7 +32,7 @@ impl TermQueuePublisher {
     }
 
     /// Publish multiple term updates in a batch
-    /// Deduplicates term_ids to avoid redundant analytics processing
+    /// Deduplicates term_ids within the batch and uses ON CONFLICT to handle existing unprocessed entries
     pub async fn publish_batch(&self, term_ids: Vec<String>) -> Result<(), sqlx::Error> {
         if term_ids.is_empty() {
             return Ok(());
@@ -46,10 +48,12 @@ impl TermQueuePublisher {
         );
 
         // Use unnest for efficient batch insert
+        // ON CONFLICT ensures we don't create duplicate unprocessed entries
         sqlx::query!(
             r#"
             INSERT INTO term_update_queue (term_id)
             SELECT * FROM UNNEST($1::text[])
+            ON CONFLICT (term_id) WHERE processed_at IS NULL DO NOTHING
             "#,
             &unique_term_ids
         )
