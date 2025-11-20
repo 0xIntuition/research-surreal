@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE term_update_queue\n            SET processed_at = NOW()\n            WHERE id = ANY($1)\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "ae716a83a8192c4c1ead5e5dc415b16663aa25a1c44a818ce33a5cabca02c473"
+}

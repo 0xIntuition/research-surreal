@@ -200,6 +200,28 @@ lazy_static! {
         "Total number of term update messages that failed to process"
     ).unwrap();
 
+    // Queue operation metrics
+    static ref QUEUE_MESSAGES_MARKED_PROCESSED_COUNTER: Counter = Counter::new(
+        "postgres_writer_queue_messages_marked_processed_total",
+        "Total number of queue messages marked as processed"
+    ).unwrap();
+    static ref QUEUE_MESSAGES_MARKED_FAILED_COUNTER: Counter = Counter::new(
+        "postgres_writer_queue_messages_marked_failed_total",
+        "Total number of queue messages marked as failed"
+    ).unwrap();
+    static ref QUEUE_CLEANUP_PROCESSED_COUNTER: Counter = Counter::new(
+        "postgres_writer_queue_cleanup_processed_total",
+        "Total number of processed messages cleaned up from queue"
+    ).unwrap();
+    static ref QUEUE_CLEANUP_FAILED_COUNTER: Counter = Counter::new(
+        "postgres_writer_queue_cleanup_failed_total",
+        "Total number of permanently failed messages cleaned up from queue"
+    ).unwrap();
+    static ref QUEUE_PERMANENTLY_FAILED_GAUGE: Gauge = Gauge::new(
+        "postgres_writer_queue_permanently_failed_messages",
+        "Number of permanently failed messages in queue (attempts >= max_retry_attempts)"
+    ).unwrap();
+
     // Term updates publishing metrics
     static ref TERM_UPDATES_PUBLISHED_COUNTER: Counter = Counter::new(
         "postgres_writer_term_updates_published_total",
@@ -379,6 +401,33 @@ impl Metrics {
                     e
                 )
             });
+
+        // Register queue operation metrics
+        REGISTRY
+            .register(Box::new(QUEUE_MESSAGES_MARKED_PROCESSED_COUNTER.clone()))
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register QUEUE_MESSAGES_MARKED_PROCESSED_COUNTER: {}",
+                    e
+                )
+            });
+        REGISTRY
+            .register(Box::new(QUEUE_MESSAGES_MARKED_FAILED_COUNTER.clone()))
+            .unwrap_or_else(|e| {
+                warn!(
+                    "Failed to register QUEUE_MESSAGES_MARKED_FAILED_COUNTER: {}",
+                    e
+                )
+            });
+        REGISTRY
+            .register(Box::new(QUEUE_CLEANUP_PROCESSED_COUNTER.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register QUEUE_CLEANUP_PROCESSED_COUNTER: {}", e));
+        REGISTRY
+            .register(Box::new(QUEUE_CLEANUP_FAILED_COUNTER.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register QUEUE_CLEANUP_FAILED_COUNTER: {}", e));
+        REGISTRY
+            .register(Box::new(QUEUE_PERMANENTLY_FAILED_GAUGE.clone()))
+            .unwrap_or_else(|e| warn!("Failed to register QUEUE_PERMANENTLY_FAILED_GAUGE: {}", e));
 
         // Register term updates publishing metrics
         REGISTRY
@@ -584,6 +633,27 @@ impl Metrics {
         ANALYTICS_MESSAGES_FAILED_COUNTER.inc();
     }
 
+    // Queue operation metrics methods
+    pub fn record_queue_messages_marked_processed(&self, count: u64) {
+        QUEUE_MESSAGES_MARKED_PROCESSED_COUNTER.inc_by(count as f64);
+    }
+
+    pub fn record_queue_messages_marked_failed(&self, count: u64) {
+        QUEUE_MESSAGES_MARKED_FAILED_COUNTER.inc_by(count as f64);
+    }
+
+    pub fn record_queue_cleanup_processed(&self, count: u64) {
+        QUEUE_CLEANUP_PROCESSED_COUNTER.inc_by(count as f64);
+    }
+
+    pub fn record_queue_cleanup_failed(&self, count: u64) {
+        QUEUE_CLEANUP_FAILED_COUNTER.inc_by(count as f64);
+    }
+
+    pub fn record_queue_permanently_failed(&self, count: i64) {
+        QUEUE_PERMANENTLY_FAILED_GAUGE.set(count as f64);
+    }
+
     // Term updates publishing metrics methods
     pub fn record_term_update_published(&self) {
         TERM_UPDATES_PUBLISHED_COUNTER.inc();
@@ -667,6 +737,13 @@ impl Metrics {
         ANALYTICS_BATCH_SIZE_GAUGE.set(0.0);
         // ANALYTICS_AFFECTED_TRIPLES_HISTOGRAM.reset();
         ANALYTICS_MESSAGES_FAILED_COUNTER.reset();
+
+        // Reset queue operation metrics
+        QUEUE_MESSAGES_MARKED_PROCESSED_COUNTER.reset();
+        QUEUE_MESSAGES_MARKED_FAILED_COUNTER.reset();
+        QUEUE_CLEANUP_PROCESSED_COUNTER.reset();
+        QUEUE_CLEANUP_FAILED_COUNTER.reset();
+        QUEUE_PERMANENTLY_FAILED_GAUGE.set(0.0);
 
         // Reset term updates publishing metrics
         TERM_UPDATES_PUBLISHED_COUNTER.reset();

@@ -361,6 +361,138 @@ The separate transaction design provides better performance-safety tradeoff for 
 - Redis ACK logic: `src/core/pipeline.rs:279-288`
 - Retry semantics: Redis consumer group automatic redelivery
 
+## Analytics Worker: At-Least-Once Delivery Semantics
+
+### Overview
+
+The analytics worker processes term updates from the PostgreSQL `term_update_queue` table to maintain triple-level analytics tables. Like the main event processing pipeline, it uses separate transactions for analytics updates and queue marking operations.
+
+### Transaction Design
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. Poll Messages (FOR UPDATE SKIP LOCKED)                   │
+│     - SELECT messages from term_update_queue                 │
+│     - WHERE processed_at IS NULL AND attempts < max          │
+│     - Locks rows to prevent concurrent processing            │
+└─────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  2. Process Each Message (Multiple Transactions)             │
+│     For each term_id:                                        │
+│     - BEGIN transaction                                      │
+│     - Acquire advisory locks for affected triple pairs       │
+│     - Batch update triple_vault, triple_term, etc.           │
+│     ✓ COMMIT                                                 │
+│                                                              │
+│     Note: Multiple batches may execute if many triples       │
+│           are affected by a single term update               │
+└─────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  3. Mark Messages (Batch Transaction)                        │
+│     - UPDATE term_update_queue                               │
+│       SET processed_at = NOW()                               │
+│       WHERE id = ANY($successful_ids)                        │
+│                                                              │
+│     - UPDATE term_update_queue                               │
+│       SET attempts = attempts + 1, last_error = ...          │
+│       WHERE id = ANY($failed_ids)                            │
+│     ✓ COMMIT                                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### At-Least-Once Semantics
+
+**Accepted Risk**: If the mark operation fails after successful analytics updates, the message will be reprocessed on the next poll. This results in:
+
+1. **Duplicate work**: Analytics tables recalculated from scratch
+2. **Metric inflation**: `ANALYTICS_MESSAGES_CONSUMED_COUNTER` increments twice
+3. **No data corruption**: Analytics updates are idempotent (INSERT ... ON CONFLICT DO UPDATE with recalculated values)
+
+**Why This is Acceptable**:
+- Mark failures are extremely rare (would require database crash or network partition)
+- Analytics updates recalculate from source data (vault, triple tables), not incremental
+- Idempotent updates ensure correctness even with duplicates
+- Performance cost of rare duplicate work < complexity cost of distributed transactions
+
+### Batch Mark Operations
+
+To reduce query overhead, the worker batches mark operations:
+- **Before**: 100 messages = 200 queries (1 analytics update + 1 mark per message)
+- **After**: 100 messages = ~106 queries (100 analytics updates + 2 batch marks)
+
+Implementation:
+```rust
+// Collect successful and failed IDs during processing
+let mut successful_ids: Vec<i64> = Vec::new();
+let mut failed_messages: Vec<(i64, String)> = Vec::new();
+
+// Process all messages
+for message in messages {
+    match update_analytics_tables(...).await {
+        Ok(()) => successful_ids.push(message.id),
+        Err(e) => failed_messages.push((message.id, e.to_string())),
+    }
+}
+
+// Batch mark operations (2 queries total)
+queue_consumer.mark_batch_processed(&successful_ids).await?;
+queue_consumer.mark_batch_failed(&failed_messages).await?;
+```
+
+### Retry and Cleanup Policies
+
+**Retry Policy**:
+- Messages with `attempts < MAX_RETRY_ATTEMPTS` are eligible for reprocessing
+- Failed messages increment `attempts` counter and record `last_error`
+- Messages with `attempts >= MAX_RETRY_ATTEMPTS` are skipped by polls
+
+**Cleanup Policy**:
+- **Processed messages**: Deleted after `QUEUE_RETENTION_HOURS` (default: 24 hours)
+- **Permanently failed messages**: Deleted after `FAILED_MESSAGE_RETENTION_HOURS` (default: 168 hours / 7 days)
+- **Cleanup frequency**: Every 1 hour (background task)
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANALYTICS_BATCH_SIZE` | `100` | Number of messages to poll per batch |
+| `QUEUE_POLL_INTERVAL_MS` | `100` | Polling interval when queue is empty |
+| `QUEUE_RETENTION_HOURS` | `24` | Retention for successfully processed messages |
+| `FAILED_MESSAGE_RETENTION_HOURS` | `168` | Retention for permanently failed messages (7 days) |
+| `MAX_RETRY_ATTEMPTS` | `3` | Maximum retry attempts before permanent failure |
+| `MAX_MESSAGES_PER_SECOND` | `5000` | Rate limit for analytics processing |
+| `MIN_BATCH_INTERVAL_MS` | `10` | Minimum delay between batches |
+
+### Monitoring
+
+The worker exposes queue operation metrics via Prometheus:
+
+```
+# Messages marked as processed (batch operations)
+postgres_writer_queue_messages_marked_processed_total
+
+# Messages marked as failed (batch operations)
+postgres_writer_queue_messages_marked_failed_total
+
+# Cleanup operations
+postgres_writer_queue_cleanup_processed_total
+postgres_writer_queue_cleanup_failed_total
+
+# Current permanently failed message count
+postgres_writer_queue_permanently_failed_messages
+```
+
+### Related Code
+
+- Analytics worker: `src/analytics/worker.rs:256` (process_batch function)
+- Queue consumer: `src/consumer/postgres_queue_consumer.rs` (batch mark operations)
+- Analytics processor: `src/analytics/processor.rs` (idempotent updates)
+- Metrics: `src/monitoring/metrics.rs` (queue operation metrics)
+
 ## Column Calculations
 
 ### position Table
@@ -455,7 +587,7 @@ The separate transaction design provides better performance-safety tradeoff for 
 | `CONSUMER_GROUP` | `postgres-sync` | Redis consumer group name |
 | `CONSUMER_NAME` | `consumer-{uuid}` | Unique consumer name |
 | `DATABASE_URL` | **(required)** | PostgreSQL connection URL |
-| `BATCH_SIZE` | `100` | Number of messages to process per batch |
+| `BATCH_SIZE` | `100` | Number of messages to process per batch (Redis streams) |
 | `BATCH_TIMEOUT_MS` | `5000` | Batch timeout in milliseconds |
 | `WORKERS` | `4` | Number of parallel worker threads |
 | `PROCESSING_TIMEOUT_MS` | `30000` | Event processing timeout |
@@ -464,8 +596,10 @@ The separate transaction design provides better performance-safety tradeoff for 
 | `CIRCUIT_BREAKER_TIMEOUT_MS` | `60000` | Circuit breaker timeout |
 | `HTTP_PORT` | `8080` | HTTP server port for health/metrics |
 | `CONSUMER_GROUP_SUFFIX` | *(optional)* | Suffix for analytics worker consumer group |
+| `ANALYTICS_BATCH_SIZE` | `100` | Number of queue messages to poll per batch (analytics worker) |
 | `QUEUE_POLL_INTERVAL_MS` | `100` | How often to poll queue for new messages |
 | `QUEUE_RETENTION_HOURS` | `24` | Keep processed messages for N hours before cleanup |
+| `FAILED_MESSAGE_RETENTION_HOURS` | `168` | Keep permanently failed messages for N hours (7 days) |
 | `MAX_RETRY_ATTEMPTS` | `3` | Max attempts before giving up on a queue message |
 | `MAX_MESSAGES_PER_SECOND` | `5000` | Rate limit for analytics processing |
 | `MIN_BATCH_INTERVAL_MS` | `10` | Minimum delay between analytics batches |

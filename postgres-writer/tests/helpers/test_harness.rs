@@ -282,8 +282,10 @@ impl TestHarness {
             consumer_group_suffix: None,
             max_messages_per_second: 5000,
             min_batch_interval_ms: 10,
+            analytics_batch_size: 100,
             queue_poll_interval_ms: 100,
             queue_retention_hours: 24,
+            failed_message_retention_hours: 168,
             max_retry_attempts: 3,
         }
     }

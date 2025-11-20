@@ -216,6 +216,7 @@ services:
       QUEUE_POLL_INTERVAL_MS: "100"
       QUEUE_RETENTION_HOURS: "24"
       MAX_RETRY_ATTEMPTS: "3"
+      ANALYTICS_BATCH_SIZE: "1000"
       REDIS_STREAMS: "intuition_testnet_atom_created,intuition_testnet_triple_created,intuition_testnet_deposited,intuition_testnet_redeemed,intuition_testnet_share_price_changed"
     ports:
       - "8081"

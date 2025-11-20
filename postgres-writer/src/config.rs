@@ -35,10 +35,12 @@ pub struct Config {
     pub consumer_group_suffix: Option<String>,
     pub max_messages_per_second: u64,
     pub min_batch_interval_ms: u64,
+    pub analytics_batch_size: usize,
 
     // Queue settings
     pub queue_poll_interval_ms: u64,
     pub queue_retention_hours: i32,
+    pub failed_message_retention_hours: i32,
     pub max_retry_attempts: i32,
 }
 
@@ -120,6 +122,10 @@ impl Config {
                 .unwrap_or_else(|_| "10".to_string())
                 .parse()
                 .unwrap_or(10),
+            analytics_batch_size: env::var("ANALYTICS_BATCH_SIZE")
+                .unwrap_or_else(|_| "100".to_string())
+                .parse()
+                .unwrap_or(100),
 
             // Queue configuration
             queue_poll_interval_ms: env::var("QUEUE_POLL_INTERVAL_MS")
@@ -130,6 +136,10 @@ impl Config {
                 .unwrap_or_else(|_| "24".to_string())
                 .parse()
                 .unwrap_or(24),
+            failed_message_retention_hours: env::var("FAILED_MESSAGE_RETENTION_HOURS")
+                .unwrap_or_else(|_| "168".to_string())
+                .parse()
+                .unwrap_or(168),
             max_retry_attempts: env::var("MAX_RETRY_ATTEMPTS")
                 .unwrap_or_else(|_| "3".to_string())
                 .parse()
@@ -209,6 +219,32 @@ impl Config {
         if self.min_batch_interval_ms == 0 {
             return Err(SyncError::Config(
                 "Min batch interval must be greater than 0".to_string(),
+            ));
+        }
+
+        // Analytics batch size validation
+        if self.analytics_batch_size == 0 {
+            return Err(SyncError::Config(
+                "Analytics batch size must be greater than 0".to_string(),
+            ));
+        }
+
+        // Queue retention validation
+        if self.queue_retention_hours == 0 {
+            return Err(SyncError::Config(
+                "Queue retention hours must be greater than 0".to_string(),
+            ));
+        }
+
+        if self.failed_message_retention_hours == 0 {
+            return Err(SyncError::Config(
+                "Failed message retention hours must be greater than 0".to_string(),
+            ));
+        }
+
+        if self.max_retry_attempts == 0 {
+            return Err(SyncError::Config(
+                "Max retry attempts must be greater than 0".to_string(),
             ));
         }
 

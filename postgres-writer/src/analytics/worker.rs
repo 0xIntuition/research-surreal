@@ -73,6 +73,9 @@ pub async fn start_analytics_worker(
         Duration::from_millis(config.queue_poll_interval_ms),
         config.max_retry_attempts,
     );
+    let cleanup_metrics = metrics.clone();
+    let cleanup_retention_hours = config.queue_retention_hours;
+    let failed_retention_hours = config.failed_message_retention_hours;
     let cleanup_cancellation = cancellation_token.child_token();
     tokio::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_secs(3600)); // 1 hour
@@ -83,14 +86,28 @@ pub async fn start_analytics_worker(
                     break;
                 }
                 _ = interval.tick() => {
-                    match cleanup_consumer.cleanup_old_messages(config.queue_retention_hours).await {
+                    // Cleanup old processed messages
+                    match cleanup_consumer.cleanup_old_messages(cleanup_retention_hours).await {
                         Ok(deleted) => {
                             if deleted > 0 {
                                 info!("Cleaned up {} old processed messages", deleted);
+                                cleanup_metrics.record_queue_cleanup_processed(deleted);
                             }
                         }
                         Err(e) => {
                             error!("Failed to cleanup old messages: {}", e);
+                        }
+                    }
+
+                    // Cleanup permanently failed messages
+                    match cleanup_consumer.cleanup_permanently_failed(failed_retention_hours).await {
+                        Ok(deleted) => {
+                            if deleted > 0 {
+                                cleanup_metrics.record_queue_cleanup_failed(deleted);
+                            }
+                        }
+                        Err(e) => {
+                            error!("Failed to cleanup permanently failed messages: {}", e);
                         }
                     }
                 }
@@ -115,8 +132,14 @@ pub async fn start_analytics_worker(
                     break;
                 }
                 _ = interval.tick() => {
+                    // Update pending message count
                     if let Ok(stats) = metrics_consumer.get_queue_stats().await {
                         metrics_ref.record_analytics_messages_pending(stats.pending_count);
+                    }
+
+                    // Update permanently failed message count
+                    if let Ok(failed_count) = metrics_consumer.get_permanently_failed_count().await {
+                        metrics_ref.record_queue_permanently_failed(failed_count);
                     }
                 }
             }
@@ -130,7 +153,7 @@ pub async fn start_analytics_worker(
                 info!("Analytics worker received shutdown signal");
                 break;
             }
-            result = process_batch(&queue_consumer, &pool, &metrics) => {
+            result = process_batch(&queue_consumer, &pool, &metrics, config.analytics_batch_size) => {
                 match result {
                     Ok(processed_count) => {
                         if processed_count > 0 {
@@ -234,10 +257,11 @@ async fn process_batch(
     queue_consumer: &TermQueueConsumer,
     pool: &PgPool,
     metrics: &Arc<Metrics>,
+    batch_size: usize,
 ) -> Result<usize> {
     // Poll for messages
     let messages = queue_consumer
-        .poll_messages(100)
+        .poll_messages(batch_size as i64)
         .await
         .map_err(SyncError::Sqlx)?;
 
@@ -250,8 +274,8 @@ async fn process_batch(
 
     debug!("Received {} messages from queue", messages.len());
 
-    let mut successful = 0;
-    let mut failed = 0;
+    let mut successful_ids: Vec<i64> = Vec::new();
+    let mut failed_messages: Vec<(i64, String)> = Vec::new();
 
     // Process each message
     for message in &messages {
@@ -273,36 +297,61 @@ async fn process_batch(
                     term_update.term_id
                 );
 
-                // Mark as processed
-                if let Err(e) = queue_consumer.mark_processed(message.id).await {
-                    error!("Failed to mark message {} as processed: {}", message.id, e);
-                }
-                successful += 1;
+                // Collect ID for batch marking
+                successful_ids.push(message.id);
             }
             Err(e) => {
                 metrics.record_analytics_message_failure();
 
                 warn!(
-                    "Failed to update analytics for term {} (message_id: {}): {}. Marking as failed for retry.",
+                    "Failed to update analytics for term {} (message_id: {}): {}. Will mark as failed for retry.",
                     term_update.term_id, message.id, e
                 );
 
-                // Mark as failed, increment attempts
-                if let Err(mark_err) = queue_consumer.mark_failed(message.id, &e.to_string()).await
-                {
-                    error!(
-                        "Failed to mark message {} as failed: {}",
-                        message.id, mark_err
-                    );
-                }
-                failed += 1;
+                // Collect ID and error for batch marking
+                failed_messages.push((message.id, e.to_string()));
+            }
+        }
+    }
+
+    // Batch mark successful messages
+    if !successful_ids.is_empty() {
+        match queue_consumer.mark_batch_processed(&successful_ids).await {
+            Ok(marked_count) => {
+                debug!("Marked {} messages as processed", marked_count);
+                metrics.record_queue_messages_marked_processed(marked_count);
+            }
+            Err(e) => {
+                error!(
+                    "Failed to mark {} messages as processed: {}",
+                    successful_ids.len(),
+                    e
+                );
+            }
+        }
+    }
+
+    // Batch mark failed messages
+    if !failed_messages.is_empty() {
+        match queue_consumer.mark_batch_failed(&failed_messages).await {
+            Ok(marked_count) => {
+                debug!("Marked {} messages as failed for retry", marked_count);
+                metrics.record_queue_messages_marked_failed(marked_count);
+            }
+            Err(e) => {
+                error!(
+                    "Failed to mark {} messages as failed: {}",
+                    failed_messages.len(),
+                    e
+                );
             }
         }
     }
 
     debug!(
         "Batch complete: {} successful, {} failed (will retry)",
-        successful, failed
+        successful_ids.len(),
+        failed_messages.len()
     );
 
     Ok(messages.len())
