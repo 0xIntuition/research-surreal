@@ -51,6 +51,17 @@ pub struct TermRow {
     pub total_market_cap: String,
 }
 
+#[derive(Debug, sqlx::FromRow, PartialEq)]
+pub struct TripleVaultRow {
+    pub term_id: String,
+    pub counter_term_id: String,
+    pub curve_id: String,
+    pub total_shares: String,
+    pub total_assets: String,
+    pub position_count: i64,
+    pub market_cap: String,
+}
+
 pub struct DbAssertions;
 
 impl DbAssertions {
@@ -275,6 +286,50 @@ impl DbAssertions {
         .await?;
 
         Ok(row)
+    }
+
+    /// Gets all triple_vault entries for a term pair
+    pub async fn get_triple_vault_entries(
+        pool: &PgPool,
+        term_id: &str,
+        counter_term_id: &str,
+    ) -> Result<Vec<TripleVaultRow>> {
+        let rows = sqlx::query_as::<_, TripleVaultRow>(
+            r#"
+            SELECT term_id, counter_term_id, curve_id,
+                   total_shares::TEXT as total_shares,
+                   total_assets::TEXT as total_assets,
+                   position_count,
+                   market_cap::TEXT as market_cap
+            FROM triple_vault
+            WHERE term_id = $1 AND counter_term_id = $2
+            ORDER BY curve_id
+            "#,
+        )
+        .bind(term_id)
+        .bind(counter_term_id)
+        .fetch_all(pool)
+        .await?;
+
+        Ok(rows)
+    }
+
+    /// Counts zero-metric entries in triple_vault (entries with all metrics = 0)
+    pub async fn count_triple_vault_zero_metrics(pool: &PgPool) -> Result<i64> {
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM triple_vault
+            WHERE total_shares = 0
+              AND total_assets = 0
+              AND position_count = 0
+              AND market_cap = 0
+            "#,
+        )
+        .fetch_one(pool)
+        .await?;
+
+        Ok(count)
     }
 }
 

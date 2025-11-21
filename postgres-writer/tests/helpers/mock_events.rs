@@ -215,6 +215,41 @@ impl EventBuilder {
         }
     }
 
+    /// Creates Deposited event with custom curve ID
+    pub fn deposited_with_curve(
+        &self,
+        account_id: &str,
+        term_id: &str,
+        curve_id: &str,
+        assets: u64,
+        shares: u64,
+    ) -> RindexerEvent {
+        validate_address(account_id, "account_id")
+            .expect("Invalid account_id in deposited_with_curve");
+        validate_term_id(term_id, "term_id").expect("Invalid term_id in deposited_with_curve");
+        validate_term_id(curve_id, "curve_id").expect("Invalid curve_id in deposited_with_curve");
+
+        let event_data = json!({
+            "sender": account_id,
+            "receiver": account_id,
+            "termId": term_id,
+            "curveId": curve_id,
+            "assets": assets.to_string(),
+            "shares": shares.to_string(),
+            "totalShares": shares.to_string(),
+            "assetsAfterFees": assets.to_string(),
+            "vaultType": 0,
+            "transaction_information": self.transaction_info(),
+        });
+
+        RindexerEvent {
+            event_name: "Deposited".to_string(),
+            event_signature_hash: "0x789abcdef123456".to_string(),
+            event_data,
+            network: self.network.clone(),
+        }
+    }
+
     /// Creates Redeemed event
     pub fn redeemed(
         &self,
@@ -296,6 +331,36 @@ impl EventBuilder {
         let event_data = json!({
             "termId": term_id,
             "curveId": DEFAULT_CURVE_ID,
+            "sharePrice": new_price.to_string(),
+            "totalAssets": "1000000000000000000",
+            "totalShares": "1000000000000000000",
+            "vaultType": 0,
+            "transaction_information": self.transaction_info(),
+        });
+
+        RindexerEvent {
+            event_name: "SharePriceChanged".to_string(),
+            event_signature_hash: "0xdef123456789abc".to_string(),
+            event_data,
+            network: self.network.clone(),
+        }
+    }
+
+    /// Creates SharePriceChanged event with custom curve ID
+    pub fn share_price_changed_with_curve(
+        &self,
+        term_id: &str,
+        curve_id: &str,
+        new_price: u64,
+    ) -> RindexerEvent {
+        validate_term_id(term_id, "term_id")
+            .expect("Invalid term_id in share_price_changed_with_curve");
+        validate_term_id(curve_id, "curve_id")
+            .expect("Invalid curve_id in share_price_changed_with_curve");
+
+        let event_data = json!({
+            "termId": term_id,
+            "curveId": curve_id,
             "sharePrice": new_price.to_string(),
             "totalAssets": "1000000000000000000",
             "totalShares": "1000000000000000000",
