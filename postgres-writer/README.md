@@ -25,8 +25,8 @@ This service is the core data synchronization component of the Intuition protoco
 2. **Maintains event tables** for audit and historical queries
 3. **Updates derived tables** using PostgreSQL triggers for simple transformations
 4. **Performs complex aggregations** in Rust for multi-level data relationships
-5. **Publishes term updates** to Redis for eventual consistency in analytics tables
-6. **Runs an analytics worker** that processes term updates and maintains triple-level aggregations
+5. **Publishes term updates** to a PostgreSQL queue for eventual consistency in analytics tables
+6. **Runs an analytics worker** that polls the queue and maintains triple-level aggregations
 
 ### Key Features
 
@@ -104,15 +104,16 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
                   │
                   ▼ (after commit)
 ┌─────────────────────────────────────────────────────────┐
-│           RedisPublisher                                 │
-│  Publishes term_id to "term_updates" stream             │
+│           TermQueuePublisher                             │
+│  Inserts term_id into "term_update_queue" table         │
 └─────────────────┬───────────────────────────────────────┘
                   │
                   ▼
 ┌─────────────────────────────────────────────────────────┐
 │         Analytics Worker (separate thread)               │
 │                                                          │
-│  Consumes from "term_updates" stream                    │
+│  Polls "term_update_queue" table                        │
+│  (FOR UPDATE SKIP LOCKED)                               │
 │                                                          │
 │  Updates analytics tables:                              │
 │  - triple_vault (pro + counter vault combined)          │
@@ -134,20 +135,30 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
    - Batches messages for efficiency
    - Acknowledges processed messages
 
-3. **PostgresClient** (`src/sync/postgres_client.rs:12`)
+3. **PostgresClient** (`src/sync/postgres_client.rs:15`)
    - Manages database connection pool
    - Processes events and triggers cascade
-   - Publishes term updates to Redis
+   - Publishes term updates to PostgreSQL queue
 
 4. **CascadeProcessor** (`src/processors/cascade.rs:19`)
    - Updates vault metrics from positions
    - Updates term metrics from vaults
    - Uses advisory locks to prevent race conditions
 
-5. **Analytics Worker** (`src/analytics/worker.rs:15`)
-   - Separate thread consuming term updates
+5. **TermQueuePublisher** (`src/consumer/postgres_queue_publisher.rs`)
+   - Publishes term updates to queue table
+   - Deduplicates term_ids before insertion to prevent redundant analytics processing
+   - Batch inserts using UNNEST for efficiency
+
+6. **TermQueueConsumer** (`src/consumer/postgres_queue_consumer.rs`)
+   - Polls queue using FOR UPDATE SKIP LOCKED
+   - Tracks retry attempts and failures
+   - Automatic cleanup of old processed messages
+
+7. **Analytics Worker** (`src/analytics/worker.rs:17`)
+   - Separate thread polling term update queue
    - Updates triple-level analytics tables
-   - Retries failed updates
+   - Retries failed updates with backoff
 
 ## Data Flow
 
@@ -164,10 +175,11 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
    - Recalculates `vault.market_cap` from current price
    - Aggregates `term.total_assets` and `term.total_market_cap` from all vaults
 5. **Transaction commits**
-6. **Publish to Redis** `term_updates` stream
-7. **Analytics worker** eventually processes update
+6. **Publish to queue** `term_update_queue` table
+7. **Analytics worker** eventually polls and processes update
    - Aggregates triple vault data
    - Updates predicate/object aggregates
+   - Marks message as processed
 
 ### Flow for SharePriceChanged Events
 
@@ -181,7 +193,7 @@ The system evolved from a **materialized view approach** to a **trigger + Rust c
    - Recalculates `vault.market_cap`
    - Aggregates `term` totals from all vaults
 5. **Transaction commits**
-6. **Publish to Redis** and **analytics worker** processes
+6. **Publish to queue** and **analytics worker** eventually processes
 
 ### Flow for AtomCreated Events
 
@@ -322,10 +334,10 @@ The system intentionally uses **separate transactions** for event insertion and 
 
 The system is vulnerable only in extreme edge cases:
 
-1. **Process crash between transactions + Redis message loss**
+1. **Process crash between transactions + queue insert failure**
    - Event committed, cascade never runs
-   - Message lost before Redis persists it
-   - **Mitigation**: Redis persistence (AOF), analytics worker backfill
+   - Queue insert fails before committing
+   - **Mitigation**: PostgreSQL durability, analytics worker backfill
 
 2. **Database corruption or hardware failure**
    - Would affect any transaction strategy
@@ -348,6 +360,138 @@ The separate transaction design provides better performance-safety tradeoff for 
 - Cascade processor: `src/processors/cascade.rs` (transaction 2)
 - Redis ACK logic: `src/core/pipeline.rs:279-288`
 - Retry semantics: Redis consumer group automatic redelivery
+
+## Analytics Worker: At-Least-Once Delivery Semantics
+
+### Overview
+
+The analytics worker processes term updates from the PostgreSQL `term_update_queue` table to maintain triple-level analytics tables. Like the main event processing pipeline, it uses separate transactions for analytics updates and queue marking operations.
+
+### Transaction Design
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│  1. Poll Messages (FOR UPDATE SKIP LOCKED)                   │
+│     - SELECT messages from term_update_queue                 │
+│     - WHERE processed_at IS NULL AND attempts < max          │
+│     - Locks rows to prevent concurrent processing            │
+└─────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  2. Process Each Message (Multiple Transactions)             │
+│     For each term_id:                                        │
+│     - BEGIN transaction                                      │
+│     - Acquire advisory locks for affected triple pairs       │
+│     - Batch update triple_vault, triple_term, etc.           │
+│     ✓ COMMIT                                                 │
+│                                                              │
+│     Note: Multiple batches may execute if many triples       │
+│           are affected by a single term update               │
+└─────────────────────────────────────────────────────────────┘
+                         │
+                         ▼
+┌─────────────────────────────────────────────────────────────┐
+│  3. Mark Messages (Batch Transaction)                        │
+│     - UPDATE term_update_queue                               │
+│       SET processed_at = NOW()                               │
+│       WHERE id = ANY($successful_ids)                        │
+│                                                              │
+│     - UPDATE term_update_queue                               │
+│       SET attempts = attempts + 1, last_error = ...          │
+│       WHERE id = ANY($failed_ids)                            │
+│     ✓ COMMIT                                                 │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### At-Least-Once Semantics
+
+**Accepted Risk**: If the mark operation fails after successful analytics updates, the message will be reprocessed on the next poll. This results in:
+
+1. **Duplicate work**: Analytics tables recalculated from scratch
+2. **Metric inflation**: `ANALYTICS_MESSAGES_CONSUMED_COUNTER` increments twice
+3. **No data corruption**: Analytics updates are idempotent (INSERT ... ON CONFLICT DO UPDATE with recalculated values)
+
+**Why This is Acceptable**:
+- Mark failures are extremely rare (would require database crash or network partition)
+- Analytics updates recalculate from source data (vault, triple tables), not incremental
+- Idempotent updates ensure correctness even with duplicates
+- Performance cost of rare duplicate work < complexity cost of distributed transactions
+
+### Batch Mark Operations
+
+To reduce query overhead, the worker batches mark operations:
+- **Before**: 100 messages = 200 queries (1 analytics update + 1 mark per message)
+- **After**: 100 messages = ~106 queries (100 analytics updates + 2 batch marks)
+
+Implementation:
+```rust
+// Collect successful and failed IDs during processing
+let mut successful_ids: Vec<i64> = Vec::new();
+let mut failed_messages: Vec<(i64, String)> = Vec::new();
+
+// Process all messages
+for message in messages {
+    match update_analytics_tables(...).await {
+        Ok(()) => successful_ids.push(message.id),
+        Err(e) => failed_messages.push((message.id, e.to_string())),
+    }
+}
+
+// Batch mark operations (2 queries total)
+queue_consumer.mark_batch_processed(&successful_ids).await?;
+queue_consumer.mark_batch_failed(&failed_messages).await?;
+```
+
+### Retry and Cleanup Policies
+
+**Retry Policy**:
+- Messages with `attempts < MAX_RETRY_ATTEMPTS` are eligible for reprocessing
+- Failed messages increment `attempts` counter and record `last_error`
+- Messages with `attempts >= MAX_RETRY_ATTEMPTS` are skipped by polls
+
+**Cleanup Policy**:
+- **Processed messages**: Deleted after `QUEUE_RETENTION_HOURS` (default: 24 hours)
+- **Permanently failed messages**: Deleted after `FAILED_MESSAGE_RETENTION_HOURS` (default: 168 hours / 7 days)
+- **Cleanup frequency**: Every 1 hour (background task)
+
+### Configuration
+
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `ANALYTICS_BATCH_SIZE` | `100` | Number of messages to poll per batch |
+| `QUEUE_POLL_INTERVAL_MS` | `100` | Polling interval when queue is empty |
+| `QUEUE_RETENTION_HOURS` | `24` | Retention for successfully processed messages |
+| `FAILED_MESSAGE_RETENTION_HOURS` | `168` | Retention for permanently failed messages (7 days) |
+| `MAX_RETRY_ATTEMPTS` | `3` | Maximum retry attempts before permanent failure |
+| `MAX_MESSAGES_PER_SECOND` | `5000` | Rate limit for analytics processing |
+| `MIN_BATCH_INTERVAL_MS` | `10` | Minimum delay between batches |
+
+### Monitoring
+
+The worker exposes queue operation metrics via Prometheus:
+
+```
+# Messages marked as processed (batch operations)
+postgres_writer_queue_messages_marked_processed_total
+
+# Messages marked as failed (batch operations)
+postgres_writer_queue_messages_marked_failed_total
+
+# Cleanup operations
+postgres_writer_queue_cleanup_processed_total
+postgres_writer_queue_cleanup_failed_total
+
+# Current permanently failed message count
+postgres_writer_queue_permanently_failed_messages
+```
+
+### Related Code
+
+- Analytics worker: `src/analytics/worker.rs:256` (process_batch function)
+- Queue consumer: `src/consumer/postgres_queue_consumer.rs` (batch mark operations)
+- Analytics processor: `src/analytics/processor.rs` (idempotent updates)
+- Metrics: `src/monitoring/metrics.rs` (queue operation metrics)
 
 ## Column Calculations
 
@@ -443,7 +587,7 @@ The separate transaction design provides better performance-safety tradeoff for 
 | `CONSUMER_GROUP` | `postgres-sync` | Redis consumer group name |
 | `CONSUMER_NAME` | `consumer-{uuid}` | Unique consumer name |
 | `DATABASE_URL` | **(required)** | PostgreSQL connection URL |
-| `BATCH_SIZE` | `100` | Number of messages to process per batch |
+| `BATCH_SIZE` | `100` | Number of messages to process per batch (Redis streams) |
 | `BATCH_TIMEOUT_MS` | `5000` | Batch timeout in milliseconds |
 | `WORKERS` | `4` | Number of parallel worker threads |
 | `PROCESSING_TIMEOUT_MS` | `30000` | Event processing timeout |
@@ -452,7 +596,13 @@ The separate transaction design provides better performance-safety tradeoff for 
 | `CIRCUIT_BREAKER_TIMEOUT_MS` | `60000` | Circuit breaker timeout |
 | `HTTP_PORT` | `8080` | HTTP server port for health/metrics |
 | `CONSUMER_GROUP_SUFFIX` | *(optional)* | Suffix for analytics worker consumer group |
-| `ANALYTICS_STREAM_NAME` | `term_updates` | Redis stream name for term updates (appends suffix if using CONSUMER_GROUP_SUFFIX) |
+| `ANALYTICS_BATCH_SIZE` | `100` | Number of queue messages to poll per batch (analytics worker) |
+| `QUEUE_POLL_INTERVAL_MS` | `100` | How often to poll queue for new messages |
+| `QUEUE_RETENTION_HOURS` | `24` | Keep processed messages for N hours before cleanup |
+| `FAILED_MESSAGE_RETENTION_HOURS` | `168` | Keep permanently failed messages for N hours (7 days) |
+| `MAX_RETRY_ATTEMPTS` | `3` | Max attempts before giving up on a queue message |
+| `MAX_MESSAGES_PER_SECOND` | `5000` | Rate limit for analytics processing |
+| `MIN_BATCH_INTERVAL_MS` | `10` | Minimum delay between analytics batches |
 
 ### Example Configuration
 
@@ -556,8 +706,10 @@ src/
 │   ├── circuit_breaker.rs     # Circuit breaker implementation
 │   └── types.rs               # Core type definitions
 ├── consumer/
-│   ├── redis_stream.rs        # Redis stream consumer
-│   └── redis_publisher.rs     # Redis publisher for analytics
+│   ├── redis_stream.rs              # Redis stream consumer
+│   ├── redis_publisher.rs           # Redis publisher (legacy, kept for reference)
+│   ├── postgres_queue_publisher.rs  # PostgreSQL queue publisher
+│   └── postgres_queue_consumer.rs   # PostgreSQL queue consumer
 ├── sync/
 │   ├── postgres_client.rs     # PostgreSQL client and cascade orchestration
 │   ├── event_handlers.rs      # Event routing

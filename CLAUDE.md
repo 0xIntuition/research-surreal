@@ -134,8 +134,8 @@ This is the most complex component. Understanding its architecture is critical f
 3. **Trigger Execution**: PostgreSQL triggers update base tables (`atom`, `triple`, `position`, `vault`)
 4. **Cascade Processing**: Rust cascade processor updates aggregations (`vault` metrics, `term` totals)
 5. **Transaction Commit**: All changes committed atomically
-6. **Redis Publishing**: Term updates published to `term_updates` stream
-7. **Analytics Worker**: Separate thread processes term updates → analytics tables
+6. **Queue Publishing**: Term updates inserted into `term_update_queue` table
+7. **Analytics Worker**: Separate thread polls queue and processes term updates → analytics tables
 
 ### Table Hierarchy
 
@@ -234,7 +234,11 @@ All services use ports in the **18000-18999 range**:
 - `REDIS_STREAMS`: Comma-separated stream names
 - `BATCH_SIZE=20`, `BATCH_TIMEOUT_MS=5000`
 - `CONSUMER_GROUP`, `CONSUMER_GROUP_SUFFIX`
-- `ANALYTICS_STREAM_NAME=term_updates`
+- `QUEUE_POLL_INTERVAL_MS=100`: How often to poll queue for new messages
+- `QUEUE_RETENTION_HOURS=24`: Keep processed messages for N hours before cleanup
+- `MAX_RETRY_ATTEMPTS=3`: Max attempts before giving up on a queue message
+- `MAX_MESSAGES_PER_SECOND=5000`: Rate limit for analytics processing
+- `MIN_BATCH_INTERVAL_MS=10`: Minimum delay between analytics batches
 - `TOKIO_WORKER_THREADS=4`
 
 ### Blockchain Contract

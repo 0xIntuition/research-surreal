@@ -1,0 +1,14 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            INSERT INTO term_update_queue (term_id)\n            VALUES ($1)\n            ON CONFLICT (term_id) WHERE processed_at IS NULL DO NOTHING\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Text"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "782b4a46dd0d1e3ea120c90ade3bcb857920450f296d50f844a6182918ee1106"
+}

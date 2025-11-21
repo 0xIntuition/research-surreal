@@ -212,9 +212,13 @@ async fn update_triple_vault_batch(
             SELECT unnest($1::text[]) as term_id, unnest($2::text[]) as counter_term_id
         ) pairs
         CROSS JOIN (
-            SELECT DISTINCT curve_id
-            FROM vault
-            WHERE term_id = ANY($1::text[]) OR term_id = ANY($2::text[])
+            SELECT DISTINCT v1_curves.curve_id
+            FROM (
+                SELECT DISTINCT curve_id FROM vault WHERE term_id = ANY($1::text[])
+            ) v1_curves
+            INNER JOIN (
+                SELECT DISTINCT curve_id FROM vault WHERE term_id = ANY($2::text[])
+            ) v2_curves ON v1_curves.curve_id = v2_curves.curve_id
         ) curves
         LEFT JOIN vault v1 ON v1.term_id = pairs.term_id AND v1.curve_id = curves.curve_id
         LEFT JOIN vault v2 ON v2.term_id = pairs.counter_term_id AND v2.curve_id = curves.curve_id

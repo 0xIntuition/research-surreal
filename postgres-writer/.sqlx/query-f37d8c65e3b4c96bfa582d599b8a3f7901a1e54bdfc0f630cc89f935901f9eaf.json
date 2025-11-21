@@ -1,0 +1,15 @@
+{
+  "db_name": "PostgreSQL",
+  "query": "\n            UPDATE term_update_queue\n            SET attempts = attempts + 1,\n                last_error = data.error,\n                last_attempt_at = NOW()\n            FROM (\n                SELECT UNNEST($1::BIGINT[]) as id, UNNEST($2::TEXT[]) as error\n            ) AS data\n            WHERE term_update_queue.id = data.id\n            ",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Left": [
+        "Int8Array",
+        "TextArray"
+      ]
+    },
+    "nullable": []
+  },
+  "hash": "f37d8c65e3b4c96bfa582d599b8a3f7901a1e54bdfc0f630cc89f935901f9eaf"
+}
